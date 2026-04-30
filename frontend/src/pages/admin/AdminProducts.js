@@ -6,46 +6,129 @@ import { Package, Plus, Edit, Trash2, Image as ImageIcon, DollarSign, Eye, EyeOf
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 // Reusable image uploader/replacer
-function ImageManager({ images = [], onChange, label = 'Images', single = false, headers }) {
+// - Multi-file selection (3-6 at once) with parallel upload
+// - Per-image progress and instant local preview while uploading
+// - Drag-to-reorder + up/down/first/last arrow buttons
+// - Position badges so the merchant always knows the gallery order
+function ImageManager({ images = [], onChange, label = 'Images', single = false, headers, maxImages = 8 }) {
   const fileRef = useRef(null);
   const [uploading, setUploading] = useState(false);
+  const [pending, setPending] = useState([]); // [{ id, previewUrl, progress, error }]
   const [removingBgIndex, setRemovingBgIndex] = useState(-1);
+  const [dragIndex, setDragIndex] = useState(-1);
+  const [overIndex, setOverIndex] = useState(-1);
 
-  const upload = async (file) => {
+  const upload = async (file, onProgress) => {
     if (!file) return null;
     const fd = new FormData();
     fd.append('file', file);
-    setUploading(true);
     try {
-      const res = await axios.post(`${API}/admin/upload-image`, fd, { headers: { ...headers, 'Content-Type': 'multipart/form-data' } });
+      const res = await axios.post(`${API}/admin/upload-image`, fd, {
+        headers: { ...headers, 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: (ev) => {
+          if (typeof onProgress === 'function' && ev.total) {
+            onProgress(Math.round((ev.loaded * 100) / ev.total));
+          }
+        },
+      });
       return res.data.url;
     } catch (e) {
-      alert(e.response?.data?.detail || 'Upload failed');
-      return null;
-    } finally {
-      setUploading(false);
+      throw new Error(e.response?.data?.detail || 'Upload failed');
     }
   };
 
   const handleAdd = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const url = await upload(file);
-    if (!url) return;
-    if (single) onChange(url);
-    else onChange([...(images || []), url]);
+    const files = Array.from(e.target.files || []);
     e.target.value = '';
+    if (!files.length) return;
+
+    // Single-image mode: just take the first
+    if (single) {
+      setUploading(true);
+      try {
+        const url = await upload(files[0]);
+        if (url) onChange(url);
+      } catch (err) {
+        alert(err.message || 'Upload failed');
+      } finally {
+        setUploading(false);
+      }
+      return;
+    }
+
+    // Multi-image mode: cap at maxImages total, upload in parallel
+    const currentCount = (images || []).length;
+    const allowed = Math.max(0, maxImages - currentCount);
+    const slice = files.slice(0, allowed);
+    if (slice.length < files.length) {
+      alert(`You can have at most ${maxImages} images. Adding the first ${slice.length}.`);
+    }
+    if (!slice.length) return;
+
+    // Show optimistic local previews while uploads are in flight
+    const queued = slice.map((f) => ({
+      id: `${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      previewUrl: URL.createObjectURL(f),
+      progress: 0,
+      error: null,
+    }));
+    setPending((p) => [...p, ...queued]);
+    setUploading(true);
+
+    try {
+      const results = await Promise.allSettled(
+        slice.map((file, i) =>
+          upload(file, (pct) => {
+            setPending((p) => p.map((q) => (q.id === queued[i].id ? { ...q, progress: pct } : q)));
+          }).then((url) => ({ id: queued[i].id, url }))
+        )
+      );
+
+      const newUrls = [];
+      const failures = [];
+      results.forEach((r, i) => {
+        if (r.status === 'fulfilled' && r.value?.url) newUrls.push(r.value.url);
+        else failures.push({ id: queued[i].id, message: r.reason?.message || 'Upload failed' });
+      });
+
+      // Append all successful uploads in their original selection order
+      if (newUrls.length) onChange([...(images || []), ...newUrls]);
+      // Mark failures so user can see them briefly, then clear
+      if (failures.length) {
+        setPending((p) =>
+          p.map((q) => {
+            const f = failures.find((x) => x.id === q.id);
+            return f ? { ...q, error: f.message } : q;
+          })
+        );
+        setTimeout(() => setPending((p) => p.filter((q) => !q.error)), 4000);
+        alert(`${failures.length} image(s) failed: ${failures[0].message}`);
+      }
+    } finally {
+      // Drop the previews that were successfully uploaded
+      setPending((p) => p.filter((q) => q.error));
+      setUploading(false);
+      // Revoke any object URLs we no longer need
+      queued.forEach((q) => URL.revokeObjectURL(q.previewUrl));
+    }
   };
 
   const handleReplace = async (index, e) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-    const url = await upload(file);
-    if (!url) return;
-    const next = [...images];
-    next[index] = url;
-    onChange(next);
     e.target.value = '';
+    if (!file) return;
+    setUploading(true);
+    try {
+      const url = await upload(file);
+      if (!url) return;
+      const next = [...images];
+      next[index] = url;
+      onChange(next);
+    } catch (err) {
+      alert(err.message || 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handleRemove = (index) => {
@@ -53,10 +136,40 @@ function ImageManager({ images = [], onChange, label = 'Images', single = false,
     onChange(images.filter((_, i) => i !== index));
   };
 
+  // ---- Reorder helpers ----
+  const move = (from, to) => {
+    if (from === to || from < 0 || to < 0 || from >= images.length || to >= images.length) return;
+    const next = [...images];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    onChange(next);
+  };
+  const moveUp    = (i) => move(i, i - 1);
+  const moveDown  = (i) => move(i, i + 1);
+  const moveFirst = (i) => move(i, 0);
+  const moveLast  = (i) => move(i, images.length - 1);
+
+  // ---- HTML5 drag-and-drop ----
+  const onDragStart = (i) => (e) => {
+    setDragIndex(i);
+    try { e.dataTransfer.effectAllowed = 'move'; } catch {}
+  };
+  const onDragOver = (i) => (e) => {
+    e.preventDefault();
+    if (overIndex !== i) setOverIndex(i);
+  };
+  const onDragLeave = () => setOverIndex(-1);
+  const onDrop = (i) => (e) => {
+    e.preventDefault();
+    if (dragIndex >= 0 && dragIndex !== i) move(dragIndex, i);
+    setDragIndex(-1);
+    setOverIndex(-1);
+  };
+  const onDragEnd = () => { setDragIndex(-1); setOverIndex(-1); };
+
   const handleRemoveBg = async (index, mode = 'white') => {
     const imgUrl = images[index];
     if (!imgUrl) return;
-    // Convert relative /api/uploads URLs to absolute so Gemini can download
     const absoluteUrl = imgUrl.startsWith('http') ? imgUrl : `${process.env.REACT_APP_BACKEND_URL}${imgUrl}`;
     setRemovingBgIndex(index);
     try {
@@ -77,7 +190,7 @@ function ImageManager({ images = [], onChange, label = 'Images', single = false,
     }
   };
 
-  // Single-image mode (for hero banner / bundle hero)
+  // Single-image mode (for hero banner / bundle hero) — unchanged behaviour
   if (single) {
     const url = images;
     return (
@@ -99,44 +212,136 @@ function ImageManager({ images = [], onChange, label = 'Images', single = false,
     );
   }
 
-  // Multi-image mode (product images)
+  // Multi-image mode (product images) — multi-upload + drag-reorder
+  const total = (images?.length || 0) + pending.length;
+  const remaining = Math.max(0, maxImages - (images?.length || 0));
+
   return (
     <div>
-      <label className="text-xs font-semibold text-gray-500 block mb-1.5">{label} ({images?.length || 0})</label>
-      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-        {(images || []).map((url, i) => (
-          <div key={i} className="relative group aspect-square bg-gray-100 rounded-xl overflow-hidden border border-gray-200">
-            <img src={url} alt="" className="w-full h-full object-cover" />
-            {removingBgIndex === i && (
-              <div className="absolute inset-0 bg-white/90 flex flex-col items-center justify-center gap-1 z-10">
-                <div className="w-6 h-6 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
-                <span className="text-[10px] font-bold text-green-700">AI cleaning...</span>
+      <div className="flex items-center justify-between mb-1.5">
+        <label className="text-xs font-semibold text-gray-500">
+          {label || 'Images'} ({total}/{maxImages})
+        </label>
+        <p className="text-[10px] text-gray-400">Drag tiles or use ▲▼ to reorder · 1st image is the cover</p>
+      </div>
+
+      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2" data-testid="image-manager-grid">
+        {(images || []).map((url, i) => {
+          const isDragSource = dragIndex === i;
+          const isDropTarget = overIndex === i && dragIndex !== i;
+          return (
+            <div
+              key={`${url}-${i}`}
+              draggable
+              onDragStart={onDragStart(i)}
+              onDragOver={onDragOver(i)}
+              onDragLeave={onDragLeave}
+              onDrop={onDrop(i)}
+              onDragEnd={onDragEnd}
+              data-testid={`image-tile-${i}`}
+              className={`relative group aspect-square bg-gray-100 rounded-xl overflow-hidden border-2 transition-all ${
+                isDropTarget ? 'border-green-500 scale-[1.02]' : 'border-gray-200'
+              } ${isDragSource ? 'opacity-40' : ''}`}
+            >
+              <img src={url} alt="" className="w-full h-full object-cover pointer-events-none" />
+
+              {/* Position badge (1, 2, 3 ...) */}
+              <div className="absolute top-1.5 left-1.5 bg-black/70 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center shadow-md">
+                {i + 1}
               </div>
-            )}
-            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/50 transition-colors flex flex-wrap items-center justify-center gap-1 p-1 opacity-0 group-hover:opacity-100">
-              <label className="cursor-pointer p-1.5 bg-white rounded-lg shadow-md" title="Replace">
-                <Upload size={12} className="text-gray-700" />
-                <input type="file" accept="image/*" onChange={(e) => handleReplace(i, e)} className="hidden" />
-              </label>
-              <button
-                type="button"
-                onClick={() => handleRemoveBg(i, 'white')}
-                disabled={removingBgIndex !== -1}
-                className="p-1.5 bg-white rounded-lg shadow-md disabled:opacity-50"
-                title="AI: clean background → pure white"
-                data-testid={`remove-bg-${i}`}
-              >
-                <Sparkles size={12} className="text-fuchsia-600" />
-              </button>
-              <button type="button" onClick={() => handleRemove(i)} className="p-1.5 bg-white rounded-lg shadow-md" title="Remove"><Trash size={12} className="text-red-600" /></button>
+              {/* Cover badge for the first image */}
+              {i === 0 && (
+                <div className="absolute top-1.5 right-1.5 bg-emerald-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded-md uppercase tracking-wide shadow-md">
+                  Cover
+                </div>
+              )}
+
+              {removingBgIndex === i && (
+                <div className="absolute inset-0 bg-white/90 flex flex-col items-center justify-center gap-1 z-10">
+                  <div className="w-6 h-6 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
+                  <span className="text-[10px] font-bold text-green-700">AI cleaning...</span>
+                </div>
+              )}
+
+              {/* Hover toolbar */}
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/55 transition-colors flex flex-wrap items-center justify-center gap-1 p-1 opacity-0 group-hover:opacity-100">
+                {/* Drag handle hint */}
+                <span className="absolute top-1 left-7 p-1 text-white/80 cursor-grab" title="Drag to reorder">
+                  <GripVertical size={12} />
+                </span>
+                {/* Up / Down */}
+                <button type="button" onClick={() => moveUp(i)} disabled={i === 0} className="p-1.5 bg-white rounded-lg shadow-md disabled:opacity-40" title="Move up" data-testid={`img-up-${i}`}>
+                  <ArrowUp size={12} className="text-gray-700" />
+                </button>
+                <button type="button" onClick={() => moveDown(i)} disabled={i === images.length - 1} className="p-1.5 bg-white rounded-lg shadow-md disabled:opacity-40" title="Move down" data-testid={`img-down-${i}`}>
+                  <ArrowDown size={12} className="text-gray-700" />
+                </button>
+                {/* Replace */}
+                <label className="cursor-pointer p-1.5 bg-white rounded-lg shadow-md" title="Replace this image">
+                  <Upload size={12} className="text-gray-700" />
+                  <input type="file" accept="image/*" onChange={(e) => handleReplace(i, e)} className="hidden" />
+                </label>
+                {/* AI clean bg */}
+                <button
+                  type="button"
+                  onClick={() => handleRemoveBg(i, 'white')}
+                  disabled={removingBgIndex !== -1}
+                  className="p-1.5 bg-white rounded-lg shadow-md disabled:opacity-50"
+                  title="AI: clean background → pure white"
+                  data-testid={`remove-bg-${i}`}
+                >
+                  <Sparkles size={12} className="text-fuchsia-600" />
+                </button>
+                {/* Remove */}
+                <button type="button" onClick={() => handleRemove(i)} className="p-1.5 bg-white rounded-lg shadow-md" title="Remove">
+                  <Trash size={12} className="text-red-600" />
+                </button>
+              </div>
+            </div>
+          );
+        })}
+
+        {/* In-flight upload tiles (instant preview + per-file progress) */}
+        {pending.map((q) => (
+          <div key={q.id} className="relative aspect-square bg-gray-100 rounded-xl overflow-hidden border-2 border-dashed border-green-300" data-testid={`pending-${q.id}`}>
+            <img src={q.previewUrl} alt="" className="w-full h-full object-cover opacity-60" />
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-white/40">
+              {q.error ? (
+                <span className="text-[10px] font-bold text-rose-700 px-1.5 text-center">{q.error}</span>
+              ) : (
+                <>
+                  <div className="w-5 h-5 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
+                  <span className="text-[10px] font-bold text-green-700">{q.progress}%</span>
+                </>
+              )}
             </div>
           </div>
         ))}
-        <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading} className="aspect-square border-2 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center gap-1 text-gray-400 hover:border-green-400 hover:text-green-600 transition-colors text-xs">
-          <Upload size={18} />
-          <span>{uploading ? 'Uploading...' : 'Add'}</span>
-        </button>
-        <input type="file" accept="image/*" ref={fileRef} onChange={handleAdd} className="hidden" />
+
+        {/* Add tile (only if under maxImages) */}
+        {remaining > 0 && (
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+            className="aspect-square border-2 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center gap-1 text-gray-400 hover:border-green-400 hover:text-green-600 transition-colors text-xs disabled:opacity-50"
+            data-testid="image-add-tile"
+          >
+            <Upload size={18} />
+            <span>{uploading ? 'Uploading…' : `Add (${remaining} left)`}</span>
+            <span className="text-[9px] text-gray-400">Pick up to {Math.min(remaining, 6)} at once</span>
+          </button>
+        )}
+
+        <input
+          type="file"
+          accept="image/*"
+          multiple
+          ref={fileRef}
+          onChange={handleAdd}
+          className="hidden"
+          data-testid="image-multi-input"
+        />
       </div>
     </div>
   );
