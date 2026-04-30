@@ -1,0 +1,324 @@
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
+import axios from 'axios';
+import { Shield, Truck, ArrowLeft, Check, MapPin, Clock, Star, Award, Gift, Lock, Users } from 'lucide-react';
+import { getCart, saveCart, addToCart } from './Homepage';
+import { useTracking } from '../providers/TrackingProvider';
+
+const API = process.env.REACT_APP_BACKEND_URL;
+
+// Defined at module scope so React doesn't remount the <input> on every keystroke
+// (which was causing the mobile keyboard to auto-dismiss after each character).
+const Field = React.memo(function Field({ label, field, type = 'text', placeholder, span, value, error, onChange, inputMode }) {
+  return (
+    <div className={span ? 'sm:col-span-2' : ''}>
+      <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">{label}</label>
+      <input
+        type={type}
+        inputMode={inputMode}
+        value={value || ''}
+        onChange={e => onChange(field, e.target.value)}
+        placeholder={placeholder}
+        className={`w-full px-4 py-3 border rounded-xl text-sm bg-stone-50 focus:bg-white focus:ring-2 focus:ring-green-200 transition-all outline-none ${error ? 'border-red-300' : 'border-gray-200'}`}
+        data-testid={`checkout-${field}`}
+        autoComplete={field === 'name' ? 'name' : field === 'phone' ? 'tel' : field === 'email' ? 'email' : field === 'pincode' ? 'postal-code' : field === 'city' ? 'address-level2' : field === 'state' ? 'address-level1' : field === 'area' ? 'street-address' : 'on'}
+      />
+      {error && <p className="text-red-500 text-xs mt-1">{error}</p>}
+    </div>
+  );
+});
+
+function CheckoutPage() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { trackAction, trackPurchase, trackGAEvent } = useTracking();
+  const { cartData: passedCartData, paymentMethod: passedMethod, coupon } = location.state || {};
+  const [cartData, setCartData] = useState(passedCartData);
+  const [paymentMethod, setPaymentMethod] = useState(passedMethod || 'prepaid');
+  const [formData, setFormData] = useState({ name: '', phone: '', email: '', house_number: '', area: '', city: '', pincode: '', state: '' });
+  const [submitting, setSubmitting] = useState(false);
+  const [errors, setErrors] = useState({});
+
+  useEffect(() => {
+    trackAction('view_checkout', { step: 'checkout_started' });
+    // Meta Pixel — Checkout PageView (in addition to InitiateCheckout fired from cart)
+    if (typeof window !== 'undefined' && window.fbq) {
+      window.fbq('track', 'PageView', { page_name: 'checkout', content_category: 'Checkout' });
+    }
+    if (!cartData) {
+      const cart = getCart();
+      if (!cart.items.length) { navigate('/cart'); return; }
+      axios.post(`${API}/api/cart/validate`, { items: cart.items, payment_method: paymentMethod, coupon_code: coupon?.code })
+        .then(res => setCartData(res.data)).catch(() => navigate('/cart'));
+    }
+  }, []);
+
+  const handlePincodeChange = async (pincode) => {
+    setFormData(prev => ({ ...prev, pincode }));
+    if (pincode.length === 6 && /^\d{6}$/.test(pincode)) {
+      try {
+        const res = await axios.get(`${API}/api/pincode/${pincode}`);
+        setFormData(prev => ({
+          ...prev,
+          state: res.data.state || prev.state,
+          city: res.data.city || res.data.district || prev.city
+        }));
+      } catch {}
+    }
+  };
+
+  // Stable change handler — passed to memoized Field, prevents input remounts on keystroke.
+  const handleFieldChange = React.useCallback((field, value) => {
+    if (field === 'pincode') {
+      handlePincodeChange(value);
+    } else {
+      setFormData(prev => ({ ...prev, [field]: value }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Re-validate cart when payment method changes (so COD/prepaid totals update live)
+  useEffect(() => {
+    if (!cartData) return;
+    const cart = getCart();
+    if (!cart.items.length) return;
+    axios.post(`${API}/api/cart/validate`, { items: cart.items, payment_method: paymentMethod, coupon_code: coupon?.code })
+      .then(res => setCartData(res.data)).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paymentMethod]);
+
+  const validate = () => {
+    const e = {};
+    if (!formData.name.trim()) e.name = 'Required';
+    if (!formData.phone.match(/^[6-9]\d{9}$/)) e.phone = 'Valid 10-digit phone';
+    // Strict email format: no consecutive dots, must have proper local/domain/TLD
+    const emailRe = /^[A-Za-z0-9]+([._-][A-Za-z0-9]+)*@[A-Za-z0-9]+([.-][A-Za-z0-9]+)*\.[A-Za-z]{2,}$/;
+    if (!formData.email.trim()) e.email = 'Email is required';
+    else if (!emailRe.test(formData.email.trim())) e.email = 'Enter a valid email (e.g., name@domain.com)';
+    if (!formData.house_number.trim()) e.house_number = 'Required';
+    if (!formData.area.trim()) e.area = 'Address required';
+    if (!formData.pincode.match(/^\d{6}$/)) e.pincode = 'Valid pincode';
+    if (!formData.state.trim()) e.state = 'Required';
+    setErrors(e); return Object.keys(e).length === 0;
+  };
+
+  const placeOrder = async () => {
+    if (!validate() || !cartData) return;
+    setSubmitting(true);
+    trackAction('payment_method_selected', { method: paymentMethod });
+    const payload = { ...formData, payment_method: paymentMethod, amount: cartData.total, items: cartData.items, coupon_code: coupon?.code || null, coupon_discount: coupon?.discount || 0 };
+    const fireConversion = (orderId) => {
+      trackAction('order_complete', { order_id: orderId, total: cartData.total, items: cartData.item_count, payment_method: paymentMethod });
+      trackPurchase(orderId, cartData.total, paymentMethod);
+      trackGAEvent('purchase', { transaction_id: orderId, value: cartData.total, currency: 'INR', items: cartData.item_count });
+    };
+    try {
+      if (paymentMethod === 'prepaid') {
+        const rzpOrder = await axios.post(`${API}/api/create-razorpay-order`, { amount: cartData.total });
+        const options = {
+          key: process.env.REACT_APP_RAZORPAY_KEY_ID || 'rzp_test_key', amount: rzpOrder.data.amount, currency: 'INR',
+          name: 'Celesta Glow', description: `Order - ${cartData.item_count} items`, order_id: rzpOrder.data.id,
+          handler: async (response) => {
+            try { await axios.post(`${API}/api/verify-payment`, response); const order = await axios.post(`${API}/api/orders`, payload); fireConversion(order.data.order_id); saveCart({ items: [] }); navigate(`/order-success/${order.data.order_id}`); }
+            catch { alert('Payment verification failed'); setSubmitting(false); }
+          },
+          prefill: { name: formData.name, contact: formData.phone, email: formData.email },
+          theme: { color: '#16a34a' }
+        };
+        const rzp = new window.Razorpay(options); rzp.open();
+        rzp.on('payment.failed', () => { alert('Payment failed.'); setSubmitting(false); });
+      } else {
+        const order = await axios.post(`${API}/api/orders`, payload);
+        fireConversion(order.data.order_id);
+        saveCart({ items: [] }); navigate(`/order-success/${order.data.order_id}`);
+      }
+    } catch (err) {
+      const detail = err?.response?.data?.detail || err?.message || 'Order failed. Please try again.';
+      alert(detail);
+      setSubmitting(false);
+    }
+  };
+
+  if (!cartData) return null;
+
+  return (
+    <div className="min-h-screen bg-stone-50" data-testid="checkout-page">
+      {/* Premium Trust Strip */}
+      <div className="bg-green-800 text-white py-2.5 px-4">
+        <div className="max-w-4xl mx-auto flex items-center justify-center gap-5 sm:gap-8 text-xs sm:text-xs font-medium">
+          <span className="flex items-center gap-1.5"><Lock size={13} /> Secure Checkout</span>
+          <span className="flex items-center gap-1.5"><Truck size={13} /> Free Shipping</span>
+          <span className="flex items-center gap-1.5"><Star size={13} /> 4.8 Rating</span>
+          <span className="flex items-center gap-1.5 hidden sm:flex"><Shield size={13} /> 30-Day Guarantee</span>
+        </div>
+      </div>
+
+      <div className="max-w-4xl mx-auto px-4 py-4 sm:py-6">
+        <div className="flex items-center gap-3 mb-5">
+          <Link to="/cart" className="p-2 hover:bg-white rounded-xl transition-colors"><ArrowLeft size={20} /></Link>
+          <div>
+            <h1 className="text-lg font-bold text-gray-900">Checkout</h1>
+            <p className="text-xs text-gray-400">{cartData.item_count} items | Secure checkout</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
+          {/* Form */}
+          <div className="lg:col-span-3 space-y-4">
+            <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
+              <h2 className="font-bold text-gray-900 text-sm mb-4 flex items-center gap-2"><MapPin size={16} className="text-green-600" /> Delivery Address</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Field label="Full Name" field="name" placeholder="Your full name" value={formData.name} error={errors.name} onChange={handleFieldChange} />
+                <Field label="Phone" field="phone" type="tel" inputMode="tel" placeholder="10-digit number" value={formData.phone} error={errors.phone} onChange={handleFieldChange} />
+                <Field label="Email" field="email" type="email" inputMode="email" placeholder="email@example.com" span value={formData.email} error={errors.email} onChange={handleFieldChange} />
+                <Field label="House / Flat No." field="house_number" placeholder="House no, building, floor" span value={formData.house_number} error={errors.house_number} onChange={handleFieldChange} />
+                <Field label="Address" field="area" placeholder="Street, area, landmark" span value={formData.area} error={errors.area} onChange={handleFieldChange} />
+                <Field label="Pincode" field="pincode" inputMode="numeric" placeholder="6-digit pincode" value={formData.pincode} error={errors.pincode} onChange={handleFieldChange} />
+                <Field label="City" field="city" placeholder="City / Locality" value={formData.city} error={errors.city} onChange={handleFieldChange} />
+                <Field label="State" field="state" placeholder="State" span value={formData.state} error={errors.state} onChange={handleFieldChange} />
+              </div>
+            </div>
+
+            {/* Payment Method */}
+            <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
+              <h2 className="font-bold text-gray-900 text-sm mb-3">Payment Method</h2>
+              <div className="space-y-2.5">
+                <label className={`flex items-center gap-3 p-3.5 rounded-xl border-2 cursor-pointer transition-all ${paymentMethod === 'prepaid' ? 'border-green-500 bg-green-50/50 shadow-sm' : 'border-gray-100 hover:border-gray-200'}`}>
+                  <input type="radio" name="pay" checked={paymentMethod === 'prepaid'} onChange={() => setPaymentMethod('prepaid')} className="text-green-600 w-4 h-4" />
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="font-bold text-sm text-gray-900">Prepaid (UPI / Card)</p>
+                      <span className="text-xs bg-green-600 text-white px-2 py-0.5 rounded-full font-bold">RECOMMENDED</span>
+                    </div>
+                    <p className="text-xs text-green-600 font-medium mt-0.5">Faster delivery in 1-3 days · Best price</p>
+                  </div>
+                </label>
+                <label className={`flex items-center gap-3 p-3.5 rounded-xl border-2 cursor-pointer transition-all ${paymentMethod === 'COD' ? 'border-green-500 bg-green-50/50' : 'border-gray-100 hover:border-gray-200'}`}>
+                  <input type="radio" name="pay" checked={paymentMethod === 'COD'} onChange={() => setPaymentMethod('COD')} className="text-green-600 w-4 h-4" />
+                  <div className="flex-1">
+                    <p className="font-bold text-sm text-gray-900">Cash on Delivery</p>
+                    <p className="text-xs text-gray-500 mt-0.5">Delivery in 4-5 days · ₹0 advance · Pay full on delivery</p>
+                  </div>
+                </label>
+                {paymentMethod === 'COD' && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-center">
+                    <p className="text-xs text-amber-800 font-bold">💡 Pay online & save ₹50 extra!</p>
+                    <p className="text-xs text-amber-700 mt-0.5">Switch to Prepaid for the lowest price + faster delivery.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Volume Discount — Tappable */}
+            <div className="bg-gradient-to-r from-green-600 to-green-700 rounded-2xl p-4 text-white">
+              <p className="text-xs font-bold mb-2">Add More, Save More!</p>
+              <div className="flex gap-2">
+                {[{n:2,d:'Additional 3% OFF'},{n:3,d:'Additional 5% OFF'},{n:4,d:'Additional 8% OFF'}].map((t,i) => (
+                  <button key={i} onClick={() => {
+                    const cart = getCart();
+                    if (cart.items.length > 0 && cart.items[0].product_slug) {
+                      cart.items[0].quantity = t.n;
+                      saveCart(cart);
+                      // Re-validate cart without reload
+                      axios.post(`${API}/api/cart/validate`, { items: cart.items, payment_method: paymentMethod, coupon_code: coupon?.code })
+                        .then(res => setCartData(res.data)).catch(() => {});
+                    }
+                  }} className="bg-white/15 hover:bg-white/25 rounded-lg px-2.5 py-2 text-center flex-1 transition-colors cursor-pointer">
+                    <p className="text-xs font-bold">{t.n} items</p>
+                    <p className="text-xs opacity-80">{t.d}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Referral Program */}
+            <div className="bg-gradient-to-r from-purple-50 to-violet-50 rounded-2xl p-4 border border-purple-100">
+              <div className="flex items-center gap-2 mb-2"><Gift size={16} className="text-purple-600" /><p className="text-xs font-bold text-purple-800">Earn Rewards After Purchase!</p></div>
+              <p className="text-xs text-gray-600 leading-relaxed">Refer friends after checkout and earn ₹50 for every successful referral. <span className="font-semibold text-purple-700">2,847 customers referred friends this month!</span></p>
+              <div className="grid grid-cols-2 gap-2 mt-3">
+                <div className="bg-white rounded-xl p-2.5 text-center border border-purple-100">
+                  <p className="text-base font-black text-purple-700">2,847</p>
+                  <p className="text-xs text-purple-500 font-medium">Referrals This Month</p>
+                </div>
+                <div className="bg-white rounded-xl p-2.5 text-center border border-purple-100">
+                  <p className="text-base font-black text-purple-700">₹1.42L</p>
+                  <p className="text-xs text-purple-500 font-medium">Rewards Earned</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Order Summary */}
+          <div className="lg:col-span-2">
+            <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm sticky top-4">
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-[0.15em] mb-3">Order Summary</p>
+              <div className="space-y-2 mb-3 max-h-36 overflow-y-auto">
+                {cartData.items?.map((item, i) => (
+                  <div key={i} className="flex justify-between items-center text-sm">
+                    <span className="text-gray-600 truncate mr-2 flex-1">{item.short_name || item.name}</span>
+                    <span className="text-xs text-gray-400 mr-2">x{item.quantity}</span>
+                    <span className="font-medium text-gray-900">₹{item.line_total}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="border-t border-gray-100 pt-3 space-y-1.5 text-sm">
+                <div className="flex justify-between text-gray-400"><span>Subtotal</span><span>₹{cartData.subtotal?.toLocaleString()}</span></div>
+                {cartData.discount > 0 && <div className="flex justify-between text-green-600"><span>Coupon Discount</span><span className="font-semibold">-₹{cartData.discount}</span></div>}
+                {cartData.volume_discount > 0 && <div className="flex justify-between text-purple-600"><span>Buy More Discount ({cartData.volume_discount_percent}% off)</span><span className="font-semibold">-₹{cartData.volume_discount}</span></div>}
+                <div className="flex justify-between text-gray-400">
+                  <span>Taxes &amp; Charges</span>
+                  {paymentMethod === 'COD'
+                    ? <span className="font-semibold text-amber-700">₹50</span>
+                    : <span className="text-green-600 font-medium">₹0</span>
+                  }
+                </div>
+                <div className="flex justify-between text-gray-400"><span>Shipping</span><span className="text-green-600 font-medium">FREE</span></div>
+                <div className="border-t border-gray-100 pt-2 flex justify-between font-bold text-gray-900 text-lg"><span>Total</span><span>₹{cartData.total?.toLocaleString()}</span></div>
+              </div>
+
+              {paymentMethod === 'COD' && (
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('prepaid')}
+                  className="mt-3 w-full text-xs font-bold text-green-800 bg-green-50 hover:bg-green-100 ring-1 ring-green-100 rounded-xl py-2.5 px-3 flex items-center justify-center gap-1.5 transition-colors"
+                  data-testid="switch-to-prepaid-hint"
+                >
+                  💡 Pay online and save ₹50 extra
+                </button>
+              )}
+
+              {cartData.savings > 0 && (
+                <div className="mt-3 bg-gradient-to-r from-green-500 to-teal-500 rounded-xl p-3 text-center text-white">
+                  <p className="text-xs font-bold">Total Savings: ₹{cartData.savings?.toLocaleString()}</p>
+                  <p className="text-xs opacity-80">Incl. product discount + volume discount + free shipping</p>
+                </div>
+              )}
+
+              <button onClick={placeOrder} disabled={submitting} className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-300 text-white font-bold py-3.5 rounded-2xl mt-4 text-sm shadow-xl shadow-green-200/40 transition-all" data-testid="place-order-btn">
+                {submitting ? 'Processing...' : paymentMethod === 'prepaid' ? `Pay ₹${cartData.total?.toLocaleString()}` : `Place COD Order`}
+              </button>
+
+              {/* Delivery Timeline */}
+              <div className="mt-3 text-center text-xs text-gray-500">
+                {paymentMethod === 'prepaid' ? (
+                  <p>Estimated delivery: <strong className="text-green-600">1-2 business days</strong></p>
+                ) : (
+                  <p>Estimated delivery: <strong>5-7 business days</strong></p>
+                )}
+              </div>
+
+              {/* Trust Icons */}
+              <div className="mt-3 flex items-center justify-center gap-4 text-xs text-gray-400 font-medium">
+                <span className="flex items-center gap-1"><Lock size={10} /> SSL Secure</span>
+                <span className="flex items-center gap-1"><Shield size={10} /> Verified Brand</span>
+                <span className="flex items-center gap-1"><Users size={10} /> 50K+ Served</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default CheckoutPage;

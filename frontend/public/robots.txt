@@ -1,0 +1,29 @@
+# Robots.txt for Celesta Glow
+# https://celestaglow.com
+
+User-agent: *
+Allow: /
+
+# Sitemap location
+Sitemap: https://celestaglow.com/sitemap.xml
+
+# Block admin pages from indexing
+Disallow: /admin
+Disallow: /admin/
+
+# Block API endpoints
+Disallow: /api/
+
+# Block order success pages (contain order IDs)
+Disallow: /order-success/
+
+# Allow all other pages
+Allow: /about
+Allow: /contact
+Allow: /blog
+Allow: /product/
+Allow: /consultation
+Allow: /terms
+Allow: /privacy
+Allow: /refund-policy
+Allow: /shipping-policy

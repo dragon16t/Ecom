@@ -1,0 +1,427 @@
+import React, { useEffect, useState, useMemo } from 'react';
+import BackButton from '../components/BackButton';
+import { Link, useParams } from 'react-router-dom';
+import axios from 'axios';
+import { Star, ArrowRight, BadgeCheck, Heart, Share2, ChevronLeft, Sparkles, Award, Clock, Check } from 'lucide-react';
+import { addToCart } from './Homepage';
+import AddToBagButton from '../components/AddToBagButton';
+import CircularCategoryStrip from '../components/CircularCategoryStrip';
+import { getProductBrand } from '../utils/brand';
+import { prefetchHandlers } from '../utils/routePrefetch';
+import { shareProduct } from '../utils/shareProduct';
+import { cachedGet } from '../utils/apiCache';
+
+const API = process.env.REACT_APP_BACKEND_URL;
+
+/**
+ * ConcernCategoryPage - shared component for /concern/:slug and /category/:slug.
+ *
+ * Concern mode:
+ *   1. Hero with concern accent
+ *   2. CIRCULAR CATEGORY STRIP — shows skincare categories that have products for this concern.
+ *   3. (When ?cat=slug query is set OR no categories) - product grid for the selected category / all
+ *
+ * Category mode:
+ *   1. Hero with category accent
+ *   2. Product grid (all products in this category)
+ */
+export default function ConcernCategoryPage({ mode = 'concern' }) {
+  const { slug } = useParams();
+  const [data, setData] = useState(null);
+  const [allCategories, setAllCategories] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [activeCat, setActiveCat] = useState('all');
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setActiveCat('all');
+    const calls = [
+      mode === 'concern'
+        ? cachedGet(`${API}/api/concerns/${slug}`)
+        : cachedGet(`${API}/api/categories/${slug}`),
+    ];
+    if (mode === 'concern') {
+      calls.push(cachedGet(`${API}/api/categories`));
+    }
+    Promise.all(calls)
+      .then(([main, cats]) => {
+        if (cancelled) return;
+        setData(main.data);
+        if (cats) setAllCategories(cats.data || []);
+      })
+      .catch(() => { if (!cancelled) setData(null); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [slug, mode]);
+
+  const products = data?.products || [];
+  const head = mode === 'concern' ? data?.concern : data?.category;
+
+  // For concern mode: categories that have at least 1 product for this concern (with metadata)
+  const concernCategoryItems = useMemo(() => {
+    if (mode !== 'concern' || !products.length) return [];
+    const slugs = new Set(products.map(p => p.category).filter(Boolean));
+    return allCategories
+      .filter(c => slugs.has(c.slug))
+      .map(c => ({
+        ...c,
+        accent_from: head?.accent_from || '#dcfce7',
+        accent_to: head?.accent_to || '#bbf7d0',
+        // Override route prefix not used; we'll pass routePrefix to strip
+      }));
+  }, [products, allCategories, mode, head]);
+
+  // Product grid filter based on activeCat (concern mode only)
+  const visibleProducts = useMemo(() => {
+    if (mode === 'concern' && activeCat !== 'all') {
+      return products.filter(p => p.category === activeCat);
+    }
+    return products;
+  }, [products, activeCat, mode]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-stone-50 via-white to-stone-50" data-testid={`${mode}-page-loading`}>
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 pt-3 sm:pt-4"><BackButton /></div>
+        {/* Skeleton hero */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
+          <div className="h-6 w-40 bg-stone-200 rounded-full animate-pulse mb-3" />
+          <div className="h-10 sm:h-14 w-2/3 bg-stone-200 rounded-lg animate-pulse mb-3" />
+          <div className="h-4 w-1/2 bg-stone-200 rounded animate-pulse" />
+        </div>
+        {/* Skeleton product grid */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 pb-12">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
+            {[...Array(8)].map((_, i) => (
+              <div key={i} className="bg-white rounded-2xl ring-1 ring-stone-100 overflow-hidden">
+                <div className="aspect-square bg-stone-100 animate-pulse" />
+                <div className="p-3 space-y-2">
+                  <div className="h-3 w-1/3 bg-stone-100 rounded animate-pulse" />
+                  <div className="h-4 w-4/5 bg-stone-100 rounded animate-pulse" />
+                  <div className="h-3 w-2/3 bg-stone-100 rounded animate-pulse" />
+                  <div className="h-8 w-full bg-stone-100 rounded-full animate-pulse mt-3" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+  if (!head) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center text-gray-500">
+        <div className="text-center">
+          <p>Page not found.</p>
+          <Link to="/" className="text-green-700 underline mt-2 inline-block">Back to home</Link>
+        </div>
+      </div>
+    );
+  }
+
+  const accentFrom = head.accent_from || '#dcfce7';
+  const accentText = head.accent_text || '#14532d';
+
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-stone-50 via-white to-stone-50" data-testid={`${mode}-page`}>
+      {/* SLIM HEADER — same compact look for both concern and category modes */}
+      <section className="bg-white border-b border-stone-100">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-5">
+          <Link
+            to={mode === 'concern' ? '/skincare' : '/cosmetics'}
+            className="inline-flex items-center gap-1 text-[11px] sm:text-xs font-semibold mb-2 hover:underline"
+            style={{ color: accentText }}
+          >
+            <ChevronLeft size={13} /> Back to {mode === 'concern' ? 'Skincare' : 'Cosmetics'}
+          </Link>
+          <h1 className="font-heading text-xl sm:text-3xl font-black leading-tight tracking-tight" style={{ color: accentText }}>
+            {head.icon && <span className="mr-2">{head.icon}</span>}
+            {mode === 'concern'
+              ? <>For {head.name.toLowerCase()}, choose a <span className="italic">product type</span></>
+              : <>{head.name}</>
+            }
+          </h1>
+          {mode === 'category' && head.tagline && (
+            <p className="text-xs sm:text-sm font-medium mt-1.5" style={{ color: accentText, opacity: 0.7 }}>
+              {head.tagline}
+            </p>
+          )}
+        </div>
+      </section>
+
+      {/* CONCERN MODE: CIRCULAR CATEGORY PICKER (inline filter — no redirect) */}
+      {mode === 'concern' && concernCategoryItems.length > 0 && (
+        <section className="bg-white border-b border-stone-100">
+          <div className="max-w-7xl mx-auto px-3 sm:px-6 py-7 sm:py-10">
+            <CircularCategoryStrip
+              items={concernCategoryItems}
+              title={<>Choose a <span className="italic" style={{ color: accentText }}>product type</span></>}
+              subtitle={`For ${head.name.toLowerCase()}`}
+              accent={accentText}
+              testIdPrefix="concern-cat"
+              onItemClick={(slug) => setActiveCat(prev => prev === slug ? 'all' : slug)}
+              activeSlug={activeCat}
+            />
+            {activeCat !== 'all' && (
+              <div className="flex items-center justify-center mt-5">
+                <button
+                  type="button"
+                  onClick={() => setActiveCat('all')}
+                  className="group inline-flex items-center gap-2 pl-4 pr-3 py-2 rounded-full text-xs sm:text-[13px] font-bold bg-white shadow-sm shadow-emerald-900/5 hover:shadow-md hover:shadow-emerald-900/10 ring-1 ring-stone-200 hover:ring-emerald-200 hover:bg-emerald-50/50 transition-all"
+                  style={{ color: accentText }}
+                  data-testid="concern-cat-clear"
+                >
+                  <span className="inline-flex items-center justify-center w-4 h-4 rounded-full" style={{ backgroundColor: accentText, color: '#fff' }}>
+                    <svg width="9" height="9" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M2 2L10 10M10 2L2 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                    </svg>
+                  </span>
+                  <span>Showing <span className="capitalize">{(concernCategoryItems.find(i => i.slug === activeCat) || {}).name || activeCat}</span></span>
+                  <span className="text-stone-400 font-medium hidden sm:inline">·</span>
+                  <span className="text-stone-500 font-medium hidden sm:inline">tap to clear</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* PRODUCT GRID */}
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 py-7 sm:py-12">
+        <div className="flex items-end justify-between mb-4 sm:mb-5 px-1">
+          <h2 className="font-heading text-base sm:text-2xl font-black text-gray-900">
+            {visibleProducts.length} product{visibleProducts.length === 1 ? '' : 's'}
+            {mode === 'concern' ? ' for ' : ' in '}
+            <span style={{ color: accentText }}>{head.name}</span>
+          </h2>
+          <Link to="/shop" className="text-[11px] sm:text-xs font-bold hover:underline flex items-center gap-1" style={{ color: accentText }}>
+            View entire shop <ArrowRight size={12} />
+          </Link>
+        </div>
+
+        {visibleProducts.length === 0 ? (
+          <div className="bg-white border rounded-2xl p-10 text-center text-sm text-gray-500" style={{ borderColor: accentFrom }}>
+            No products yet for this {mode === 'concern' ? 'concern' : 'category'}. Check back soon!
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-5">
+            {visibleProducts.map(product => <ProductCard key={product.slug} product={product} />)}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+/**
+ * Reusable Product Card — clean, minimal layout (Nykaa-style).
+ *  - Top ribbon: TBL countdown / Bestseller / New Launch / etc.
+ *  - White image area with discount chip top-left + heart top-right.
+ *  - Brand label (uppercase eyebrow) + product name + ingredients.
+ *  - MRP struck + sale price + green % off.
+ *  - Green "Get it for ₹X with WELCOME50" pill.
+ *  - "Free Skin Analysis included" small accent line.
+ *  - Star rating + review count.
+ *  - Pill "ADD TO BAG" button in brand green at the bottom.
+ */
+export function ProductCard({ product, compact = false }) {
+  return (
+    <div
+      className="group relative bg-white rounded-2xl ring-1 ring-gray-200/70 hover:ring-green-300 overflow-hidden hover:shadow-[0_18px_50px_-15px_rgba(34,197,94,0.22)] hover:-translate-y-0.5 transition-all duration-500 flex flex-col h-full"
+      data-testid={`product-card-${product.slug}`}
+    >
+      {/* IMAGE — premium gallery card with gradient, dot pattern, floating chips, grounding shadow, hover halo */}
+      <Link to={`/product/${product.slug}`} {...prefetchHandlers(`/product/${product.slug}`)} className="block">
+        <div className="relative aspect-square overflow-hidden bg-white rounded-t-2xl">
+          {/* Very subtle dot pattern (barely visible on white) */}
+          <div
+            className="absolute inset-0 opacity-[0.035] pointer-events-none"
+            style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, #0f766e 1px, transparent 0)', backgroundSize: '16px 16px' }}
+          />
+
+          {/* Hover green halo (subtle) */}
+          <div
+            className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"
+            style={{ background: 'radial-gradient(circle at 50% 55%, rgba(34,197,94,0.10) 0%, transparent 62%)' }}
+          />
+
+          {/* Single badge — only the primary badge chosen in admin (no discount %, no extras) */}
+          <div className="absolute top-3 left-3 z-20 flex items-start">
+            {!product.is_to_be_launched && product.badge && (
+              product.badge === 'Bestseller' ? (
+                <span className="bg-amber-100/95 text-amber-800 text-[9px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 tracking-[0.12em] uppercase shadow-sm backdrop-blur-sm border border-amber-200/70" data-testid={`badge-${product.slug}`}>
+                  <Award size={9} /> Bestseller
+                </span>
+              ) : product.badge === 'New Launch' ? (
+                <span className="bg-green-100/95 text-green-800 text-[9px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 tracking-[0.12em] uppercase shadow-sm backdrop-blur-sm border border-green-200/70" data-testid={`badge-${product.slug}`}>
+                  <Sparkles size={9} /> New
+                </span>
+              ) : (
+                <span className="bg-white/95 text-stone-700 text-[9px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 tracking-[0.12em] uppercase shadow-sm backdrop-blur-sm border border-stone-200" data-testid={`badge-${product.slug}`}>
+                  <BadgeCheck size={9} /> {product.badge}
+                </span>
+              )
+            )}
+          </div>
+
+          {/* Share — floating top-right (replaces previous wishlist heart; bottom wishlist remains) */}
+          <button
+            type="button"
+            aria-label="Share product"
+            onClick={async (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const res = await shareProduct({ slug: product.slug, name: product.short_name || product.name });
+              if (res && res.copied) {
+                try {
+                  // Tiny toast-free visual cue — flash the button briefly
+                  e.currentTarget.classList.add('ring-2', 'ring-green-300');
+                  setTimeout(() => e.currentTarget?.classList.remove('ring-2', 'ring-green-300'), 900);
+                } catch {}
+              }
+            }}
+            className="absolute top-3 right-3 z-20 w-8 h-8 rounded-full bg-white/90 backdrop-blur-sm ring-1 ring-stone-200/80 flex items-center justify-center text-stone-500 hover:text-green-600 hover:ring-green-200 hover:bg-white hover:scale-110 transition-all shadow-sm"
+            data-testid={`share-top-${product.slug}`}
+          >
+            <Share2 size={14} />
+          </button>
+
+          {/* TBL pill — short, centered */}
+          {product.is_to_be_launched && (
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 bg-gradient-to-r from-green-700 to-green-800 text-white text-[10px] font-black px-3 py-1 rounded-full flex items-center gap-1 shadow-lg shadow-green-900/25 tracking-[0.18em] uppercase whitespace-nowrap">
+              <Clock size={9} /> TBL
+            </div>
+          )}
+
+          {/* Product image — always fills the card image area edge-to-edge */}
+          <div className="absolute inset-0 flex items-center justify-center">
+            {product.images?.[0] ? (
+              <>
+                <img
+                  src={product.images[0]}
+                  alt={product.short_name}
+                  loading="lazy"
+                  className="relative z-[2] w-full h-full object-cover transition-all duration-700 ease-out group-hover:scale-[1.06]"
+                />
+                {/* Secondary image crossfade on hover */}
+                {product.images?.[1] && (
+                  <img
+                    src={product.images[1]}
+                    alt=""
+                    loading="lazy"
+                    className="absolute inset-0 w-full h-full object-cover opacity-0 group-hover:opacity-100 transition-opacity duration-500 z-[3]"
+                  />
+                )}
+              </>
+            ) : (
+              <div className="w-20 h-20 rounded-full bg-green-50 flex items-center justify-center ring-1 ring-green-100">
+                <Sparkles className="w-8 h-8 text-green-300" />
+              </div>
+            )}
+          </div>
+
+          {/* Corner accent glow */}
+          <div className="absolute bottom-0 right-0 w-24 h-24 opacity-[0.08] pointer-events-none" style={{ background: 'radial-gradient(circle at 100% 100%, #0f766e 0%, transparent 70%)' }} />
+        </div>
+      </Link>
+
+      {/* CONTENT — same structure for live and TBL products. Strict min-heights
+           keep every row aligned across cards regardless of text length. */}
+      <div className="px-3 sm:px-4 pb-3 sm:pb-4 pt-1 flex flex-col flex-1 border-t border-stone-100">
+        {/* BRAND EYEBROW (per-niche, with product.brand override) */}
+        <p className="text-[9px] sm:text-[10px] font-black tracking-[0.22em] uppercase text-green-700 mb-0.5 mt-2 leading-none h-3">{getProductBrand(product)}</p>
+
+        {/* TITLE — up to 2 lines, height shrinks to fit single-line titles so the
+            gap to ingredients stays tight (grid still aligns rows to the tallest). */}
+        <Link to={`/product/${product.slug}`}>
+          <h3 className="font-semibold text-stone-900 text-[13px] sm:text-[14px] leading-snug mb-0.5 group-hover:text-green-700 line-clamp-2 transition-colors min-h-[17px] sm:min-h-[20px]" data-testid={`product-name-${product.slug}`}>
+            {product.short_name}
+          </h3>
+        </Link>
+
+        {/* INGREDIENTS / SIZE — hidden for cosmetics (ingredients aren't the hero);
+            shown for skincare + anti-aging where actives matter. */}
+        {product.niche === 'cosmetics' ? (
+          <p className="text-[10px] sm:text-[11px] text-stone-500 line-clamp-1 mb-1 h-[14px] sm:h-[16px]">
+            {product.size || product.tagline || ''}
+          </p>
+        ) : (
+          <p className="text-[10px] sm:text-[11px] text-stone-500 line-clamp-1 mb-1 h-[14px] sm:h-[16px]">
+            {product.key_ingredients || product.size || 'Clinically formulated'}
+          </p>
+        )}
+
+        {/* PRICE ROW — fixed height so cards with no discount still align */}
+        <div className="flex items-baseline flex-nowrap gap-x-1.5 sm:gap-x-2 mb-2 h-[22px] sm:h-[26px]">
+          <span className="text-base sm:text-lg font-black text-stone-900 leading-none">₹{product.prepaid_price}</span>
+          <span className="text-[11px] sm:text-xs text-stone-400 line-through">₹{product.mrp}</span>
+        </div>
+
+        {/* COUPON PILL — fixed height */}
+        <div className="inline-flex items-center gap-1.5 self-start bg-green-50 border border-green-100 rounded-full px-2 mb-1.5 h-[22px] max-w-full">
+          <span className="w-3.5 h-3.5 bg-green-600 rounded-full flex items-center justify-center flex-shrink-0">
+            <Check size={8} className="text-white" strokeWidth={3} />
+          </span>
+          <p className="text-[10px] sm:text-[11px] text-green-800 font-bold leading-none truncate">
+            Get it for ₹{product.prepaid_price - 50}
+          </p>
+        </div>
+
+        {/* COMPLIMENTARY GIFT LINE — fixed height */}
+        <p className="text-[10px] sm:text-[11px] text-emerald-700 font-bold mb-2 flex items-center gap-1 h-[14px] sm:h-[16px] leading-none">
+          <Sparkles size={10} /> Free skin analysis included
+        </p>
+
+        {/* RATING — fixed height */}
+        <div className="flex items-center gap-1 mb-2.5 h-[14px] leading-none">
+          <div className="flex">
+            {[1,2,3,4,5].map(i => (
+              <Star key={i} size={11} className={i <= Math.floor(product.rating || 4.8) ? 'fill-amber-400 text-amber-400' : 'text-stone-200'} />
+            ))}
+          </div>
+          <span className="text-[10px] sm:text-[11px] text-stone-500">({product.reviews_count?.toLocaleString() || '0'})</span>
+        </div>
+
+        {/* CTA ROW — TBL products are NEVER orderable (purely informational pill).
+            Only when admin sets the product LIVE (is_to_be_launched=false) can users add to cart. */}
+        {product.is_to_be_launched ? (
+          <div className="mt-auto flex items-center gap-2">
+            <button
+              aria-label="Wishlist"
+              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white ring-1 ring-stone-200 flex items-center justify-center text-stone-400 hover:text-rose-500 hover:ring-rose-200 transition-all flex-shrink-0"
+              data-testid={`wishlist-cta-${product.slug}`}
+            >
+              <Heart size={15} />
+            </button>
+            <Link
+              to={`/product/${product.slug}`}
+              onClick={(e) => e.stopPropagation()}
+              className="flex-1 relative overflow-hidden bg-gradient-to-r from-amber-500 via-amber-600 to-orange-500 hover:from-amber-600 hover:via-amber-700 hover:to-orange-600 text-white text-[12px] sm:text-sm font-black py-2.5 sm:py-3 rounded-full flex items-center justify-center gap-1.5 transition-all shadow-md shadow-amber-700/25 hover:shadow-lg hover:-translate-y-0.5 ring-1 ring-amber-400/40"
+              data-testid={`tbl-cta-${product.slug}`}
+              aria-label="View TBL product details"
+            >
+              <span className="absolute inset-0 bg-[radial-gradient(circle_at_30%_50%,rgba(255,255,255,0.35)_0%,transparent_60%)] pointer-events-none" />
+              <span className="relative flex items-center justify-center gap-1.5">
+                <Clock size={12} className="animate-pulse" />
+                <span className="tracking-[0.22em] text-sm">TBL</span>
+              </span>
+            </Link>
+          </div>
+        ) : (
+          <div className="mt-auto flex items-center gap-2">
+            <button
+              aria-label="Wishlist"
+              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white ring-1 ring-stone-200 flex items-center justify-center text-stone-400 hover:text-rose-500 hover:ring-rose-200 transition-all flex-shrink-0"
+              data-testid={`wishlist-cta-${product.slug}`}
+            >
+              <Heart size={15} />
+            </button>
+            <AddToBagButton slug={product.slug} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

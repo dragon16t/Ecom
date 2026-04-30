@@ -1,0 +1,275 @@
+@import '@fontsource/outfit/400.css';
+@import '@fontsource/outfit/500.css';
+@import '@fontsource/outfit/600.css';
+@import '@fontsource/outfit/700.css';
+@import '@fontsource/dm-sans/400.css';
+@import '@fontsource/dm-sans/500.css';
+@import '@fontsource/dm-sans/600.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Celesta Glow Brand Colors */
+    --cg-green: #22C55E;
+    --cg-green-light: #DCFCE7;
+    --cg-dark: #1E293B;
+    --cg-gray-50: #F8FAFC;
+    --cg-gray-100: #F1F5F9;
+    --cg-gray-200: #E2E8F0;
+    --cg-gray-400: #94A3B8;
+    --cg-gray-600: #475569;
+    --cg-gray-900: #0F172A;
+    --cg-gold: #FACC15;
+    
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --primary: 142 71% 45%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 215 25% 27%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 142 71% 45%;
+    --radius: 0.75rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-white font-body antialiased;
+    font-size: 16px;
+    color: #0F172A;
+    -webkit-text-size-adjust: 100%;
+  }
+  :where(h1, h2, h3, h4, h5, h6) {
+    @apply font-heading font-semibold tracking-tight;
+  }
+}
+
+/* Responsive App Container - mobile-first, scales to tablet/desktop */
+.app-container {
+  @apply w-full mx-auto min-h-screen bg-white relative overflow-x-hidden;
+}
+
+/* On larger screens we let inner sections (max-w-7xl etc.) expand naturally.
+   No outer width cap so PC and tablet get full layout. */
+
+/* Celesta Glow Brand Buttons */
+.btn-cg-primary {
+  @apply inline-flex items-center justify-center gap-2 font-semibold transition-all duration-200;
+  background-color: var(--cg-green);
+  color: white;
+  border-radius: 9999px;
+  padding: 16px 32px;
+}
+
+.btn-cg-primary:hover {
+  background-color: #16A34A;
+  transform: translateY(-1px);
+}
+
+.btn-cg-primary:active {
+  transform: translateY(0);
+}
+
+.btn-cg-dark {
+  @apply inline-flex items-center justify-center gap-2 font-semibold transition-all duration-200;
+  background-color: var(--cg-dark);
+  color: white;
+  border-radius: 9999px;
+  padding: 16px 32px;
+}
+
+.btn-cg-dark:hover {
+  background-color: #334155;
+}
+
+/* Celesta Glow Badge */
+.badge-cg {
+  @apply inline-flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-full;
+  background-color: var(--cg-green);
+  color: white;
+}
+
+/* Celesta Glow Card */
+.card-cg {
+  @apply bg-white rounded-2xl border border-gray-100 p-6;
+}
+
+/* Celesta Glow Check Item */
+.check-item {
+  @apply flex items-start gap-3;
+}
+
+.check-icon {
+  @apply w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0;
+  background-color: var(--cg-green);
+}
+
+.check-icon svg {
+  color: white;
+  width: 14px;
+  height: 14px;
+}
+
+/* Star Rating */
+.star-gold {
+  color: var(--cg-gold);
+  fill: var(--cg-gold);
+}
+
+/* Announcement Bar */
+.announcement-bar {
+  background-color: var(--cg-dark);
+  color: white;
+  padding: 12px 16px;
+  text-align: center;
+  font-size: 13px;
+}
+
+/* Header */
+.header-cg {
+  @apply sticky top-0 z-40 bg-white border-b border-gray-100;
+  padding: 16px 20px;
+}
+
+/* Section Headers */
+.section-label {
+  @apply text-sm font-semibold tracking-wider uppercase mb-3;
+  color: var(--cg-green);
+}
+
+/* Quote Card */
+.quote-card {
+  @apply p-6 rounded-2xl bg-gray-50 border-l-4;
+  border-left-color: var(--cg-green);
+}
+
+/* Input Styles */
+.input-cg {
+  @apply w-full h-14 px-4 rounded-xl border border-gray-200 text-base outline-none transition-all;
+  background: var(--cg-gray-50);
+}
+
+.input-cg:focus {
+  border-color: var(--cg-green);
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.15);
+}
+
+/* Ingredient Card */
+.ingredient-card {
+  @apply p-5 rounded-2xl border border-gray-100 bg-white;
+}
+
+.ingredient-number {
+  @apply w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold mb-3;
+  background-color: var(--cg-green-light);
+  color: var(--cg-green);
+}
+
+/* Testimonial Card */
+.testimonial-card {
+  @apply p-5 rounded-2xl border border-gray-100 bg-white;
+}
+
+/* FAQ Accordion */
+.faq-item {
+  @apply border border-gray-100 rounded-xl overflow-hidden;
+}
+
+.faq-header {
+  @apply w-full flex items-center justify-between p-5 text-left bg-white font-medium;
+}
+
+.faq-content {
+  @apply px-5 pb-5 text-gray-600 text-sm leading-relaxed;
+}
+
+/* Hide scrollbar */
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Form inputs - prevent iOS zoom */
+input, select, textarea {
+  font-size: 16px !important;
+}
+
+/* Pulse animation for urgency */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.animate-pulse {
+  animation: pulse 1s ease-in-out infinite;
+}
+
+/* Bounce-in animation for popups */
+@keyframes bounce-in {
+  0% { 
+    opacity: 0; 
+    transform: scale(0.3) translateY(50px); 
+  }
+  50% { 
+    transform: scale(1.05) translateY(-10px); 
+  }
+  70% { 
+    transform: scale(0.95) translateY(5px); 
+  }
+  100% { 
+    opacity: 1; 
+    transform: scale(1) translateY(0); 
+  }
+}
+.animate-bounce-in {
+  animation: bounce-in 0.5s ease-out forwards;
+}
+
+/* Shimmer animation for skeleton placeholders */
+@keyframes shimmer {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* ====== Reviews horizontal auto-scroll marquee ====== */
+@keyframes reviews-scroll {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.reviews-marquee {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 6%, #000 94%, transparent 100%);
+          mask-image: linear-gradient(to right, transparent 0, #000 6%, #000 94%, transparent 100%);
+  width: 100%;
+}
+.reviews-track {
+  width: max-content;
+  animation: reviews-scroll 60s linear infinite;
+}
+.reviews-marquee:hover .reviews-track,
+.reviews-marquee:focus-within .reviews-track {
+  animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+  .reviews-track { animation: none; }
+}
+
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}

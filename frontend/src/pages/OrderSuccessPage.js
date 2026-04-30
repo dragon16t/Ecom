@@ -1,0 +1,359 @@
+import React, { useEffect, useState } from 'react';
+import BackButton from '../components/BackButton';
+import { useParams, useNavigate } from 'react-router-dom';
+import axios from 'axios';
+import { Check, Package, Truck, Phone, Gift, Copy, Share2, MessageCircle } from 'lucide-react';
+import { trackPurchase } from '../utils/metaPixel';
+
+const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+
+function OrderSuccessPage() {
+  const { orderId } = useParams();
+  const navigate = useNavigate();
+  const [order, setOrder] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [pixelFired, setPixelFired] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    const fetchOrderAndTrack = async () => {
+      try {
+        // Fetch order details from backend
+        const response = await axios.get(`${API}/orders/${orderId}`);
+        const orderData = response.data;
+        setOrder(orderData);
+
+        // Fire Purchase event ONLY ONCE
+        if (!pixelFired && orderData) {
+          // Track Purchase via module
+          trackPurchase(orderData.order_id, orderData.amount);
+
+          // Direct fbq call for Purchase - CRITICAL for Meta tracking
+          if (typeof window !== 'undefined' && window.fbq) {
+            // PageView for order success (consistent with other pages)
+            window.fbq('track', 'PageView', { page_name: 'order_success', content_category: 'Order' });
+
+            window.fbq('track', 'Purchase', {
+              value: orderData.amount,
+              currency: 'INR',
+              content_name: order?.items?.map(i => i.name || i.slug).join(', ') || 'Celesta Glow Products',
+              content_category: 'Skincare',
+              content_ids: ['celestaglow_serum_001'],
+              content_type: 'product',
+              num_items: 1,
+              order_id: orderData.order_id
+            });
+            console.log('[Meta Pixel] Purchase fired on order success page - order_id:', orderData.order_id, 'value:', orderData.amount);
+          }
+
+          // Google Ads conversion tracking
+          if (typeof window !== 'undefined' && window.gtag) {
+            window.gtag('event', 'conversion', {
+              send_to: 'AW-16928253164/purchase',
+              value: orderData.amount,
+              currency: 'INR',
+              transaction_id: orderData.order_id
+            });
+            console.log('[Google Ads] Conversion fired - order_id:', orderData.order_id);
+          }
+
+          // Track order_complete to backend analytics
+          try {
+            const visitorId = sessionStorage.getItem('visitor_id') || localStorage.getItem('visitor_id') || 'unknown';
+            const sessionId = sessionStorage.getItem('session_id') || 'unknown';
+            await axios.post(`${API}/track-action`, {
+              visitor_id: visitorId,
+              session_id: sessionId,
+              action: 'order_complete',
+              details: {
+                order_id: orderData.order_id,
+                amount: orderData.amount,
+                payment_method: orderData.payment_method
+              }
+            });
+            console.log('[Backend Analytics] order_complete tracked for:', orderData.order_id);
+          } catch (trackErr) {
+            console.error('[Backend Analytics] Failed to track order_complete:', trackErr);
+          }
+
+          setPixelFired(true);
+        }
+      } catch (error) {
+        console.error('Error fetching order:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (orderId) {
+      fetchOrderAndTrack();
+    }
+  }, [orderId, pixelFired]);
+
+  const referralLink = order?.referral_link || `https://celestaglow.com?ref=${order?.referral_code || ''}`;
+
+  const copyReferralLink = () => {
+    navigator.clipboard.writeText(referralLink);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const shareOnWhatsApp = () => {
+    const message = encodeURIComponent(
+      `Hey! I just ordered from Celesta Glow and got amazing results! \n\nUse my link to get ₹50 OFF on India's #1 Anti-Aging Range:\n${referralLink}\n\nTrust me, your skin will thank you!`
+    );
+    window.open(`https://wa.me/?text=${message}`, '_blank');
+  };
+
+  const contactWhatsApp = () => {
+    const message = encodeURIComponent(`Hi! I just placed order ${order?.order_id}. Need help with my order.`);
+    window.open(`https://wa.me/919446125745?text=${message}`, '_blank');
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 pt-3 sm:pt-4"><BackButton /></div>
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-green-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading order details...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!order) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-5">
+        <div className="text-center">
+          <p className="text-gray-600 mb-4">Order not found</p>
+          <button
+            onClick={() => navigate('/')}
+            className="bg-green-500 text-white px-6 py-2 rounded-full"
+          >
+            Go to Homepage
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 px-5 py-6">
+      <div className="max-w-2xl mx-auto pb-2"><BackButton to="/" label="Home" /></div>
+      {/* Success Header */}
+      <div className="text-center mb-6 mt-2">
+        <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <Check size={40} className="text-green-500" />
+        </div>
+        <h1 className="text-2xl font-bold text-gray-900 mb-1" data-testid="order-success-title">
+          Order Confirmed!
+        </h1>
+        <p className="text-gray-500">Thank you for choosing Celesta Glow</p>
+      </div>
+
+      {/* Order ID Card */}
+      <div className="bg-white rounded-2xl shadow-sm p-5 text-center mb-5" data-testid="order-id-card">
+        <p className="text-gray-500 text-sm mb-1">Order ID</p>
+        <p className="text-2xl font-bold text-green-500 tracking-wider">{order.order_id}</p>
+      </div>
+
+      {/* 🎁 Referral Section - Prominent */}
+      {order.referral_code && (
+        <div className="bg-gradient-to-r from-green-500 to-green-600 rounded-2xl shadow-lg p-5 mb-5 text-white">
+          <div className="flex items-center gap-2 mb-3">
+            <Gift size={24} />
+            <h3 className="font-bold text-lg">Earn ₹100 - Share & Earn!</h3>
+          </div>
+          <p className="text-sm opacity-95 mb-4">
+            Give your friends ₹50 off and get ₹100 cashback after their delivery!
+          </p>
+          
+          {/* Referral Link Box */}
+          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 mb-4">
+            <p className="text-xs opacity-80 mb-1">Your Referral Link:</p>
+            <p className="text-sm font-mono break-all">{referralLink}</p>
+          </div>
+          
+          {/* Action Buttons */}
+          <div className="flex gap-2">
+            <button
+              onClick={copyReferralLink}
+              className="flex-1 flex items-center justify-center gap-2 bg-white text-green-600 font-semibold py-3 rounded-xl hover:bg-green-50 transition-colors"
+              data-testid="copy-referral-btn"
+            >
+              {copied ? <Check size={18} /> : <Copy size={18} />}
+              {copied ? 'Copied!' : 'Copy Link'}
+            </button>
+            <button
+              onClick={shareOnWhatsApp}
+              className="flex-1 flex items-center justify-center gap-2 bg-[#25D366] text-white font-semibold py-3 rounded-xl hover:bg-[#20BD5A] transition-colors"
+              data-testid="whatsapp-share-btn"
+            >
+              <MessageCircle size={18} />
+              Share on WhatsApp
+            </button>
+          </div>
+          
+          <p className="text-xs opacity-80 mt-3 text-center">
+            Referral link also sent to your email: {order.email || 'Not provided'}
+          </p>
+        </div>
+      )}
+
+      {/* Order Timeline */}
+      <div className="bg-white rounded-2xl shadow-sm p-5 mb-5">
+        <h3 className="font-semibold text-gray-900 mb-4">Order Status</h3>
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+              <Check size={20} className="text-green-600" />
+            </div>
+            <div>
+              <p className="font-medium text-gray-900">Order Placed</p>
+              <p className="text-xs text-gray-500">Your order has been confirmed</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center">
+              <Package size={20} className="text-gray-400" />
+            </div>
+            <div>
+              <p className="font-medium text-gray-400">Packing</p>
+              <p className="text-xs text-gray-400">We're preparing your order</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center">
+              <Truck size={20} className="text-gray-400" />
+            </div>
+            <div>
+              <p className="font-medium text-gray-400">Shipping</p>
+              <p className="text-xs text-gray-400">Expected: {order.delivery_timeline || '2-3 business days'}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Order Details */}
+      <div className="bg-white rounded-2xl shadow-sm p-5 mb-5">
+        <h3 className="font-semibold text-gray-900 mb-4">Order Details</h3>
+
+        {/* Per-item rows so admin/customer see exactly what was ordered + quantity */}
+        {Array.isArray(order.items) && order.items.length > 0 ? (
+          <div className="mb-3 border-b border-gray-100 pb-3 space-y-2" data-testid="order-items-list">
+            {order.items.map((it, idx) => (
+              <div key={idx} className="flex justify-between text-sm" data-testid={`order-item-${idx}`}>
+                <span className="text-gray-700 flex-1 pr-2">
+                  {it.name || it.short_name || it.slug || 'Product'}
+                  <span className="text-gray-400"> × {it.quantity || 1}</span>
+                </span>
+                {typeof it.price !== 'undefined' && (
+                  <span className="text-gray-900 font-medium">₹{(it.price || 0) * (it.quantity || 1)}</span>
+                )}
+              </div>
+            ))}
+            {order.combo_id && (
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-700">Combo</span>
+                <span className="text-gray-900 font-medium">{order.combo_id}</span>
+              </div>
+            )}
+          </div>
+        ) : order.combo_id ? (
+          <div className="mb-3 border-b border-gray-100 pb-3 flex justify-between text-sm">
+            <span className="text-gray-700">{order.combo_id} <span className="text-gray-400">× 1</span></span>
+            <span className="text-gray-900 font-medium">₹{order.amount}</span>
+          </div>
+        ) : null}
+
+        <div className="space-y-3 text-sm">
+          {(!order.items || order.items.length === 0) && !order.combo_id && (
+            <>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Product</span>
+                <span className="text-gray-900 font-medium">Celesta Glow Products</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Quantity</span>
+                <span className="text-gray-900">1</span>
+              </div>
+            </>
+          )}
+          {Array.isArray(order.items) && order.items.length > 0 && (
+            <div className="flex justify-between">
+              <span className="text-gray-500">Total Items</span>
+              <span className="text-gray-900 font-medium" data-testid="order-total-qty">
+                {order.items.reduce((sum, it) => sum + (it.quantity || 1), 0)}
+              </span>
+            </div>
+          )}
+          
+          {/* Show full amount due at delivery for COD, paid amount for prepaid */}
+          {order.payment_method?.includes('COD') ? (
+            <div className="flex justify-between bg-yellow-50 -mx-5 px-5 py-2" data-testid="cod-amount-due">
+              <span className="text-yellow-700 font-medium">Pay at Delivery</span>
+              <span className="text-yellow-700 font-bold">₹{order.amount}</span>
+            </div>
+          ) : (
+            <div className="flex justify-between">
+              <span className="text-gray-500">Amount Paid</span>
+              <span className="text-green-600 font-bold">₹{order.amount}</span>
+            </div>
+          )}
+          
+          <div className="flex justify-between">
+            <span className="text-gray-500">Payment Method</span>
+            <span className="text-gray-900">{order.payment_method}</span>
+          </div>
+          {order.referral_code_used && (
+            <div className="flex justify-between">
+              <span className="text-gray-500">Referral Used</span>
+              <span className="text-purple-600 font-medium">{order.referral_code_used}</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Delivery Address */}
+      <div className="bg-white rounded-2xl shadow-sm p-5 mb-5">
+        <h3 className="font-semibold text-gray-900 mb-3">Delivery Address</h3>
+        <p className="text-gray-600 text-sm">
+          {order.name}<br />
+          <span className="flex items-center gap-1 mt-1">
+            <Phone size={14} />
+            +91 {order.phone}
+          </span>
+          {order.house_number}, {order.area}<br />
+          {order.state} - {order.pincode}
+        </p>
+      </div>
+
+      {/* WhatsApp Support */}
+      <button
+        onClick={contactWhatsApp}
+        className="w-full flex items-center justify-center gap-2 bg-[#25D366] text-white font-semibold py-4 rounded-full mb-4"
+        data-testid="whatsapp-support-btn"
+      >
+        <MessageCircle size={20} />
+        Contact Us on WhatsApp
+      </button>
+
+      {/* Continue Shopping Button */}
+      <button
+        onClick={() => navigate('/')}
+        className="w-full bg-gray-900 text-white font-semibold py-4 rounded-full"
+        data-testid="continue-shopping-button"
+      >
+        Continue Shopping
+      </button>
+
+      {/* Support Info */}
+      <p className="text-center text-xs text-gray-500 mt-4">
+        Need help? WhatsApp: +91 9446125745
+      </p>
+    </div>
+  );
+}
+
+export default OrderSuccessPage;
