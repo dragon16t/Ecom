@@ -37,6 +37,7 @@ function AdminEmployees() {
   const [newEmployee, setNewEmployee] = useState({
     username: '',
     name: '',
+    email: '',
     password: '',
     permissions: {
       orders: false,
@@ -85,6 +86,7 @@ function AdminEmployees() {
       if (res.data.success) {
         setCreatedCredentials({
           username: res.data.username,
+          email: res.data.email,
           password: res.data.password,
           login_url: res.data.login_url,
           login_message: res.data.login_message,
@@ -93,6 +95,7 @@ function AdminEmployees() {
         setNewEmployee({
           username: '',
           name: '',
+          email: '',
           password: '',
           permissions: {
             orders: false,
@@ -312,16 +315,30 @@ function AdminEmployees() {
                   placeholder="johndoe"
                 />
               </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email <span className="text-gray-400 font-normal text-xs">(optional — they can sign in with username OR email)</span></label>
+                <input
+                  type="email"
+                  autoComplete="off"
+                  value={newEmployee.email}
+                  onChange={(e) => setNewEmployee({...newEmployee, email: e.target.value.toLowerCase().trim()})}
+                  className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  placeholder="employee@yourcompany.com"
+                  data-testid="new-employee-email"
+                />
+              </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Password (optional)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Password <span className="text-gray-400 font-normal text-xs">(optional — auto-generated if blank)</span></label>
                 <input
                   type="text"
                   value={newEmployee.password}
                   onChange={(e) => setNewEmployee({...newEmployee, password: e.target.value})}
-                  className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent font-mono"
                   placeholder="Leave blank to auto-generate"
                 />
+                <p className="text-[11px] text-gray-400 mt-1">Tip: leading/trailing spaces are auto-trimmed so copy-paste always works.</p>
               </div>
               
               <div>

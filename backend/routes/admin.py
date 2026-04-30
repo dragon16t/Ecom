@@ -101,7 +101,15 @@ async def verify_admin(x_admin_token: str = Header(None)):
     # First check if it's a valid session token
     if x_admin_token in admin_sessions:
         session = admin_sessions[x_admin_token]
-        expires_at = datetime.fromisoformat(session["expires_at"].replace("Z", "+00:00"))
+        expires_at = session["expires_at"]
+        # Handle both string (new sessions) and datetime (hydrated from MongoDB)
+        if isinstance(expires_at, str):
+            expires_at = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+        elif isinstance(expires_at, datetime):
+            # Ensure timezone-aware
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+        
         if datetime.now(timezone.utc) < expires_at:
             return True
         else:

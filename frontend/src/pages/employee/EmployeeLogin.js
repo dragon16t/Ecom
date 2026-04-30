@@ -28,8 +28,10 @@ function EmployeeLogin() {
 
     try {
       const res = await axios.post(`${API}/api/employee/login`, {
-        username: username.toLowerCase().trim(),
-        password
+        // Backend accepts username OR email under the `username` field; trim + lowercase
+        // both so trailing spaces or mixed case from copy-paste never cause a 401.
+        username: (username || '').toLowerCase().trim(),
+        password: (password || '').trim(),
       });
 
       if (res.data.success) {
@@ -42,7 +44,7 @@ function EmployeeLogin() {
         navigate('/employee/dashboard');
       }
     } catch (err) {
-      setError(err.response?.data?.detail || 'Invalid username or password');
+      setError(err.response?.data?.detail || 'Invalid username/email or password');
     } finally {
       setLoading(false);
     }
@@ -71,7 +73,7 @@ function EmployeeLogin() {
             )}
 
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">Username</label>
+              <label className="block text-sm font-medium text-gray-300 mb-1">Username or Email</label>
               <div className="relative">
                 <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                 <input
@@ -79,9 +81,10 @@ function EmployeeLogin() {
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   className="w-full pl-10 pr-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  placeholder="Enter your username"
+                  placeholder="Enter your username or email"
                   required
                   autoComplete="username"
+                  data-testid="employee-login-username"
                 />
               </div>
             </div>

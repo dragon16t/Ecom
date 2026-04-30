@@ -1261,7 +1261,15 @@ def verify_admin_token(x_admin_token: str = Header(None), admin_session: str = C
     if token_to_check in admin_sessions:
         session = admin_sessions[token_to_check]
         # Check if session hasn't expired
-        expires_at = datetime.fromisoformat(session["expires_at"].replace("Z", "+00:00"))
+        expires_at = session["expires_at"]
+        # Handle both string (new sessions) and datetime (hydrated from MongoDB)
+        if isinstance(expires_at, str):
+            expires_at = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+        elif isinstance(expires_at, datetime):
+            # Ensure timezone-aware
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+        
         if datetime.now(timezone.utc) < expires_at:
             return True
         else:
@@ -1289,10 +1297,12 @@ def generate_admin_session_token() -> str:
     data = f"{ADMIN_PASSWORD}{time.time()}{secrets.token_hex(16)}"
     return hashlib.sha256(data.encode()).hexdigest()
 
-# In-memory store for valid admin sessions (for single-server deployments)
-# In production, use Redis or database-backed sessions
-admin_sessions: dict = {}
-employee_sessions: dict = {}
+# MongoDB-backed session stores with in-memory cache (drop-in dict replacement).
+# Survives pod restarts, works across multiple uvicorn workers / k8s pods, and
+# auto-expires stale rows via a TTL index on `expires_at`.
+from services.session_store import SessionStore  # noqa: E402
+admin_sessions = SessionStore(db, "admin_sessions")
+employee_sessions = SessionStore(db, "employee_sessions")
 
 # Share admin_sessions with admin routes for token verification
 admin_routes.set_admin_sessions(admin_sessions)
@@ -2516,9 +2526,13 @@ class CreateEmployeeRequest(BaseModel):
     username: str
     name: str
     password: Optional[str] = None
+    email: Optional[str] = None
     permissions: Dict[str, bool]
 
 class EmployeeLoginRequest(BaseModel):
+    # Accept either username OR email — frontend can send whichever the user typed.
+    # Older clients still send `username`, so we keep that name and treat its value
+    # as "any identifier (username or email)".
     username: str
     password: str
 
@@ -2542,7 +2556,8 @@ async def create_employee(request: CreateEmployeeRequest, http_request: Request,
         username=request.username,
         name=request.name,
         permissions=request.permissions,
-        password=request.password
+        password=request.password,
+        email=request.email,
     )
     if result.get("success"):
         # Build the login URL using whatever public origin the admin is currently on.
@@ -2556,11 +2571,15 @@ async def create_employee(request: CreateEmployeeRequest, http_request: Request,
                 p = urlparse(origin)
                 public_base = f"{p.scheme}://{p.netloc}".rstrip("/")
         result["login_url"] = f"{public_base}/employee/login" if public_base else "/employee/login"
+        identifier_line = f"Username: {result.get('username')}"
+        if result.get("email"):
+            identifier_line += f"\nEmail: {result.get('email')}"
         result["login_message"] = (
             f"Hi {request.name}, your Celesta Glow employee account is ready.\n"
-            f"Username: {result.get('username')}\n"
+            f"{identifier_line}\n"
             f"Password: {result.get('password')}\n"
-            f"Sign in here: {result['login_url']}"
+            f"Sign in here: {result['login_url']}\n"
+            f"(You can sign in with either your username or email.)"
         )
     return result
 
@@ -2599,19 +2618,20 @@ async def delete_employee(username: str, x_admin_token: str = Header(None, alias
 
 @api_router.post("/employee/login")
 async def employee_login(request: EmployeeLoginRequest):
-    """Employee login endpoint"""
+    """Employee login endpoint. Accepts username OR email as the identifier."""
     employee = await employee_service.authenticate(request.username, request.password)
     if not employee:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    # Generate session token
+        raise HTTPException(status_code=401, detail="Invalid username/email or password")
+
+    # Generate session token (30-day expiry, stored in MongoDB)
     token = secrets.token_hex(32)
     employee_sessions[token] = {
         "username": employee["username"],
         "permissions": employee["permissions"],
-        "created_at": datetime.now(timezone.utc)
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "expires_at": (datetime.now(timezone.utc) + timedelta(days=30)),
     }
-    
+
     return {
         "success": True,
         "token": token,
@@ -2950,6 +2970,14 @@ logger = logging.getLogger(__name__)
 @app.on_event("startup")
 async def startup_seed():
     """Seed product catalog + run migrations on startup"""
+    # Hydrate admin/employee sessions from Mongo so they survive pod restarts
+    try:
+        await admin_sessions.ensure_indexes()
+        await employee_sessions.ensure_indexes()
+        await admin_sessions.hydrate()
+        await employee_sessions.hydrate()
+    except Exception as e:
+        logging.error(f"Failed to hydrate sessions: {e}")
     try:
         await product_routes.seed_products()
     except Exception as e:
