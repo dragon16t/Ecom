@@ -37,6 +37,7 @@ from routes import products as product_routes
 from routes import concerns as concerns_routes
 from routes import image_ai as image_ai_routes
 from routes import reviews as reviews_routes
+from routes import customer_auth as customer_auth_routes
 
 
 ROOT_DIR = Path(__file__).parent
@@ -2706,22 +2707,43 @@ async def get_customer_by_phone(
 # ==================== DELHIVERY SHIPPING INTEGRATION ====================
 
 class TrackOrderRequest(BaseModel):
-    phone: str
+    phone: Optional[str] = None
+    email: Optional[str] = None
 
 
 @api_router.post("/track-order")
 async def track_order_by_phone(request: TrackOrderRequest):
-    """Track orders by phone number (Customer facing)"""
-    phone = request.phone.strip()
-    
-    # Validate phone (last 10 digits)
+    """Track orders by phone OR email (Customer facing)."""
+    phone = (request.phone or "").strip()
+    email = (request.email or "").strip().lower()
+
+    if not phone and not email:
+        raise HTTPException(status_code=400, detail="Enter phone number or email")
+
+    # Email-first path: look up orders by email directly from our DB
+    if email:
+        cursor = db.orders.find({"email": email}, {"_id": 0}).sort("created_at", -1).limit(50)
+        orders = []
+        async for o in cursor:
+            awb = o.get("awb_number")
+            orders.append({
+                "order_id": o.get("order_id"),
+                "status": o.get("status"),
+                "total_amount": o.get("amount"),
+                "payment_method": o.get("payment_method"),
+                "created_at": o.get("created_at"),
+                "items": o.get("items") or [],
+                "awb_number": awb,
+                "tracking_url": f"https://www.delhivery.com/track/package/{awb}" if awb else None,
+                "delivery_timeline": o.get("delivery_timeline"),
+            })
+        return {"success": True, "orders": orders, "count": len(orders)}
+
+    # Phone path (legacy): delegate to Delhivery service
     if len(phone) < 10:
         raise HTTPException(status_code=400, detail="Enter valid 10-digit phone number")
-    
-    phone = phone[-10:]  # Get last 10 digits
-    
-    result = await delhivery_service.track_by_phone(phone)
-    return result
+    phone = phone[-10:]
+    return await delhivery_service.track_by_phone(phone)
 
 
 @api_router.get("/track-order/{order_id}")
@@ -2886,6 +2908,9 @@ app.include_router(concerns_routes.router, prefix="/api")
 app.include_router(image_ai_routes.router, prefix="/api")
 app.include_router(reviews_routes.router, prefix="/api")
 
+# Customer Email OTP auth + orders + cart
+customer_auth_routes.init_auth_router(db)
+app.include_router(customer_auth_routes.router, prefix="/api")
 # Cloudinary admin + upload endpoints
 from routes import cloudinary_routes  # noqa: E402
 cloudinary_routes.set_db(db)

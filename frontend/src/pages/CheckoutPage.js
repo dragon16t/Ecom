@@ -45,6 +45,18 @@ function CheckoutPage() {
     if (typeof window !== 'undefined' && window.fbq) {
       window.fbq('track', 'PageView', { page_name: 'checkout', content_category: 'Checkout' });
     }
+    // Pre-fill form from the logged-in user (if any)
+    try {
+      const u = JSON.parse(localStorage.getItem('cg_auth_user') || 'null');
+      if (u) {
+        setFormData(prev => ({
+          ...prev,
+          email: prev.email || u.email || '',
+          phone: prev.phone || u.phone || '',
+          name:  prev.name  || u.name  || '',
+        }));
+      }
+    } catch { /* ignore */ }
     if (!cartData) {
       const cart = getCart();
       if (!cart.items.length) { navigate('/cart'); return; }
@@ -112,6 +124,12 @@ function CheckoutPage() {
       trackPurchase(orderId, cartData.total, paymentMethod);
       trackGAEvent('purchase', { transaction_id: orderId, value: cartData.total, currency: 'INR', items: cartData.item_count });
     };
+    // Cache order + navigate with state so Order Success shows INSTANTLY (no loading spinner)
+    const goToSuccess = (orderData) => {
+      try { sessionStorage.setItem(`cg_order_${orderData.order_id}`, JSON.stringify(orderData)); } catch {}
+      saveCart({ items: [] });
+      navigate(`/order-success/${orderData.order_id}`, { state: { order: orderData } });
+    };
     try {
       if (paymentMethod === 'prepaid') {
         const rzpOrder = await axios.post(`${API}/api/create-razorpay-order`, { amount: cartData.total });
@@ -119,8 +137,18 @@ function CheckoutPage() {
           key: process.env.REACT_APP_RAZORPAY_KEY_ID || 'rzp_test_key', amount: rzpOrder.data.amount, currency: 'INR',
           name: 'Celesta Glow', description: `Order - ${cartData.item_count} items`, order_id: rzpOrder.data.id,
           handler: async (response) => {
-            try { await axios.post(`${API}/api/verify-payment`, response); const order = await axios.post(`${API}/api/orders`, payload); fireConversion(order.data.order_id); saveCart({ items: [] }); navigate(`/order-success/${order.data.order_id}`); }
-            catch { alert('Payment verification failed'); setSubmitting(false); }
+            try {
+              // Fire verify + create-order in PARALLEL — verify is just a signature check
+              const [, orderResp] = await Promise.all([
+                axios.post(`${API}/api/verify-payment`, response),
+                axios.post(`${API}/api/orders`, payload),
+              ]);
+              fireConversion(orderResp.data.order_id);
+              goToSuccess(orderResp.data);
+            } catch (e) {
+              alert(e?.response?.data?.detail || 'Payment verification failed');
+              setSubmitting(false);
+            }
           },
           prefill: { name: formData.name, contact: formData.phone, email: formData.email },
           theme: { color: '#16a34a' },
@@ -145,7 +173,7 @@ function CheckoutPage() {
       } else {
         const order = await axios.post(`${API}/api/orders`, payload);
         fireConversion(order.data.order_id);
-        saveCart({ items: [] }); navigate(`/order-success/${order.data.order_id}`);
+        goToSuccess(order.data);
       }
     } catch (err) {
       const detail = err?.response?.data?.detail || err?.message || 'Order failed. Please try again.';

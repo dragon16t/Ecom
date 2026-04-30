@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import BackButton from '../components/BackButton';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { Check, Package, Truck, Phone, Gift, Copy, Share2, MessageCircle } from 'lucide-react';
 import { trackPurchase } from '../utils/metaPixel';
@@ -10,18 +10,36 @@ const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 function OrderSuccessPage() {
   const { orderId } = useParams();
   const navigate = useNavigate();
-  const [order, setOrder] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const location = useLocation();
+
+  // Instant render: prefer order passed via route state (from Checkout), then sessionStorage, then fetch.
+  const stateOrder = location.state?.order;
+  const cachedOrder = (() => {
+    try {
+      const raw = sessionStorage.getItem(`cg_order_${orderId}`);
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  })();
+  const initialOrder = stateOrder || cachedOrder || null;
+
+  const [order, setOrder] = useState(initialOrder);
+  // No loading spinner if we already have the order from Checkout – shows success instantly.
+  const [loading, setLoading] = useState(!initialOrder);
   const [pixelFired, setPixelFired] = useState(false);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     const fetchOrderAndTrack = async () => {
       try {
-        // Fetch order details from backend
-        const response = await axios.get(`${API}/orders/${orderId}`);
-        const orderData = response.data;
-        setOrder(orderData);
+        let orderData = order;
+        // Only hit the network if we don't already have the order in memory
+        if (!orderData) {
+          const response = await axios.get(`${API}/orders/${orderId}`);
+          orderData = response.data;
+          setOrder(orderData);
+        }
+        // Cache for page refreshes
+        try { sessionStorage.setItem(`cg_order_${orderId}`, JSON.stringify(orderData)); } catch {}
 
         // Fire Purchase event ONLY ONCE
         if (!pixelFired && orderData) {

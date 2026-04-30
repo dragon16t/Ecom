@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import axios from 'axios';
+import { cachedGet } from '../utils/apiCache';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -63,6 +64,18 @@ export default function NicheCardSwitcher() {
     return () => { mounted = false; };
   }, []);
 
+  // Prefetch the destination niche's product list on hover/touchstart so the
+  // first switch is instant (runs silently, no UI impact).
+  const prefetchNiche = useCallback((slug) => {
+    const slugKey = slug === 'anti-aging' ? 'anti-aging'
+      : slug === 'skincare' ? 'skincare'
+      : slug === 'cosmetics' ? 'cosmetics' : null;
+    if (!slugKey) return;
+    cachedGet(`${API}/api/products?niche=${slugKey}`).catch(() => {});
+    if (slugKey === 'skincare') cachedGet(`${API}/api/concerns`).catch(() => {});
+    if (slugKey === 'cosmetics') cachedGet(`${API}/api/categories`).catch(() => {});
+  }, []);
+
   if (!niches.length) return null;
 
   const isActive = (route) => {
@@ -84,6 +97,9 @@ export default function NicheCardSwitcher() {
                 to={n.route}
                 data-testid={`niche-card-${n.slug}`}
                 aria-label={n.name}
+                onMouseEnter={() => prefetchNiche(n.slug)}
+                onTouchStart={() => prefetchNiche(n.slug)}
+                onFocus={() => prefetchNiche(n.slug)}
                 className={`group relative block aspect-[7/6] sm:aspect-[5/3] lg:aspect-[2/1] rounded-2xl overflow-hidden bg-stone-100 transition-all duration-300 ${
                   active
                     ? 'ring-2 sm:ring-[3px] shadow-lg shadow-black/10 scale-[1.01]'

@@ -198,7 +198,20 @@ function Homepage() {
         if (p.fromCache && c.fromCache && s.fromCache) setLoading(false);
       })
       .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+
+    // Background-prefetch sibling niches so switching Skincare/Cosmetics is instant
+    // (runs after the browser is idle so it never competes with visible content).
+    const prefetch = () => {
+      cachedGet(`${API}/api/products?niche=skincare`).catch(() => {});
+      cachedGet(`${API}/api/products?niche=cosmetics`).catch(() => {});
+      cachedGet(`${API}/api/concerns`).catch(() => {});
+      cachedGet(`${API}/api/categories`).catch(() => {});
+    };
+    const idleHandle = (window.requestIdleCallback || window.setTimeout)(prefetch, { timeout: 1500 });
+    return () => {
+      cancelled = true;
+      if (window.cancelIdleCallback && typeof idleHandle === 'number') window.cancelIdleCallback(idleHandle);
+    };
   }, []);
 
   // Per-niche customization (admin-editable). Falls back to hardcoded defaults if missing.
