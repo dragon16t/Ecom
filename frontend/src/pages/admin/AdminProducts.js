@@ -672,7 +672,7 @@ function AdminProducts() {
                     <label className="text-xs font-semibold text-gray-500">3. Niche <span className="text-red-500">*</span></label>
                     <select value={editProduct.niche || 'anti-aging'} onChange={e => {
                       const newNiche = e.target.value;
-                      const brandFromNiche = (siteSettings?.niche_settings?.[newNiche]?.brand_name) || '';
+                      const brandFromNiche = (settings?.niche_settings?.[newNiche]?.brand_name) || '';
                       setEditProduct({...editProduct, niche: newNiche, brand: editProduct.brand || brandFromNiche, category: ''});
                     }} className="w-full px-3 py-2 border rounded-lg text-sm bg-white" data-testid="new-niche">
                       <option value="anti-aging">✨ Anti-Aging</option>
