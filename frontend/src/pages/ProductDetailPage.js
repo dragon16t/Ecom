@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
 import { Star, ChevronLeft, ChevronRight, Shield, Truck, Award, Clock, Check, Sparkles, Minus, Plus, ChevronDown, User, FlaskConical, Package, Leaf, Droplets, Sun, Zap } from 'lucide-react';
@@ -6,6 +6,7 @@ import { addToCart, addComboToCart, getCart, saveCart } from './Homepage';
 import { useTracking } from '../providers/TrackingProvider';
 import ReviewsCarousel from '../components/ReviewsCarousel';
 import { cachedGet } from '../utils/apiCache';
+import { getSocialProof } from '../utils/socialProof';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -19,6 +20,43 @@ function UrgencyTimer() {
   }, []);
   const pad = n => String(n).padStart(2, '0');
   return <span className="font-mono font-bold">{pad(timeLeft.h)}:{pad(timeLeft.m)}:{pad(timeLeft.s)}</span>;
+}
+
+/**
+ * <ProductLiveStrip> — viewing / sold today / stock left.
+ * Numbers are deterministic per (slug, minute) so they NEVER flicker on
+ * re-render (e.g. when the user clicks through gallery images), but they
+ * tick forward every minute giving a real "live" feel. The 'sold today'
+ * count starts low at midnight and rises to a product-specific peak by
+ * end of day, then resets at the next midnight.
+ */
+function ProductLiveStrip({ slug }) {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    // Re-render once per minute so the social-proof numbers walk forward.
+    const id = setInterval(() => setTick((t) => t + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  // useMemo guards re-computation within the same minute; `tick` invalidates
+  // it once a minute, `slug` invalidates when navigating to another product.
+  const proof = useMemo(() => getSocialProof(slug || ''), [slug, tick]);
+
+  return (
+    <div className="mt-3 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2.5 flex items-center justify-around gap-2" data-testid="product-live-strip">
+      <span className="flex items-center gap-1.5 text-amber-700 text-xs font-bold">
+        <User size={13} className="text-amber-500" />
+        <span>{proof.viewingNow} <span className="font-normal">viewing</span></span>
+      </span>
+      <span className="flex items-center gap-1.5 text-green-700 text-xs font-bold">
+        <Zap size={13} className="text-green-500" />
+        <span>{proof.soldToday} <span className="font-normal">sold today</span></span>
+      </span>
+      <span className="flex items-center gap-1.5 text-rose-700 text-xs font-bold">
+        <Clock size={13} className="text-rose-500" />
+        <span><span className="font-normal">Only</span> {proof.stockLeft} <span className="font-normal">left!</span></span>
+      </span>
+    </div>
+  );
 }
 
 /**
@@ -178,21 +216,10 @@ function ProductDetailPage() {
                 ))}
               </div>
             )}
-            {/* Live activity strip — neat horizontal row below image (matches reference design) */}
-            <div className="mt-3 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2.5 flex items-center justify-around gap-2" data-testid="product-live-strip">
-              <span className="flex items-center gap-1.5 text-amber-700 text-xs font-bold">
-                <User size={13} className="text-amber-500" />
-                <span>{Math.floor(Math.random() * 20) + 8} <span className="font-normal">viewing</span></span>
-              </span>
-              <span className="flex items-center gap-1.5 text-green-700 text-xs font-bold">
-                <Zap size={13} className="text-green-500" />
-                <span>{Math.floor(Math.random() * 30) + 40} <span className="font-normal">sold today</span></span>
-              </span>
-              <span className="flex items-center gap-1.5 text-rose-700 text-xs font-bold">
-                <Clock size={13} className="text-rose-500" />
-                <span><span className="font-normal">Only</span> {Math.floor(Math.random() * 15) + 5} <span className="font-normal">left!</span></span>
-              </span>
-            </div>
+            {/* Live activity strip — neat horizontal row below image (matches reference design).
+                Numbers are deterministic per (product, time-of-day) so they DON'T flicker when
+                the user clicks through gallery images, but DO grow naturally through the day. */}
+            <ProductLiveStrip slug={slug} />
           </div>
 
           {/* Info */}

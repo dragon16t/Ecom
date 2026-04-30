@@ -7,6 +7,7 @@ import { ProductCard } from './ConcernCategoryPage';
 import AddToBagButton from '../components/AddToBagButton';
 import { shareProduct } from '../utils/shareProduct';
 import { cachedGet } from '../utils/apiCache';
+import { getSocialProof } from '../utils/socialProof';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -81,18 +82,27 @@ function ShopPage() {
     return products;
   }, [products, filter]);
 
-  // Stable per-product social proof counts (don't re-randomize on filter change)
+  // Per-product social proof: deterministic by (slug, current minute) so it
+  // doesn't flicker on filter changes / re-renders, but ticks naturally over
+  // the day. See utils/socialProof.js for the math.
+  const [proofTick, setProofTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setProofTick((t) => t + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
   const socialProof = useMemo(() => {
     const map = {};
     products.forEach(p => {
+      const sp = getSocialProof(p.slug || '');
       map[p.slug] = {
-        orders: Math.floor(Math.random() * 40) + 30,
-        piecesLeft: Math.floor(Math.random() * 20) + 5,
-        viewing: Math.floor(Math.random() * 20) + 8,
+        orders: sp.soldToday,
+        piecesLeft: sp.stockLeft,
+        viewing: sp.viewingNow,
       };
     });
     return map;
-  }, [products]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [products, proofTick]);
 
   if (loading) {
     return (
