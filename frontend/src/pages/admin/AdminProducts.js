@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { Package, Plus, Edit, Trash2, Image as ImageIcon, DollarSign, Eye, EyeOff, Save, X, ChevronDown, Tag, Settings, Layers, Upload, Trash, Clock, Rocket, GripVertical, ArrowUp, ArrowDown, ArrowLeft, LayoutDashboard, Sparkles } from 'lucide-react';
+import { Package, Plus, Edit, Trash2, Image as ImageIcon, DollarSign, Eye, EyeOff, Save, X, ChevronDown, Tag, Settings, Layers, Upload, Trash, Clock, Rocket, GripVertical, ArrowUp, ArrowDown, ArrowLeft, LayoutDashboard, Sparkles, Crop } from 'lucide-react';
+import ImageCropperModal from '../../components/admin/ImageCropperModal';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -17,11 +18,16 @@ function ImageManager({ images = [], onChange, label = 'Images', single = false,
   const [removingBgIndex, setRemovingBgIndex] = useState(-1);
   const [dragIndex, setDragIndex] = useState(-1);
   const [overIndex, setOverIndex] = useState(-1);
+  // Crop modal state — `cropTarget` is one of:
+  //   { mode: 'add', src }                        → cropping a fresh upload
+  //   { mode: 'replace', src, index }             → cropping a replacement file
+  //   { mode: 'edit',    src, index }             → re-cropping an existing tile
+  const [cropTarget, setCropTarget] = useState(null);
 
-  const upload = async (file, onProgress) => {
-    if (!file) return null;
+  const uploadBlob = async (blob, onProgress) => {
+    if (!blob) return null;
     const fd = new FormData();
-    fd.append('file', file);
+    fd.append('file', blob, blob.name || `cropped_${Date.now()}.jpg`);
     try {
       const res = await axios.post(`${API}/admin/upload-image`, fd, {
         headers: { ...headers, 'Content-Type': 'multipart/form-data' },
@@ -36,6 +42,7 @@ function ImageManager({ images = [], onChange, label = 'Images', single = false,
       throw new Error(e.response?.data?.detail || 'Upload failed');
     }
   };
+  const upload = uploadBlob; // backward compatible alias used below
 
   const handleAdd = async (e) => {
     const files = Array.from(e.target.files || []);
@@ -281,6 +288,16 @@ function ImageManager({ images = [], onChange, label = 'Images', single = false,
                   <Upload size={12} className="text-gray-700" />
                   <input type="file" accept="image/*" onChange={(e) => handleReplace(i, e)} className="hidden" />
                 </label>
+                {/* Crop existing image */}
+                <button
+                  type="button"
+                  onClick={() => setCropTarget({ mode: 'edit', src: url, index: i })}
+                  className="p-1.5 bg-white rounded-lg shadow-md"
+                  title="Crop / re-frame this image"
+                  data-testid={`crop-${i}`}
+                >
+                  <Crop size={12} className="text-emerald-700" />
+                </button>
                 {/* AI clean bg */}
                 <button
                   type="button"
@@ -343,6 +360,36 @@ function ImageManager({ images = [], onChange, label = 'Images', single = false,
           data-testid="image-multi-input"
         />
       </div>
+
+      {/* Image cropper — opens when admin clicks the Crop icon on any tile */}
+      <ImageCropperModal
+        open={!!cropTarget}
+        imageSrc={cropTarget?.src || ''}
+        defaultAspect={1}
+        onCancel={() => setCropTarget(null)}
+        onConfirm={async (blob) => {
+          const target = cropTarget;
+          setCropTarget(null);
+          if (!target || !blob) return;
+          setUploading(true);
+          try {
+            const url = await uploadBlob(blob);
+            if (!url) return;
+            if (target.mode === 'edit' || target.mode === 'replace') {
+              const next = [...images];
+              next[target.index] = url;
+              onChange(next);
+            } else {
+              // 'add' — append
+              onChange([...(images || []), url]);
+            }
+          } catch (err) {
+            alert(err.message || 'Crop upload failed');
+          } finally {
+            setUploading(false);
+          }
+        }}
+      />
     </div>
   );
 }
@@ -1056,16 +1103,16 @@ function AdminProducts() {
                     )}
                     <div><label className="text-xs font-semibold text-gray-500">Product Name</label><input value={editProduct.name} onChange={e => setEditProduct({...editProduct, name: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" data-testid="edit-product-name" /></div>
                     <div><label className="text-xs font-semibold text-gray-500">Short Name</label><input value={editProduct.short_name} onChange={e => setEditProduct({...editProduct, short_name: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
-                    <div><label className="text-xs font-semibold text-gray-500">MRP (₹)</label><input type="number" value={editProduct.mrp} onChange={e => setEditProduct({...editProduct, mrp: Number(e.target.value)})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
-                    <div><label className="text-xs font-semibold text-gray-500">Prepaid Price (₹)</label><input type="number" value={editProduct.prepaid_price} onChange={e => setEditProduct({...editProduct, prepaid_price: Number(e.target.value)})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                    <div><label className="text-xs font-semibold text-gray-500">MRP (₹)</label><input type="number" value={editProduct.mrp} onChange={e => { const mrp = Number(e.target.value); setEditProduct({...editProduct, mrp, discount_percent: mrp && editProduct.prepaid_price ? Math.max(0, Math.round((mrp - editProduct.prepaid_price) * 100 / mrp)) : editProduct.discount_percent}); }} className="w-full px-3 py-2 border rounded-lg text-sm" data-testid="edit-mrp" /></div>
+                    <div><label className="text-xs font-semibold text-gray-500">Prepaid Price (₹)</label><input type="number" value={editProduct.prepaid_price} onChange={e => { const pp = Number(e.target.value); setEditProduct({...editProduct, prepaid_price: pp, cod_price: editProduct.cod_price === editProduct.prepaid_price ? pp : editProduct.cod_price, discount_percent: editProduct.mrp ? Math.max(0, Math.round((editProduct.mrp - pp) * 100 / editProduct.mrp)) : 0}); }} className="w-full px-3 py-2 border rounded-lg text-sm" data-testid="edit-prepaid-price" /></div>
                     <div><label className="text-xs font-semibold text-gray-500">COD Price (₹)</label><input type="number" value={editProduct.cod_price} onChange={e => setEditProduct({...editProduct, cod_price: Number(e.target.value)})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
                     <div><label className="text-xs font-semibold text-gray-500">COD Advance (₹)</label><input type="number" value={editProduct.cod_advance} onChange={e => setEditProduct({...editProduct, cod_advance: Number(e.target.value)})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
-                    <div><label className="text-xs font-semibold text-gray-500">Discount %</label><input type="number" value={editProduct.discount_percent} onChange={e => setEditProduct({...editProduct, discount_percent: Number(e.target.value)})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                    <div><label className="text-xs font-semibold text-emerald-700">Discount % <span className="text-emerald-600 text-[10px] font-bold">AUTO-CALCULATED</span></label><input type="number" value={editProduct.discount_percent} onChange={e => setEditProduct({...editProduct, discount_percent: Number(e.target.value)})} className="w-full px-3 py-2 border-2 border-emerald-200 bg-emerald-50/50 rounded-lg text-sm font-bold text-emerald-700" data-testid="edit-discount" title="Auto-calculated from MRP and Prepaid Price. You can override manually." /></div>
                     <div><label className="text-xs font-semibold text-gray-500">Offer Price (₹) <span className="text-amber-600 font-normal">(optional flash deal)</span></label><input type="number" value={editProduct.offer_price ?? ''} onChange={e => setEditProduct({...editProduct, offer_price: e.target.value === '' ? null : Number(e.target.value)})} placeholder="Lower than prepaid price" className="w-full px-3 py-2 border rounded-lg text-sm" data-testid="edit-offer-price" /></div>
                     <div><label className="text-xs font-semibold text-gray-500">Offer Label</label><input value={editProduct.offer_label || ''} onChange={e => setEditProduct({...editProduct, offer_label: e.target.value})} placeholder="e.g., Festive Sale" className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
                     <div><label className="text-xs font-semibold text-gray-500">Stock Qty</label><input type="number" value={editProduct.stock_qty ?? 100} onChange={e => setEditProduct({...editProduct, stock_qty: Number(e.target.value)})} className="w-full px-3 py-2 border rounded-lg text-sm" data-testid="edit-stock-qty" /></div>
                     <div><label className="text-xs font-semibold text-gray-500">Low-stock threshold</label><input type="number" value={editProduct.low_stock_threshold ?? 10} onChange={e => setEditProduct({...editProduct, low_stock_threshold: Number(e.target.value)})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
-                    <div><label className="text-xs font-semibold text-gray-500">Sort order (manual)</label><input type="number" value={editProduct.sort_order ?? 99} onChange={e => setEditProduct({...editProduct, sort_order: Number(e.target.value)})} className="w-full px-3 py-2 border rounded-lg text-sm" data-testid="edit-sort-order" /></div>
+                    <div className="col-span-2"><label className="text-xs font-semibold text-blue-700">Sort order <span className="text-blue-600 text-[10px] font-bold">(LOWER NUMBER = APPEARS FIRST)</span></label><input type="number" value={editProduct.sort_order ?? 99} onChange={e => setEditProduct({...editProduct, sort_order: Number(e.target.value)})} className="w-full px-3 py-2 border-2 border-blue-200 bg-blue-50/50 rounded-lg text-sm font-bold text-blue-700" data-testid="edit-sort-order" title="1 = first, 2 = second, etc. Tip: drag products on the list to set order automatically." /></div>
                   </div>
                   <BadgeChips value={editProduct.badges || (editProduct.badge ? [editProduct.badge] : [])} onChange={(arr) => setEditProduct({...editProduct, badges: arr, badge: arr[0] || ''})} />
                   <div><label className="text-xs font-semibold text-gray-500">Tagline</label><input value={editProduct.tagline || ''} onChange={e => setEditProduct({...editProduct, tagline: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>

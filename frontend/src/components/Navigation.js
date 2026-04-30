@@ -48,7 +48,7 @@ function Navigation() {
   const navLinks = [
     { path: '/', label: 'Home' },
     { path: '/categories', label: 'Categories' },
-    { path: '/consultation', label: 'Skin Analysis', icon: Stethoscope, highlight: true },
+    { path: '/routine', label: 'Skin Analysis', icon: Stethoscope, highlight: true },
     { path: '/track-order', label: 'Track Order', icon: Package },
     { path: '/blog', label: 'Beauty Tips' },
     { path: '/about', label: 'About Us' },

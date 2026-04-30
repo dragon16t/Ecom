@@ -87,7 +87,7 @@ function Footer() {
                 </Link>
               </li>
               <li>
-                <Link to="/consultation" className="text-sm text-gray-400 hover:text-green-400 transition-colors">
+                <Link to="/routine" className="text-sm text-gray-400 hover:text-green-400 transition-colors">
                   Free Skin Analysis
                 </Link>
               </li>
