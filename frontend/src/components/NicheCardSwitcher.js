@@ -17,16 +17,50 @@ const ACTIVE_RING = {
   'cosmetics':  '#fb7185',
 };
 
+/* Static default niches – identical to what the API returns, so the cards render
+ * INSTANTLY on first paint and never flicker when switching pages. */
+const DEFAULT_NICHES = [
+  { slug: 'anti-aging', name: 'Anti-Aging',         route: '/',           sort_order: 1 },
+  { slug: 'skincare',   name: 'Skincare',           route: '/skincare',   sort_order: 2 },
+  { slug: 'cosmetics',  name: 'Cosmetics & Makeup', route: '/cosmetics',  sort_order: 3 },
+];
+
+/* Module-level cache so we only hit /api/niches ONCE per full page load.
+ * Persists across unmount/remount while navigating between routes. */
+let NICHES_CACHE = null;
+let NICHES_INFLIGHT = null;
+
+async function fetchNichesOnce() {
+  if (NICHES_CACHE) return NICHES_CACHE;
+  if (NICHES_INFLIGHT) return NICHES_INFLIGHT;
+  NICHES_INFLIGHT = axios
+    .get(`${API}/api/niches`)
+    .then((r) => {
+      NICHES_CACHE = (r.data && r.data.length) ? r.data : DEFAULT_NICHES;
+      return NICHES_CACHE;
+    })
+    .catch(() => {
+      NICHES_CACHE = DEFAULT_NICHES;
+      return NICHES_CACHE;
+    })
+    .finally(() => { NICHES_INFLIGHT = null; });
+  return NICHES_INFLIGHT;
+}
+
 /**
  * NicheCardSwitcher — three image-only cards. No code-rendered text or icons.
- * Smaller on desktop (max-w-3xl + reduced height).
+ * Uses static defaults for instant render + module cache for zero re-fetch.
  */
 export default function NicheCardSwitcher() {
-  const [niches, setNiches] = useState([]);
+  const [niches, setNiches] = useState(() => NICHES_CACHE || DEFAULT_NICHES);
   const location = useLocation();
 
   useEffect(() => {
-    axios.get(`${API}/api/niches`).then(r => setNiches(r.data || [])).catch(() => {});
+    let mounted = true;
+    fetchNichesOnce().then((data) => {
+      if (mounted && data && data.length) setNiches(data);
+    });
+    return () => { mounted = false; };
   }, []);
 
   if (!niches.length) return null;
@@ -40,7 +74,7 @@ export default function NicheCardSwitcher() {
     <section className="bg-white py-2 sm:py-4" data-testid="niche-card-switcher">
       <div className="max-w-7xl mx-auto px-3 sm:px-6">
         <div className="grid grid-cols-3 gap-2 sm:gap-4 lg:gap-6">
-          {niches.map(n => {
+          {niches.map((n) => {
             const image = CARD_IMAGES[n.slug];
             const ring = ACTIVE_RING[n.slug] || '#22c55e';
             const active = isActive(n.route);
@@ -61,7 +95,9 @@ export default function NicheCardSwitcher() {
                   <img
                     src={image}
                     alt={n.name}
-                    loading="lazy"
+                    loading="eager"
+                    fetchpriority="high"
+                    decoding="async"
                     className="absolute inset-0 w-full h-full object-cover object-center transition-transform duration-500 group-hover:scale-[1.03]"
                   />
                 )}
