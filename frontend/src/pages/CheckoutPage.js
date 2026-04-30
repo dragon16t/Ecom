@@ -123,10 +123,25 @@ function CheckoutPage() {
             catch { alert('Payment verification failed'); setSubmitting(false); }
           },
           prefill: { name: formData.name, contact: formData.phone, email: formData.email },
-          theme: { color: '#16a34a' }
+          theme: { color: '#16a34a' },
+          // Reset button state when user closes the Razorpay modal without paying
+          modal: {
+            ondismiss: () => {
+              trackAction('payment_modal_dismissed', { method: 'razorpay' });
+              setSubmitting(false);
+            },
+            escape: true,
+            backdropclose: false,
+          },
         };
-        const rzp = new window.Razorpay(options); rzp.open();
-        rzp.on('payment.failed', () => { alert('Payment failed.'); setSubmitting(false); });
+        const rzp = new window.Razorpay(options);
+        // Failed payment — also reset the button
+        rzp.on('payment.failed', (resp) => {
+          const reason = resp?.error?.description || 'Payment failed. Please try again.';
+          alert(reason);
+          setSubmitting(false);
+        });
+        rzp.open();
       } else {
         const order = await axios.post(`${API}/api/orders`, payload);
         fireConversion(order.data.order_id);
