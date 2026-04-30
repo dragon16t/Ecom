@@ -127,6 +127,13 @@ function CheckoutPage() {
     // Cache order + navigate with state so Order Success shows INSTANTLY (no loading spinner)
     const goToSuccess = (orderData) => {
       try { sessionStorage.setItem(`cg_order_${orderData.order_id}`, JSON.stringify(orderData)); } catch {}
+      // One-time-use guard: clear the popup-claimed coupon code so it does NOT
+      // auto-apply on the next order. We keep `discountClaimed=true` so the
+      // popup never shows again to the same browser.
+      try {
+        localStorage.removeItem('discountCode');
+        localStorage.removeItem('claimedDiscountCode');
+      } catch { /* ignore */ }
       saveCart({ items: [] });
       navigate(`/order-success/${orderData.order_id}`, { state: { order: orderData } });
     };

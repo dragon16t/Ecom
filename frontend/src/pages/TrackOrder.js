@@ -3,37 +3,48 @@ import BackButton from '../components/BackButton';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { 
-  Package, Search, Phone, Truck, CheckCircle, Clock, 
+  Package, Search, Phone, Mail, Truck, CheckCircle, Clock, 
   MapPin, ChevronLeft, ExternalLink, AlertCircle, Box
 } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 function TrackOrder() {
+  const [mode, setMode] = useState('phone'); // 'phone' | 'email'
   const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [orders, setOrders] = useState(null);
   const [error, setError] = useState('');
 
   const handleTrack = async (e) => {
     e.preventDefault();
-    
-    if (phone.length < 10) {
-      setError('Please enter valid 10-digit phone number');
-      return;
-    }
-    
-    setLoading(true);
     setError('');
     setOrders(null);
-    
+
+    if (mode === 'phone') {
+      if (phone.length < 10) {
+        setError('Please enter valid 10-digit phone number');
+        return;
+      }
+    } else {
+      if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
+        setError('Please enter a valid email address');
+        return;
+      }
+    }
+
+    setLoading(true);
     try {
-      const res = await axios.post(`${API}/track-order`, { phone });
-      
-      if (res.data.success) {
-        setOrders(res.data.orders);
+      const body = mode === 'phone' ? { phone } : { email: email.trim().toLowerCase() };
+      const res = await axios.post(`${API}/track-order`, body);
+      if (res.data?.success) {
+        setOrders(res.data.orders || []);
+        if ((res.data.orders || []).length === 0) {
+          setError(`No orders found for this ${mode === 'phone' ? 'phone number' : 'email'}.`);
+        }
       } else {
-        setError(res.data.error || 'No orders found');
+        setError(res.data?.error || 'No orders found');
       }
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to track order. Please try again.');
@@ -96,22 +107,63 @@ function TrackOrder() {
               <Package className="w-8 h-8 text-white" />
             </div>
             <h2 className="text-2xl font-bold text-gray-900 mb-2">Track Your Order</h2>
-            <p className="text-gray-500">Enter the phone number used during order placement</p>
+            <p className="text-gray-500">
+              {mode === 'phone'
+                ? 'Enter the phone number used during order placement'
+                : 'Enter the email used during order placement'}
+            </p>
+          </div>
+
+          {/* Phone / Email toggle */}
+          <div className="grid grid-cols-2 gap-1 p-1 bg-gray-100 rounded-xl mb-4" data-testid="track-mode-toggle">
+            <button
+              type="button"
+              onClick={() => { setMode('phone'); setError(''); setOrders(null); }}
+              className={`flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-bold transition-colors ${
+                mode === 'phone' ? 'bg-white text-green-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+              data-testid="track-mode-phone"
+            >
+              <Phone size={15} /> Phone
+            </button>
+            <button
+              type="button"
+              onClick={() => { setMode('email'); setError(''); setOrders(null); }}
+              className={`flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-bold transition-colors ${
+                mode === 'email' ? 'bg-white text-green-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+              data-testid="track-mode-email"
+            >
+              <Mail size={15} /> Email
+            </button>
           </div>
 
           <form onSubmit={handleTrack} className="space-y-4">
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                <Phone className="w-5 h-5 text-gray-400" />
+                {mode === 'phone' ? <Phone className="w-5 h-5 text-gray-400" /> : <Mail className="w-5 h-5 text-gray-400" />}
               </div>
-              <input
-                type="tel"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                placeholder="Enter your phone number"
-                className="w-full pl-12 pr-4 py-4 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:ring-2 focus:ring-green-200 transition-all text-lg"
-                maxLength={10}
-              />
+              {mode === 'phone' ? (
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                  placeholder="Enter your phone number"
+                  className="w-full pl-12 pr-4 py-4 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:ring-2 focus:ring-green-200 transition-colors text-lg outline-none"
+                  maxLength={10}
+                  data-testid="track-input-phone"
+                />
+              ) : (
+                <input
+                  type="email"
+                  autoComplete="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  className="w-full pl-12 pr-4 py-4 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:ring-2 focus:ring-green-200 transition-colors text-base outline-none"
+                  data-testid="track-input-email"
+                />
+              )}
             </div>
             
             {error && (
@@ -123,8 +175,9 @@ function TrackOrder() {
             
             <button
               type="submit"
-              disabled={loading || phone.length < 10}
-              className="w-full py-4 bg-gradient-to-r from-green-500 to-green-500 text-white font-bold rounded-xl hover:from-green-600 hover:to-green-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+              disabled={loading || (mode === 'phone' ? phone.length < 10 : !email.trim())}
+              className="w-full py-4 bg-gradient-to-r from-green-500 to-green-500 text-white font-bold rounded-xl hover:from-green-600 hover:to-green-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+              data-testid="track-submit-btn"
             >
               {loading ? (
                 <>

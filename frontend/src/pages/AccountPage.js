@@ -3,8 +3,9 @@ import BackButton from '../components/BackButton';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import {
-  User, Mail, LogOut, Package, ChevronRight, Loader2,
+  User, Mail, LogOut, Package, ChevronRight, ChevronDown, Loader2,
   ShieldCheck, CheckCircle2, Truck, KeyRound, ArrowLeft, ExternalLink,
+  MapPin, Clock, Box,
 } from 'lucide-react';
 
 const API = process.env.REACT_APP_BACKEND_URL;
@@ -33,6 +34,8 @@ export default function AccountPage() {
 
   const [orders, setOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
+  const [expandedOrderId, setExpandedOrderId] = useState(null);
+  const [trackingDetails, setTrackingDetails] = useState({}); // { [orderId]: data | 'loading' | 'error' }
 
   /* Load persisted session on mount */
   useEffect(() => {
@@ -138,6 +141,24 @@ export default function AccountPage() {
     localStorage.removeItem(USER_KEY);
     setToken(null); setUser(null); setOrders([]);
   };
+
+  // Toggle inline tracking details for an order. Lazy-fetches /api/track-order/:id
+  // (which includes Delhivery scans + expected delivery + tracking_url).
+  const toggleOrderTracking = useCallback(async (orderId) => {
+    if (expandedOrderId === orderId) {
+      setExpandedOrderId(null);
+      return;
+    }
+    setExpandedOrderId(orderId);
+    if (trackingDetails[orderId] && trackingDetails[orderId] !== 'error') return;
+    setTrackingDetails((prev) => ({ ...prev, [orderId]: 'loading' }));
+    try {
+      const r = await axios.get(`${API}/api/track-order/${orderId}`);
+      setTrackingDetails((prev) => ({ ...prev, [orderId]: r.data }));
+    } catch {
+      setTrackingDetails((prev) => ({ ...prev, [orderId]: 'error' }));
+    }
+  }, [expandedOrderId, trackingDetails]);
 
   /* ============ SIGNED-OUT VIEW ============ */
   if (!user || !token) {
@@ -303,7 +324,7 @@ export default function AccountPage() {
               </div>
               <p className="text-sm font-bold text-stone-900 mb-1">No orders yet</p>
               <p className="text-xs text-stone-500 mb-4">When you place an order, it'll show up here.</p>
-              <Link to="/shop" className="inline-flex items-center gap-1.5 bg-emerald-700 text-white px-4 py-2 rounded-full text-xs font-bold hover:bg-emerald-800 transition-colors">
+              <Link to="/" className="inline-flex items-center gap-1.5 bg-emerald-700 text-white px-4 py-2 rounded-full text-xs font-bold hover:bg-emerald-800 transition-colors">
                 Start shopping <ChevronRight size={13} />
               </Link>
             </div>
@@ -315,6 +336,8 @@ export default function AccountPage() {
                   statusLc.includes('cancel') ? 'text-rose-700 bg-rose-50' :
                     statusLc.includes('ship') ? 'text-sky-700 bg-sky-50' :
                       'text-amber-700 bg-amber-50';
+                const expanded = expandedOrderId === o.order_id;
+                const tracking = trackingDetails[o.order_id];
                 return (
                   <li key={o.order_id} className="px-5 py-4" data-testid={`account-order-${o.order_id}`}>
                     <div className="flex items-center gap-3">
@@ -333,31 +356,105 @@ export default function AccountPage() {
                           {o.delivery_timeline && ` · ${o.delivery_timeline}`}
                         </p>
                       </div>
-                      <Link
-                        to={`/track-order?orderId=${o.order_id}`}
+                      <button
+                        type="button"
+                        onClick={() => toggleOrderTracking(o.order_id)}
                         data-testid={`account-track-${o.order_id}`}
-                        className="flex items-center gap-1 text-xs font-bold text-emerald-700 hover:text-emerald-800"
+                        className="flex items-center gap-1 text-xs font-bold text-emerald-700 hover:text-emerald-800 transition-colors"
                       >
-                        Track <ChevronRight size={13} />
-                      </Link>
+                        {expanded ? 'Hide' : 'Track'}
+                        {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                      </button>
                     </div>
-                    {/* Items summary */}
+                    {/* Items summary (always visible) */}
                     {Array.isArray(o.items) && o.items.length > 0 && (
                       <p className="mt-2 ml-14 text-[11px] text-stone-500 truncate">
                         {o.items.map((it) => `${it.name || it.slug}${it.quantity > 1 ? ` ×${it.quantity}` : ''}`).join(' · ')}
                       </p>
                     )}
-                    {/* Delhivery tracking link (if AWB generated) */}
-                    {o.tracking_url && (
-                      <a
-                        href={o.tracking_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-2 ml-14 inline-flex items-center gap-1 text-[11px] font-bold text-sky-700 hover:text-sky-800"
-                        data-testid={`account-delhivery-${o.order_id}`}
-                      >
-                        Open Delhivery tracking <ExternalLink size={11} />
-                      </a>
+
+                    {/* Inline tracking details (expanded) */}
+                    {expanded && (
+                      <div className="mt-3 ml-14 bg-stone-50 rounded-xl p-3 ring-1 ring-stone-200" data-testid={`account-tracking-${o.order_id}`}>
+                        {tracking === 'loading' && (
+                          <div className="flex items-center gap-2 text-xs text-stone-500">
+                            <Loader2 size={13} className="animate-spin" /> Fetching live tracking…
+                          </div>
+                        )}
+                        {tracking === 'error' && (
+                          <p className="text-xs text-rose-600">Couldn't load tracking details. Please try again.</p>
+                        )}
+                        {tracking && tracking !== 'loading' && tracking !== 'error' && (
+                          <div className="space-y-2.5">
+                            {/* Status row */}
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <Box size={14} className="text-emerald-700" />
+                                <span className="text-xs font-bold text-stone-800 capitalize">
+                                  {(tracking.delivery_status || tracking.status || 'Processing').replace(/_/g, ' ')}
+                                </span>
+                              </div>
+                              {tracking.expected_delivery && (
+                                <span className="flex items-center gap-1 text-[11px] text-stone-500">
+                                  <Clock size={11} /> ETA {tracking.expected_delivery}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* AWB row */}
+                            {tracking.awb_number && (
+                              <div className="flex items-center justify-between text-xs">
+                                <div>
+                                  <p className="text-[10px] uppercase tracking-wide text-stone-400">Tracking #</p>
+                                  <p className="font-mono font-bold text-stone-900">{tracking.awb_number}</p>
+                                </div>
+                                {tracking.tracking_url && (
+                                  <a
+                                    href={tracking.tracking_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 text-[11px] font-bold text-sky-700 hover:text-sky-800"
+                                    data-testid={`account-delhivery-${o.order_id}`}
+                                  >
+                                    Open Delhivery <ExternalLink size={11} />
+                                  </a>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Status location */}
+                            {tracking.status_location && (
+                              <div className="flex items-center gap-1.5 text-[11px] text-stone-500">
+                                <MapPin size={11} /> {tracking.status_location}
+                              </div>
+                            )}
+
+                            {/* Scan timeline */}
+                            {Array.isArray(tracking.scans) && tracking.scans.length > 0 && (
+                              <ol className="space-y-1.5 pt-1.5 border-t border-stone-200">
+                                {tracking.scans.slice(0, 6).map((s, i) => (
+                                  <li key={i} className="flex items-start gap-2 text-[11px]">
+                                    <span className={`mt-1 w-1.5 h-1.5 rounded-full flex-shrink-0 ${i === 0 ? 'bg-emerald-600' : 'bg-stone-300'}`} />
+                                    <div className="min-w-0">
+                                      <p className="font-bold text-stone-800">{s.status || s.instruction || 'Update'}</p>
+                                      <p className="text-stone-500">
+                                        {[s.location, s.scan_date].filter(Boolean).join(' · ')}
+                                      </p>
+                                    </div>
+                                  </li>
+                                ))}
+                              </ol>
+                            )}
+
+                            {/* No AWB yet */}
+                            {!tracking.awb_number && (
+                              <p className="text-[11px] text-stone-500">
+                                Your order is confirmed. Tracking number will appear here once it ships.
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     )}
                   </li>
                 );
