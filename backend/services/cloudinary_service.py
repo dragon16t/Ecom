@@ -40,21 +40,27 @@ def _apply_creds(creds: Dict[str, Optional[str]]) -> None:
 
 
 async def get_cloudinary_credentials(db) -> Dict[str, Optional[str]]:
-    """Return current credentials. Reads from DB first, then env."""
+    """Return current credentials. Prefers DB values, but falls back to env vars
+    whenever a DB field is empty/missing — protects against the bug where a
+    partially-populated admin_settings doc (e.g. cloud_name="") silently disables
+    Cloudinary and makes uploads land on ephemeral disk."""
     doc = await db.admin_settings.find_one({"type": "cloudinary"})
+    env_cloud  = (os.environ.get("CLOUDINARY_CLOUD_NAME") or "").strip()
+    env_key    = (os.environ.get("CLOUDINARY_API_KEY") or "").strip()
+    env_secret = (os.environ.get("CLOUDINARY_API_SECRET") or "").strip()
     if doc:
         creds = {
-            "cloud_name": doc.get("cloud_name"),
-            "api_key": doc.get("api_key"),
-            "api_secret": doc.get("api_secret"),
-            "loaded_from": "db",
+            "cloud_name": (doc.get("cloud_name") or "").strip() or env_cloud,
+            "api_key":    (doc.get("api_key") or "").strip()    or env_key,
+            "api_secret": (doc.get("api_secret") or "").strip() or env_secret,
+            "loaded_from": "db+env",
         }
     else:
         creds = {
-            "cloud_name": os.environ.get("CLOUDINARY_CLOUD_NAME"),
-            "api_key": os.environ.get("CLOUDINARY_API_KEY"),
-            "api_secret": os.environ.get("CLOUDINARY_API_SECRET"),
-            "loaded_from": "env" if os.environ.get("CLOUDINARY_API_KEY") else None,
+            "cloud_name": env_cloud,
+            "api_key": env_key,
+            "api_secret": env_secret,
+            "loaded_from": "env" if env_key else None,
         }
     _creds_cache.update(creds)
     return creds

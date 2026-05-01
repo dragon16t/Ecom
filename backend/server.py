@@ -2997,21 +2997,46 @@ async def startup_seed():
         await product_routes._refresh_admin_pw_cache()
     except Exception as e:
         logging.error(f"Failed to refresh admin pw cache: {e}")
-    # Bootstrap Cloudinary credentials from env if admin hasn't saved them yet.
-    # User-provided defaults (api_key + api_secret). cloud_name is required and must be
-    # entered by the admin from the settings panel — Cloudinary expects all three.
+    # Bootstrap Cloudinary credentials from env at every startup.
+    # Self-healing: if the admin_settings doc already exists but has empty fields
+    # (e.g. an earlier deploy wrote it before env vars were set), we patch the
+    # missing fields from env so uploads never silently fall back to local disk.
     try:
         from services import cloudinary_service as _cs
+        env_cloud  = (os.environ.get("CLOUDINARY_CLOUD_NAME") or "").strip()
+        env_key    = (os.environ.get("CLOUDINARY_API_KEY") or "").strip()
+        env_secret = (os.environ.get("CLOUDINARY_API_SECRET") or "").strip()
         existing = await db.admin_settings.find_one({"type": "cloudinary"})
+        patch = {}
         if not existing:
-            await db.admin_settings.insert_one({
+            patch = {
                 "type": "cloudinary",
-                "cloud_name": os.environ.get("CLOUDINARY_CLOUD_NAME", ""),
-                "api_key": os.environ.get("CLOUDINARY_API_KEY", "919343189866349"),
-                "api_secret": os.environ.get("CLOUDINARY_API_SECRET", "Zsl8g8Kq6oQq4goafPMBtB3W7jU"),
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            })
+                "cloud_name": env_cloud,
+                "api_key": env_key,
+                "api_secret": env_secret,
+            }
+        else:
+            if not (existing.get("cloud_name") or "").strip() and env_cloud:
+                patch["cloud_name"] = env_cloud
+            if not (existing.get("api_key") or "").strip() and env_key:
+                patch["api_key"] = env_key
+            if not (existing.get("api_secret") or "").strip() and env_secret:
+                patch["api_secret"] = env_secret
+        if patch:
+            patch["updated_at"] = datetime.now(timezone.utc).isoformat()
+            await db.admin_settings.update_one(
+                {"type": "cloudinary"}, {"$set": patch}, upsert=True,
+            )
+            logging.info(f"[cloudinary] bootstrap patched fields: {list(patch.keys())}")
         await _cs.get_cloudinary_credentials(db)
+        if _cs.is_configured():
+            logging.info("[cloudinary] ready for uploads")
+        else:
+            logging.warning(
+                "[cloudinary] NOT configured — image uploads will fail. "
+                "Set CLOUDINARY_CLOUD_NAME / API_KEY / API_SECRET env vars or "
+                "save them in admin settings."
+            )
     except Exception as e:
         logging.error(f"Failed to seed cloudinary creds: {e}")
     # One-time migration: update legacy volume_discount tiers (5/10/15) → new (3/5/8)

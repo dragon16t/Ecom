@@ -1072,33 +1072,116 @@ async def upload_image(
         logging.error(f"Image compression failed: {e}")
         raise HTTPException(status_code=400, detail="Could not process image")
 
-    # Save to filesystem (served via StaticFiles at /api/uploads)
-    uploads_dir = Path(__file__).parent.parent / "uploads" / "products"
-    uploads_dir.mkdir(parents=True, exist_ok=True)
-    filename = f"{uuid.uuid4().hex}.{out_ext}"
-    (uploads_dir / filename).write_bytes(compressed)
-
-    public_url = f"/api/uploads/products/{filename}"
-
-    # If Cloudinary is configured, also push there and return its CDN URL
-    # so the product page loads from a fast global CDN. Local copy stays as a backup.
+    # === Storage strategy ===
+    # Cloudinary is the ONLY durable storage — the local /uploads folder is
+    # ephemeral (wiped on every redeploy in Kubernetes). If Cloudinary is
+    # configured we upload there and return its CDN URL. If it's NOT configured
+    # we FAIL the request loudly instead of silently saving to the local disk
+    # that will disappear on next deploy — that's exactly the bug that caused
+    # "uploaded images are missing" in production.
+    from services import cloudinary_service as _cs
+    cloudinary_ok = False
     try:
-        from services import cloudinary_service as _cs
-        if await _cs.ensure_configured(db):
+        cloudinary_ok = await _cs.ensure_configured(db)
+    except Exception as exc:
+        logging.warning(f"Cloudinary probe failed: {exc}")
+
+    public_url = None
+    if cloudinary_ok:
+        try:
             res = await _cs.upload_image(db, compressed, folder="celesta-glow/products", public_id=uuid.uuid4().hex)
             if res.get("url"):
                 public_url = res["url"]
-    except Exception as exc:
-        logging.warning(f"Cloudinary upload skipped: {exc}")
+        except Exception as exc:
+            logging.error(f"Cloudinary upload failed: {exc}")
+            raise HTTPException(
+                status_code=502,
+                detail=f"Image upload to Cloudinary failed: {exc}. "
+                       f"Please retry — your image is NOT saved yet."
+            )
+
+    # Fallback: local disk is only used when Cloudinary is unreachable AND we
+    # explicitly allow it via env. In production this branch should never run.
+    allow_local = (os.environ.get("ALLOW_LOCAL_UPLOADS") or "").lower() in ("1", "true", "yes")
+    if not public_url:
+        if not allow_local:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Image storage is not configured. Cloudinary credentials "
+                    "(CLOUDINARY_CLOUD_NAME / CLOUDINARY_API_KEY / CLOUDINARY_API_SECRET) "
+                    "are missing or invalid. Images uploaded to local disk would "
+                    "be lost on the next deploy, so this request is being blocked "
+                    "to protect you. Fix: set the three Cloudinary env vars and redeploy."
+                ),
+            )
+        # Dev/preview fallback only — write locally for iteration speed.
+        uploads_dir = Path(__file__).parent.parent / "uploads" / "products"
+        uploads_dir.mkdir(parents=True, exist_ok=True)
+        filename = f"{uuid.uuid4().hex}.{out_ext}"
+        (uploads_dir / filename).write_bytes(compressed)
+        public_url = f"/api/uploads/products/{filename}"
+
     return {
         "success": True,
         "url": public_url,
+        "storage": "cloudinary" if cloudinary_ok else "local",
         "original_size": len(raw),
         "size": len(compressed),
         "mime": out_mime,
         "width": img.size[0],
         "height": img.size[1],
     }
+
+
+# ==================== STORAGE HEALTH / DIAGNOSTICS (admin) ====================
+
+@router.get("/admin/storage/health")
+async def storage_health(x_admin_token: str = Header(None, alias="X-Admin-Token")):
+    """Tells the admin EXACTLY where image uploads go right now + which existing
+    products are pointing at ephemeral /api/uploads/ URLs (which will 404 after
+    the next redeploy). Lets you see the damage and target your re-uploads."""
+    verify_auth(x_admin_token=x_admin_token)
+    from services import cloudinary_service as _cs
+    ok = await _cs.ensure_configured(db)
+    creds = await _cs.get_cloudinary_credentials(db)
+
+    # Scan products + combos for any URL pointing at the ephemeral /api/uploads path
+    broken_slugs = []
+    async for p in db.products.find({}, {"_id": 0, "slug": 1, "name": 1, "images": 1}):
+        imgs = p.get("images") or []
+        dead = [u for u in imgs if isinstance(u, str) and u.startswith("/api/uploads/")]
+        if dead:
+            broken_slugs.append({"slug": p.get("slug"), "name": p.get("name"), "dead_count": len(dead), "total": len(imgs)})
+    return {
+        "cloudinary_configured": ok,
+        "cloud_name": creds.get("cloud_name") or None,
+        "loaded_from": creds.get("loaded_from"),
+        "new_uploads_will_go_to": "cloudinary" if ok else "FAIL (request will be blocked)",
+        "products_with_dead_images": broken_slugs,
+        "dead_image_count": sum(p["dead_count"] for p in broken_slugs),
+        "fix_hint": (
+            "Re-upload the flagged products' images — the new version of the "
+            "upload endpoint will push them straight to Cloudinary."
+            if ok else
+            "Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET "
+            "env vars on the production deployment and redeploy."
+        ),
+    }
+
+
+@router.post("/admin/storage/purge-dead-images")
+async def purge_dead_images(x_admin_token: str = Header(None, alias="X-Admin-Token")):
+    """Remove every /api/uploads/... URL from product.images arrays so the
+    broken icon is replaced by the empty-placeholder on the store. Admin can
+    then re-upload fresh images cleanly."""
+    verify_auth(x_admin_token=x_admin_token)
+    touched = 0
+    async for p in db.products.find({"images": {"$regex": "^/api/uploads/"}}, {"_id": 0, "slug": 1, "images": 1}):
+        clean = [u for u in (p.get("images") or []) if not (isinstance(u, str) and u.startswith("/api/uploads/"))]
+        await db.products.update_one({"slug": p["slug"]}, {"$set": {"images": clean}})
+        touched += 1
+    return {"success": True, "products_updated": touched}
 
 
 # ==================== SEED DATA ====================
