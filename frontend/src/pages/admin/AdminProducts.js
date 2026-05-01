@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Package, Plus, Edit, Trash2, Image as ImageIcon, DollarSign, Eye, EyeOff, Save, X, ChevronDown, Tag, Settings, Layers, Upload, Trash, Clock, Rocket, GripVertical, ArrowUp, ArrowDown, ArrowLeft, LayoutDashboard, Sparkles, Crop } from 'lucide-react';
+import { List } from 'react-window';
 import ImageCropperModal from '../../components/admin/ImageCropperModal';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -599,6 +600,20 @@ function URLAnalyzerModal({ open, onClose, onApply, headers }) {
 }
 
 
+// Stable row component for the virtualized products list. Receives the
+// pre-computed `items` array and a `renderRow` function via `rowProps`, plus
+// `index` and `style` from react-window. The `style` prop carries the absolute
+// positioning the virtualizer relies on — never override `top`/`height`.
+function VirtualProductRow({ index, style, items, renderRow }) {
+  const product = items[index];
+  if (!product) return null;
+  return (
+    <div style={style} className="pb-4">
+      {renderRow(product)}
+    </div>
+  );
+}
+
 function AdminProducts() {
   const navigate = useNavigate();
   const [products, setProducts] = useState([]);
@@ -1082,7 +1097,7 @@ function AdminProducts() {
             if (filtered.length === 0) {
               return <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 text-center text-sm text-amber-800">No products match the current filters.</div>;
             }
-            return filtered.map(product => (
+            const renderRow = (product) => (
             <div
               key={product.slug}
               draggable
@@ -1399,7 +1414,57 @@ function AdminProducts() {
                 </div>
               )}
             </div>
-            ));
+            );
+            // The product currently in the editor (if any). New-product flow
+            // (__isNew) is handled separately above the filter bar, so we
+            // exclude it here.
+            const editingSlug = editProduct && !editProduct.__isNew ? editProduct.slug : null;
+            const editingInList = editingSlug ? filtered.find(p => p.slug === editingSlug) : null;
+            const listItems = editingInList
+              ? filtered.filter(p => p.slug !== editingSlug)
+              : filtered;
+
+            // Virtualization kicks in only when the catalog gets meaningful.
+            // For tiny lists we render the classic non-virtualized layout so
+            // small merchants get the cleanest look (no scroll container).
+            const VIRTUALIZATION_THRESHOLD = 40;
+            const useVirtual = listItems.length > VIRTUALIZATION_THRESHOLD;
+
+            return (
+              <>
+                {/* Editing card always rendered above (never inside the
+                    virtualized list) — its variable height would otherwise
+                    break the fixed-row-height assumption. */}
+                {editingInList && (
+                  <div data-testid="admin-product-edit-pinned">
+                    {renderRow(editingInList)}
+                  </div>
+                )}
+                {!useVirtual && (
+                  <div className="space-y-4" data-testid="admin-products-list-classic">
+                    {listItems.map(p => renderRow(p))}
+                  </div>
+                )}
+                {useVirtual && (
+                  <div
+                    className="bg-gray-50/40 rounded-2xl border border-gray-100 p-2"
+                    style={{ height: 'min(72vh, 820px)' }}
+                    data-testid="admin-products-list-virtual"
+                  >
+                    <List
+                      rowCount={listItems.length}
+                      rowHeight={120}
+                      overscanCount={4}
+                      rowProps={{ items: listItems, renderRow }}
+                      rowComponent={VirtualProductRow}
+                    />
+                    <p className="text-[10px] text-gray-400 text-center mt-1" data-testid="virtualization-hint">
+                      Showing {listItems.length} products · virtualized for performance
+                    </p>
+                  </div>
+                )}
+              </>
+            );
           })()}
         </div>
       )}

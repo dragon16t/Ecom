@@ -233,7 +233,9 @@ async def get_all_products(
     if paginating:
         cursor = cursor.skip(skip_i).limit(limit_i)
     else:
-        cursor = cursor.limit(500)  # generous cap for tiny catalogs / legacy clients
+        # Admin & legacy callers fetch the full catalog in one shot. Cap at 5000
+        # so the list view (with virtualization) can host 2,000-4,000 SKUs.
+        cursor = cursor.limit(5000)
     products = await cursor.to_list(length=None)
 
     # Auto-flip TBL → launched on read if launch_date passed (unchanged logic)
