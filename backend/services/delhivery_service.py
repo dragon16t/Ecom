@@ -14,7 +14,10 @@ class DelhiveryService:
     def __init__(self, db):
         self.db = db
         self.api_key = os.environ.get('DELHIVERY_API_KEY')
-        self.pickup_location = os.environ.get('DELHIVERY_PICKUP_LOCATION', 'PARAAKAL')
+        # Pickup warehouse name configured in Delhivery One ("Settings → Warehouses").
+        # Must match EXACTLY what's registered there — the API rejects anything
+        # else silently. Fixed a legacy typo "PARAAKAL" → "Parakkal".
+        self.pickup_location = os.environ.get('DELHIVERY_PICKUP_LOCATION', 'Parakkal')
         # Default package dimensions / weight — overridable via env
         self.package_weight_grams = int(os.environ.get('DELHIVERY_PACKAGE_WEIGHT_GRAMS', 500))
         self.package_length_cm = int(os.environ.get('DELHIVERY_PACKAGE_LENGTH_CM', 20))

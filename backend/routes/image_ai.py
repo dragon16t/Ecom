@@ -21,13 +21,20 @@ logger = logging.getLogger(__name__)
 # Admin token (imported from env, mirrors server.py)
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "celestaglow2024")
 
-# Shared admin/employee sessions (set by server.py)
+# Shared admin/employee sessions + db (set by server.py)
 _admin_sessions: dict = {}
+_db = None
 
 
 def set_admin_sessions(sessions: dict):
     global _admin_sessions
     _admin_sessions = sessions
+
+
+def set_db(db):
+    """Called by server.py so this module can reach Cloudinary via the service layer."""
+    global _db
+    _db = db
 
 
 def _verify_admin_token(x_admin_token: Optional[str]):
@@ -116,19 +123,55 @@ async def remove_background(
     out_bytes = base64.b64decode(out_img["data"])
     mime = out_img.get("mime_type", "image/png")
 
-    # 3. Save to disk so admin can reference a stable URL
-    ext = "png" if "png" in mime else "jpg"
-    filename = f"bg-{uuid.uuid4().hex[:12]}.{ext}"
-    out_path = UPLOAD_DIR / filename
-    with open(out_path, "wb") as f:
-        f.write(out_bytes)
+    # === Durable storage via Cloudinary ===
+    # We NEVER save these to local disk in production — that disk is wiped on
+    # every redeploy and the image URL becomes a 404. Same class of bug that
+    # bit the product uploads. Cloudinary is the single source of truth.
+    public_url = None
+    storage = "none"
+    if _db is not None:
+        try:
+            from services import cloudinary_service as _cs
+            if await _cs.ensure_configured(_db):
+                res = await _cs.upload_image(
+                    _db, out_bytes,
+                    folder="celesta-glow/ai-bg",
+                    public_id=f"bg-{uuid.uuid4().hex[:12]}",
+                )
+                if res.get("url"):
+                    public_url = res["url"]
+                    storage = "cloudinary"
+        except Exception as exc:
+            logger.error(f"AI-BG Cloudinary upload failed: {exc}")
 
-    # Build a public URL. server.py mounts /api/uploads → backend/uploads
-    public_url = f"/api/uploads/ai_bg/{filename}"
+    # Fallback to local disk ONLY if explicitly allowed (dev/preview). In prod
+    # we'd rather fail loudly than return a URL that dies on next redeploy.
+    allow_local = (os.environ.get("ALLOW_LOCAL_UPLOADS") or "").lower() in ("1", "true", "yes")
+    if not public_url:
+        if not allow_local:
+            # Still return the data URL — the admin UI uses that for instant preview,
+            # but we refuse to hand back a persisted URL that will break on redeploy.
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "AI image storage is not configured. Cloudinary credentials are "
+                    "missing — the cleaned image would be lost on the next deploy. "
+                    "Set CLOUDINARY_CLOUD_NAME / API_KEY / API_SECRET and redeploy."
+                ),
+            )
+        # Dev-only fallback: local disk
+        ext = "png" if "png" in mime else "jpg"
+        filename = f"bg-{uuid.uuid4().hex[:12]}.{ext}"
+        out_path = UPLOAD_DIR / filename
+        with open(out_path, "wb") as f:
+            f.write(out_bytes)
+        public_url = f"/api/uploads/ai_bg/{filename}"
+        storage = "local"
 
     return {
         "success": True,
         "image_url": public_url,
+        "storage": storage,
         "mime_type": mime,
         "size_bytes": len(out_bytes),
         # Also return a data URL fallback for instant preview without cache issues

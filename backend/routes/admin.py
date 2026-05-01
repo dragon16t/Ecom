@@ -12,8 +12,20 @@ import hashlib
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
-# Simple admin authentication (in production, use proper JWT)
-ADMIN_PASSWORD_HASH = hashlib.sha256("celestaglow2024".encode()).hexdigest()
+
+def _admin_pw_hash() -> str:
+    """Always resolve from env at call-time so password changes actually take
+    effect without a redeploy. Falls back to the seed value only when no env
+    var is set. Fixes a security bug where the hash was frozen at module-load
+    time and accepted the seed password forever."""
+    pw = os.environ.get("ADMIN_PASSWORD") or "celestaglow2024"
+    return hashlib.sha256(pw.encode()).hexdigest()
+
+
+# Back-compat shim — some older code paths read the module-level constant.
+# We keep the name but make it a lazy property by evaluating via a function.
+def _get_admin_password_hash():
+    return _admin_pw_hash()
 
 
 class AdminLogin(BaseModel):
@@ -75,7 +87,7 @@ async def verify_admin_async(x_admin_token: str):
             return True
     
     # Fallback to default password
-    if token_hash == ADMIN_PASSWORD_HASH:
+    if token_hash == _admin_pw_hash():
         return True
     
     raise HTTPException(status_code=403, detail="Invalid admin token")
@@ -129,7 +141,7 @@ async def verify_admin(x_admin_token: str = Header(None)):
             pass
     
     # Fallback to default password
-    if token_hash == ADMIN_PASSWORD_HASH:
+    if token_hash == _admin_pw_hash():
         return True
     
     raise HTTPException(status_code=403, detail="Invalid admin token")
@@ -164,7 +176,7 @@ async def admin_login(credentials: AdminLogin):
             return {"success": True, "token": credentials.password}
     else:
         # Use default password
-        if hashlib.sha256(credentials.password.encode()).hexdigest() == ADMIN_PASSWORD_HASH:
+        if hashlib.sha256(credentials.password.encode()).hexdigest() == _admin_pw_hash():
             return {"success": True, "token": credentials.password}
     
     raise HTTPException(status_code=401, detail="Invalid password")
@@ -194,7 +206,7 @@ async def change_admin_password(password_data: AdminPasswordChange, x_admin_toke
             pass
 
     stored_password = await db.admin_settings.find_one({"type": "password"})
-    stored_hash = (stored_password or {}).get("hash") or ADMIN_PASSWORD_HASH
+    stored_hash = (stored_password or {}).get("hash") or _admin_pw_hash()
     token_hash = hashlib.sha256(x_admin_token.encode()).hexdigest()
 
     if not is_session and token_hash != stored_hash:

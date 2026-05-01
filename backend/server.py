@@ -2943,6 +2943,7 @@ app.include_router(routines_routes.router, prefix="/api")
 
 # Share admin_sessions with image_ai routes
 image_ai_routes.set_admin_sessions(admin_sessions)
+image_ai_routes.set_db(db)
 
 # Mount uploads directory so /api/uploads/ai_bg/* is publicly accessible via ingress
 from fastapi.staticfiles import StaticFiles  # noqa: E402

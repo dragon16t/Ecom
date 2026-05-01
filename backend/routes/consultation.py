@@ -398,7 +398,11 @@ async def track_consultation_event(event: EventTrack):
 
 # Reference to admin_sessions from server.py (will be set via set_admin_sessions)
 admin_sessions = {}
-ADMIN_PASSWORD = "celestaglow2024"
+
+def _admin_password() -> str:
+    """Always read at call-time so env changes take effect without redeploy."""
+    import os as _os
+    return _os.environ.get("ADMIN_PASSWORD") or "celestaglow2024"
 
 def set_admin_sessions(sessions_dict):
     """Set reference to admin_sessions from server.py"""
@@ -410,7 +414,7 @@ def verify_admin_token(x_admin_token: str = Header(None)):
     import hashlib
     from datetime import datetime, timezone
     
-    ADMIN_PASSWORD_HASH = hashlib.sha256(ADMIN_PASSWORD.encode()).hexdigest()
+    ADMIN_PASSWORD_HASH = hashlib.sha256(_admin_password().encode()).hexdigest()
     
     if not x_admin_token:
         raise HTTPException(status_code=401, detail="Admin token required")
@@ -426,7 +430,7 @@ def verify_admin_token(x_admin_token: str = Header(None)):
             del admin_sessions[x_admin_token]
     
     # Check if it's the plain password
-    if x_admin_token == ADMIN_PASSWORD:
+    if x_admin_token == _admin_password():
         return True
     
     # Check if it's the hashed password
