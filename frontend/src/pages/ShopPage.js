@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import axios from 'axios';
 import BackButton from '../components/BackButton';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Star, ShoppingCart, Sparkles, ChevronRight, Package, Check, Clock, ArrowRight, Truck, Shield, Filter, Heart, Share2, BadgeCheck, Eye, Flame, Award } from 'lucide-react'; // eslint-disable-line no-unused-vars
@@ -34,6 +35,20 @@ function ShopPage() {
   const [settings, setSettings] = useState({});
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
+  // --- Pagination + server-side search state ---
+  const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [total, setTotal] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const PAGE_SIZE = 24;
+
+  // Debounce the search box so we don't slam the server on every keystroke
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchTerm]);
 
   useEffect(() => {
     // Meta Pixel — niche/category PageView event for Shop / View All
@@ -44,32 +59,73 @@ function ShopPage() {
     }
   }, [nicheParam, nicheMeta]);
 
+  // Reset pagination whenever the niche or the search term changes
+  useEffect(() => {
+    setProducts([]);
+    setPage(1);
+    setHasMore(false);
+    setTotal(0);
+    setLoading(true);
+  }, [nicheParam, debouncedSearch]);
+
+  // Primary fetch (page 1 of products + combos + site-settings)
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const productsUrl = nicheParam
-          ? `${API}/api/products?niche=${encodeURIComponent(nicheParam)}`
-          : `${API}/api/products`;
-        // Combos filtered by niche (universal combos still come through), with a short
-        // TTL so admin TBL/launch updates appear on the live page within ~60 seconds.
+        const params = new URLSearchParams();
+        if (nicheParam) params.set('niche', nicheParam);
+        params.set('page', '1');
+        params.set('limit', String(PAGE_SIZE));
+        if (debouncedSearch) params.set('search', debouncedSearch);
+
+        const productsUrl = `${API}/api/products?${params.toString()}`;
         const combosUrl = nicheParam
           ? `${API}/api/combos?niche=${encodeURIComponent(nicheParam)}`
           : `${API}/api/combos`;
         const [prodRes, comboRes, settRes] = await Promise.all([
-          cachedGet(productsUrl),
+          axios.get(productsUrl),
           cachedGet(combosUrl, { ttl: 60_000 }),
           cachedGet(`${API}/api/site-settings`, { ttl: 60_000 }),
         ]);
         if (cancelled) return;
-        setProducts(prodRes.data);
+        // Paginated response always returns { items, total, page, has_next }
+        const payload = prodRes.data;
+        const items = Array.isArray(payload) ? payload : (payload.items || []);
+        setProducts(items);
+        setTotal(Array.isArray(payload) ? items.length : (payload.total || items.length));
+        setHasMore(Array.isArray(payload) ? false : !!payload.has_next);
+        setPage(1);
         setCombos(comboRes.data);
         setSettings(settRes.data);
       } catch (err) { console.error(err); }
       if (!cancelled) setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [nicheParam]);
+  }, [nicheParam, debouncedSearch]);
+
+  // Load-more handler — appends the next page to the list.
+  const loadMore = async () => {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    try {
+      const params = new URLSearchParams();
+      if (nicheParam) params.set('niche', nicheParam);
+      params.set('page', String(page + 1));
+      params.set('limit', String(PAGE_SIZE));
+      if (debouncedSearch) params.set('search', debouncedSearch);
+      const res = await axios.get(`${API}/api/products?${params.toString()}`);
+      const payload = res.data;
+      const items = Array.isArray(payload) ? payload : (payload.items || []);
+      setProducts((prev) => [...prev, ...items]);
+      setHasMore(Array.isArray(payload) ? false : !!payload.has_next);
+      setPage((p) => p + 1);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   const completeKit = combos.find(c => c.combo_id === (nicheMeta?.kitId || 'complete-anti-aging-kit'));
   const otherCombos = combos.filter(c => c.combo_id !== (nicheMeta?.kitId || 'complete-anti-aging-kit'));
@@ -321,17 +377,62 @@ function ShopPage() {
           </div>
         </div>
 
+        {/* PRODUCT SEARCH BAR — server-side, paginated */}
+        <div className="mb-5 flex items-center gap-2" data-testid="shop-search-bar">
+          <div className="relative flex-1 max-w-md">
+            <input
+              type="search"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder={`Search ${nicheMeta?.label || 'products'}…`}
+              className="w-full pl-10 pr-3 h-11 rounded-xl bg-white ring-1 ring-gray-200 focus:ring-2 focus:ring-green-500 text-sm outline-none transition-colors"
+              data-testid="shop-search-input"
+              style={{ fontSize: '16px' }}
+            />
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+          </div>
+          {total > 0 && (
+            <span className="text-[11px] font-bold text-gray-500 bg-gray-100 px-2.5 py-1 rounded-full">
+              {total} {total === 1 ? 'product' : 'products'}
+            </span>
+          )}
+        </div>
+
         {/* PRODUCT GRID */}
         {visibleProducts.length === 0 ? (
           <div className="bg-white border border-green-100 rounded-2xl p-10 text-center text-sm text-gray-500">
-            No products in this category yet.
+            {debouncedSearch
+              ? `No products matched "${debouncedSearch}".`
+              : 'No products in this category yet.'}
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-5 mb-12">
-            {visibleProducts.map(product => (
-              <ProductCard key={product.slug} product={product} />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-5 mb-6">
+              {visibleProducts.map(product => (
+                <ProductCard key={product.slug} product={product} />
+              ))}
+            </div>
+            {hasMore && (
+              <div className="flex justify-center mb-10">
+                <button
+                  type="button"
+                  onClick={loadMore}
+                  disabled={loadingMore}
+                  data-testid="shop-load-more"
+                  className="px-6 h-11 rounded-full bg-white ring-1 ring-gray-300 text-sm font-bold text-gray-800 hover:bg-gray-50 disabled:opacity-60 transition-colors flex items-center gap-2"
+                >
+                  {loadingMore ? (
+                    <>
+                      <span className="w-4 h-4 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
+                      Loading…
+                    </>
+                  ) : (
+                    <>Load more · {Math.max(0, total - visibleProducts.length)} remaining</>
+                  )}
+                </button>
+              </div>
+            )}
+          </>
         )}
 
         {/* MORE COMBO DEALS */}

@@ -31,16 +31,32 @@ export default function ConcernCategoryPage({ mode = 'concern' }) {
   const [allCategories, setAllCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeCat, setActiveCat] = useState('all');
+  // --- Pagination + server-side search (same pattern as ShopPage) ---
+  const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [total, setTotal] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const PAGE_SIZE = 24;
 
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchTerm]);
+
+  // Re-fetch page 1 whenever slug/mode or search term changes
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setActiveCat('all');
-    const calls = [
-      mode === 'concern'
-        ? cachedGet(`${API}/api/concerns/${slug}`)
-        : cachedGet(`${API}/api/categories/${slug}`),
-    ];
+    setPage(1);
+    const base = mode === 'concern'
+      ? `${API}/api/concerns/${slug}`
+      : `${API}/api/categories/${slug}`;
+    const qs = new URLSearchParams({ page: '1', limit: String(PAGE_SIZE) });
+    if (debouncedSearch) qs.set('search', debouncedSearch);
+    const calls = [ axios.get(`${base}?${qs}`) ];
     if (mode === 'concern') {
       calls.push(cachedGet(`${API}/api/categories`));
     }
@@ -48,12 +64,33 @@ export default function ConcernCategoryPage({ mode = 'concern' }) {
       .then(([main, cats]) => {
         if (cancelled) return;
         setData(main.data);
+        setTotal(main.data?.total ?? (main.data?.products?.length || 0));
+        setHasMore(!!main.data?.has_next);
         if (cats) setAllCategories(cats.data || []);
       })
       .catch(() => { if (!cancelled) setData(null); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [slug, mode]);
+  }, [slug, mode, debouncedSearch]);
+
+  // Fetch next page + append
+  const loadMore = async () => {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    try {
+      const base = mode === 'concern'
+        ? `${API}/api/concerns/${slug}`
+        : `${API}/api/categories/${slug}`;
+      const qs = new URLSearchParams({ page: String(page + 1), limit: String(PAGE_SIZE) });
+      if (debouncedSearch) qs.set('search', debouncedSearch);
+      const r = await axios.get(`${base}?${qs}`);
+      const next = r.data?.products || [];
+      setData(prev => prev ? { ...prev, products: [...(prev.products || []), ...next] } : r.data);
+      setHasMore(!!r.data?.has_next);
+      setPage(p => p + 1);
+    } catch {}
+    finally { setLoadingMore(false); }
+  };
 
   const products = data?.products || [];
   const head = mode === 'concern' ? data?.concern : data?.category;
@@ -200,14 +237,59 @@ export default function ConcernCategoryPage({ mode = 'concern' }) {
           </Link>
         </div>
 
+        {/* Search bar — server-side, debounced, resets pagination on change */}
+        <div className="mb-4 flex items-center gap-2" data-testid="ccp-search-bar">
+          <div className="relative flex-1 max-w-md">
+            <input
+              type="search"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder={`Search in ${head?.name || (mode === 'concern' ? 'this concern' : 'this category')}…`}
+              className="w-full pl-10 pr-3 h-11 rounded-xl bg-white ring-1 ring-stone-200 focus:ring-2 focus:ring-stone-500 text-sm outline-none transition-colors"
+              data-testid="ccp-search-input"
+              style={{ fontSize: '16px' }}
+            />
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+          </div>
+          {total > 0 && (
+            <span className="text-[11px] font-bold text-stone-500 bg-stone-100 px-2.5 py-1 rounded-full">
+              {total} {total === 1 ? 'item' : 'items'}
+            </span>
+          )}
+        </div>
+
         {visibleProducts.length === 0 ? (
           <div className="bg-white border rounded-2xl p-10 text-center text-sm text-gray-500" style={{ borderColor: accentFrom }}>
-            No products yet for this {mode === 'concern' ? 'concern' : 'category'}. Check back soon!
+            {debouncedSearch
+              ? `No products matched "${debouncedSearch}".`
+              : `No products yet for this ${mode === 'concern' ? 'concern' : 'category'}. Check back soon!`}
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-5">
-            {visibleProducts.map(product => <ProductCard key={product.slug} product={product} />)}
-          </div>
+          <>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-5">
+              {visibleProducts.map(product => <ProductCard key={product.slug} product={product} />)}
+            </div>
+            {hasMore && (
+              <div className="flex justify-center mt-6">
+                <button
+                  type="button"
+                  onClick={loadMore}
+                  disabled={loadingMore}
+                  data-testid="ccp-load-more"
+                  className="px-6 h-11 rounded-full bg-white ring-1 ring-stone-300 text-sm font-bold text-stone-800 hover:bg-stone-50 disabled:opacity-60 transition-colors flex items-center gap-2"
+                >
+                  {loadingMore ? (
+                    <>
+                      <span className="w-4 h-4 border-2 border-stone-600 border-t-transparent rounded-full animate-spin" />
+                      Loading…
+                    </>
+                  ) : (
+                    <>Load more · {Math.max(0, total - visibleProducts.length)} remaining</>
+                  )}
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

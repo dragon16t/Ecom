@@ -54,28 +54,17 @@ class SaveCartRequest(BaseModel):
 # Helpers
 # =============================================================
 async def _send_otp_email(to_email: str, otp: str) -> bool:
-    smtp_host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
-    smtp_port = int(os.environ.get("SMTP_PORT", 587))
-    smtp_user = os.environ.get("SMTP_USER")
-    smtp_password = os.environ.get("SMTP_PASSWORD")
+    """Send OTP via the unified email service — auto-routes to Gmail for the
+    first 250 emails/day (IST), then switches to SendGrid. The caller doesn't
+    need to know which provider did the work."""
+    from services import email_service
+    text = (
+        f"Your Celesta Glow login code is: {otp}\n\n"
+        f"This code expires in 10 minutes. If you didn't request this, you can safely ignore this email.\n\n"
+        f"— Celesta Glow"
+    )
 
-    if not smtp_user or not smtp_password:
-        logger.warning("[OTP] SMTP not configured — cannot send OTP email")
-        return False
-
-    try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = f"Your Celesta Glow login code: {otp}"
-        msg["From"] = f"Celesta Glow <{smtp_user}>"
-        msg["To"] = to_email
-
-        text = f"""Your Celesta Glow login code is: {otp}
-
-This code expires in 10 minutes. If you didn't request this, you can safely ignore this email.
-
-— Celesta Glow"""
-
-        html = f"""<!DOCTYPE html>
+    html = f"""<!DOCTYPE html>
 <html><body style="font-family: -apple-system, Segoe UI, Roboto, sans-serif; background:#f8fafc; margin:0; padding:32px 16px;">
   <div style="max-width:480px; margin:0 auto; background:#ffffff; border-radius:16px; overflow:hidden; box-shadow:0 4px 24px rgba(15,23,42,0.08);">
     <div style="background:linear-gradient(135deg,#047857,#0f766e); padding:24px 28px; color:#ffffff;">
@@ -93,18 +82,17 @@ This code expires in 10 minutes. If you didn't request this, you can safely igno
   </div>
 </body></html>"""
 
-        msg.attach(MIMEText(text, "plain"))
-        msg.attach(MIMEText(html, "html"))
-
-        with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
-            server.starttls()
-            server.login(smtp_user, smtp_password)
-            server.sendmail(smtp_user, [to_email], msg.as_string())
-        logger.info(f"[OTP] Sent login code to {to_email}")
+    result = await email_service.send_email(
+        to=to_email,
+        subject=f"Your Celesta Glow login code: {otp}",
+        text=text,
+        html=html,
+    )
+    if result.get("success"):
+        logger.info(f"[OTP] sent to {to_email} via {result.get('channel')}")
         return True
-    except Exception as e:
-        logger.exception(f"[OTP] Failed to send email: {e}")
-        return False
+    logger.warning(f"[OTP] failed for {to_email}: {result.get('reason')}")
+    return False
 
 
 async def _get_session_user(authorization: Optional[str]):

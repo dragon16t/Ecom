@@ -165,13 +165,14 @@ export { getCart, saveCart, addToCart, addComboToCart, setProductQty, getProduct
 function Homepage() {
   const { trackAction } = useTracking();
   // Seed from persistent cache so the page paints instantly on revisit
-  const _cachedProducts = peek(`${API}/api/products?niche=anti-aging`) || [];
+  const _cachedProducts = peek(`${API}/api/products?niche=anti-aging&page=1&limit=48`) || peek(`${API}/api/products?niche=anti-aging`) || [];
+  const _cachedProductsList = Array.isArray(_cachedProducts) ? _cachedProducts : (_cachedProducts?.items || []);
   const _cachedCombos = peek(`${API}/api/combos`) || [];
   const _cachedSettings = peek(`${API}/api/site-settings`) || {};
-  const [products, setProducts] = useState(_cachedProducts);
+  const [products, setProducts] = useState(_cachedProductsList);
   const [combos, setCombos] = useState(_cachedCombos);
   const [settings, setSettings] = useState(_cachedSettings);
-  const [loading, setLoading] = useState(_cachedProducts.length === 0);
+  const [loading, setLoading] = useState(_cachedProductsList.length === 0);
 
   useEffect(() => {
     // Meta Pixel — page-specific PageView event for Homepage
@@ -182,8 +183,11 @@ function Homepage() {
 
   useEffect(() => {
     let cancelled = false;
+    // Cap at 48 products per niche — the homepage only renders curated sections
+    // (bestsellers, new arrivals, featured). Fetching the full catalog would
+    // be 3-5 MB JSON at 2000+ SKUs and freeze low-end devices.
     Promise.all([
-      cachedGet(`${API}/api/products?niche=anti-aging`),
+      cachedGet(`${API}/api/products?niche=anti-aging&page=1&limit=48`),
       // Short TTL on combos + site-settings so admin TBL/launch toggles + niche-section
       // edits propagate to the live homepage within ~60 seconds without a hard refresh.
       cachedGet(`${API}/api/combos`, { ttl: 60_000 }),
@@ -191,7 +195,9 @@ function Homepage() {
     ])
       .then(([p, c, s]) => {
         if (cancelled) return;
-        setProducts(p.data || []);
+        // Paginated endpoint returns { items, total, ... }; guard for legacy array too.
+        const items = Array.isArray(p.data) ? p.data : (p.data?.items || []);
+        setProducts(items);
         setCombos(c.data || []);
         setSettings(s.data || {});
         // If everything came from cache we can drop the loader instantly
@@ -202,8 +208,8 @@ function Homepage() {
     // Background-prefetch sibling niches so switching Skincare/Cosmetics is instant
     // (runs after the browser is idle so it never competes with visible content).
     const prefetch = () => {
-      cachedGet(`${API}/api/products?niche=skincare`).catch(() => {});
-      cachedGet(`${API}/api/products?niche=cosmetics`).catch(() => {});
+      cachedGet(`${API}/api/products?niche=skincare&page=1&limit=48`).catch(() => {});
+      cachedGet(`${API}/api/products?niche=cosmetics&page=1&limit=48`).catch(() => {});
       cachedGet(`${API}/api/concerns`).catch(() => {});
       cachedGet(`${API}/api/categories`).catch(() => {});
     };

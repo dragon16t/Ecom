@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 import secrets
 import logging
 import random
+import re
 
 router = APIRouter()
 db = None
@@ -174,8 +175,23 @@ async def get_all_products(
     niche: Optional[str] = Query(None),
     category: Optional[str] = Query(None),
     concern: Optional[str] = Query(None),
+    # --- NEW: pagination + server-side search ---
+    # `page` is 1-indexed. `limit` is the page size.
+    # When neither param is passed, the endpoint stays backward-compatible and
+    # returns up to 500 items so tiny catalogs (27 products) just work.
+    page: Optional[int] = Query(None, ge=1),
+    limit: Optional[int] = Query(None, ge=1, le=100),
+    search: Optional[str] = Query(None, description="Text search on name/description/brand/tags"),
+    sort: Optional[str] = Query("sort_order", description="sort_order | price_asc | price_desc | newest | popular"),
 ):
-    """Public: Get all active products (with TBL auto-flip), optionally filter by niche/category/concern"""
+    """Public: paginated + searchable product list, with TBL auto-flip.
+
+    Response shape (always a dict now so clients can see totals):
+      { items: [...], total, page, limit, has_next }
+    For back-compat we still return a plain array when NEITHER `page` nor `limit`
+    are provided AND no `search` is used, so nothing breaks on existing callers.
+    """
+    # Build the query
     query = {"is_active": True} if active_only else {}
     if niche:
         query["niche"] = niche
@@ -183,8 +199,44 @@ async def get_all_products(
         query["category"] = category
     if concern:
         query["concerns"] = concern
-    products = await db.products.find(query, {"_id": 0}).sort("sort_order", 1).to_list(100)
-    # Auto-flip TBL → launched on read if launch_date passed
+    if search and search.strip():
+        # Case-insensitive partial match across the four most useful fields.
+        s = search.strip()
+        safe = re.escape(s)
+        query["$or"] = [
+            {"name":        {"$regex": safe, "$options": "i"}},
+            {"description": {"$regex": safe, "$options": "i"}},
+            {"brand":       {"$regex": safe, "$options": "i"}},
+            {"tags":        {"$regex": safe, "$options": "i"}},
+            {"slug":        {"$regex": safe, "$options": "i"}},
+        ]
+
+    # Sort map
+    sort_spec = {
+        "sort_order": [("sort_order", 1), ("name", 1)],
+        "price_asc":  [("prepaid_price", 1)],
+        "price_desc": [("prepaid_price", -1)],
+        "newest":     [("created_at", -1)],
+        "popular":    [("total_orders", -1), ("sort_order", 1)],
+    }.get((sort or "sort_order").lower(), [("sort_order", 1)])
+
+    # Whether to paginate
+    paginating = page is not None or limit is not None or bool(search and search.strip())
+    page_i  = max(1, page or 1)
+    limit_i = min(100, max(1, limit or 24))
+    skip_i  = (page_i - 1) * limit_i
+
+    # Count — cheap because of the index we ensure below
+    total = await db.products.count_documents(query)
+
+    cursor = db.products.find(query, {"_id": 0}).sort(sort_spec)
+    if paginating:
+        cursor = cursor.skip(skip_i).limit(limit_i)
+    else:
+        cursor = cursor.limit(500)  # generous cap for tiny catalogs / legacy clients
+    products = await cursor.to_list(length=None)
+
+    # Auto-flip TBL → launched on read if launch_date passed (unchanged logic)
     now = datetime.now(timezone.utc)
     for p in products:
         if p.get("is_to_be_launched") and p.get("launch_date"):
@@ -200,7 +252,6 @@ async def get_all_products(
                     )
             except Exception:
                 pass
-        # Compute days_to_launch convenience field
         if p.get("is_to_be_launched") and p.get("launch_date"):
             try:
                 ld = datetime.fromisoformat(str(p["launch_date"]).replace("Z", "+00:00"))
@@ -211,7 +262,17 @@ async def get_all_products(
                 p["days_to_launch"] = None
         else:
             p["days_to_launch"] = None
-    return products
+
+    # Back-compat: if the caller didn't ask for pagination, return a plain array.
+    if not paginating:
+        return products
+    return {
+        "items": products,
+        "total": total,
+        "page": page_i,
+        "limit": limit_i,
+        "has_next": skip_i + len(products) < total,
+    }
 
 
 @router.get("/products/{slug}")
@@ -1185,6 +1246,28 @@ async def purge_dead_images(x_admin_token: str = Header(None, alias="X-Admin-Tok
 
 
 # ==================== SEED DATA ====================
+
+async def ensure_indexes():
+    """Create the indexes that make paginated listing + search fast at scale.
+    Safe to call on every startup — MongoDB skips re-creation when an index
+    with the same spec already exists."""
+    try:
+        # Compound index tuned for the most common niche page query:
+        #   {niche, is_active} → sorted by sort_order
+        await db.products.create_index([("niche", 1), ("is_active", 1), ("sort_order", 1)])
+        # For category / concern filters
+        await db.products.create_index([("category", 1), ("is_active", 1)])
+        await db.products.create_index([("concerns", 1), ("is_active", 1)])
+        # Slug lookup is the hot path for product detail pages
+        await db.products.create_index("slug", unique=True, sparse=True)
+        # Price sorting
+        await db.products.create_index([("prepaid_price", 1)])
+        # created_at for "newest" sort
+        await db.products.create_index([("created_at", -1)])
+        logging.info("[products] indexes ensured")
+    except Exception as e:
+        logging.warning(f"[products] ensure_indexes failed: {e}")
+
 
 async def seed_products():
     """Seed initial product catalog if empty"""

@@ -151,187 +151,137 @@ class RazorpayPaymentVerify(BaseModel):
     razorpay_signature: str
 
 
-def send_order_confirmation_email(order: Order, referral_data: dict = None):
+async def send_order_confirmation_email(order: Order, referral_data: dict = None):
+    """Routes through services.email_service — auto-switches Gmail → SendGrid
+    past 250 emails/day (IST). One call sends BOTH customer + business emails."""
+    from services import email_service
     try:
-        smtp_host = os.environ.get('SMTP_HOST')
-        smtp_user = os.environ.get('SMTP_USER')
-        smtp_password = os.environ.get('SMTP_PASSWORD')
-        business_email = os.environ.get('BUSINESS_EMAIL')
-        if not (smtp_host and smtp_user and smtp_password and business_email):
-            logging.info(f"SMTP not configured; skipping email for order {order.order_id}")
-            return
-        smtp_port = int(os.environ.get('SMTP_PORT', 587))
-        
+        business_email = os.environ.get("BUSINESS_EMAIL") or os.environ.get("SMTP_USER")
         full_address = f"{order.house_number}, {order.area}, {order.state} - {order.pincode}"
-        
-        # Referral section for email
-        referral_section = ""
-        if referral_data and referral_data.get('referral_code'):
-            referral_link = referral_data.get('referral_link', f"https://celestaglow.com?ref={referral_data['referral_code']}")
-            referral_section = f"""
-                    <div style="background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 20px; margin-top: 25px; border-radius: 10px; text-align: center;">
-                      <h3 style="margin: 0 0 10px;">🎁 Share & Earn ₹100!</h3>
-                      <p style="margin: 0 0 15px; font-size: 14px;">Give your friends ₹50 off and get ₹100 cashback after their delivery!</p>
-                      <div style="background: white; color: #059669; padding: 12px; border-radius: 8px; font-weight: bold; font-size: 14px; word-break: break-all;">
-                        {referral_link}
-                      </div>
-                      <p style="margin: 15px 0 0; font-size: 12px; opacity: 0.9;">Your Referral Code: <strong>{referral_data['referral_code']}</strong></p>
-                    </div>
-            """
-        
-        # Send email to customer
+        items_list = ", ".join(f"{it.name} ×{it.quantity}" for it in (order.items or []))
+
+        # ---- Customer email ----
+        referral_block_html = ""
+        if referral_data and referral_data.get("referral_code"):
+            ref_link = referral_data.get("referral_link",
+                f"https://celestaglow.com?ref={referral_data['referral_code']}")
+            referral_block_html = (
+                f"<div style=\"background:linear-gradient(135deg,#10b981,#059669);"
+                f"color:#fff;padding:20px;margin-top:25px;border-radius:10px;text-align:center;\">"
+                f"<h3 style=\"margin:0 0 10px;\">Share &amp; Earn {chr(0x20B9)}100</h3>"
+                f"<p style=\"margin:0 0 15px;font-size:14px;\">Give friends {chr(0x20B9)}50 off; get "
+                f"{chr(0x20B9)}100 back after their delivery.</p>"
+                f"<div style=\"background:#fff;color:#059669;padding:12px;border-radius:8px;"
+                f"font-weight:bold;font-size:14px;word-break:break-all;\">{ref_link}</div>"
+                f"<p style=\"margin:15px 0 0;font-size:12px;opacity:0.9;\">Your referral code: "
+                f"<strong>{referral_data['referral_code']}</strong></p></div>"
+            )
+
         if order.email:
-            msg_customer = MIMEMultipart('alternative')
-            msg_customer['Subject'] = f'Order Confirmed - {order.order_id} | Celesta Glow'
-            msg_customer['From'] = smtp_user
-            msg_customer['To'] = order.email
-            
-            html_customer = f"""
-            <html>
-              <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-                <div style="max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9;">
-                  <div style="background: linear-gradient(135deg, #4C1D95, #6d28d9); color: white; padding: 30px; text-align: center; border-radius: 10px;">
-                    <h1 style="margin: 0; font-size: 28px;">✨ Order Confirmed!</h1>
-                    <p style="margin: 10px 0 0; font-size: 16px;">Thank you for choosing Celesta Glow</p>
-                  </div>
-                  
-                  <div style="background: white; padding: 30px; margin-top: 20px; border-radius: 10px;">
-                    <div style="background: #4C1D95; color: white; padding: 15px; text-align: center; border-radius: 8px; margin-bottom: 20px;">
-                      <p style="margin: 0; font-size: 14px;">Your Order ID</p>
-                      <h2 style="margin: 5px 0 0; font-size: 32px; letter-spacing: 2px;">{order.order_id}</h2>
-                    </div>
-                    
-                    <h3 style="color: #4C1D95; margin-bottom: 15px;">📦 Order Details</h3>
-                    <table style="width: 100%; border-collapse: collapse;">
-                      <tr>
-                        <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Product:</strong></td>
-                        <td style="padding: 10px; border-bottom: 1px solid #eee;">Celesta Glow Anti-Aging Face Serum (30ml)</td>
-                      </tr>
-                      <tr>
-                        <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Amount:</strong></td>
-                        <td style="padding: 10px; border-bottom: 1px solid #eee; color: #059669; font-weight: bold;">₹{order.amount}</td>
-                      </tr>
-                      <tr>
-                        <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Payment:</strong></td>
-                        <td style="padding: 10px; border-bottom: 1px solid #eee;">{order.payment_method}</td>
-                      </tr>
-                      <tr>
-                        <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Delivery:</strong></td>
-                        <td style="padding: 10px; border-bottom: 1px solid #eee;">{order.delivery_timeline}</td>
-                      </tr>
-                    </table>
-                    
-                    <h3 style="color: #4C1D95; margin-top: 25px; margin-bottom: 15px;">📍 Delivery Address</h3>
-                    <p style="margin: 5px 0;"><strong>{order.name}</strong></p>
-                    <p style="margin: 5px 0;">+91 {order.phone}</p>
-                    <p style="margin: 5px 0;">{full_address}</p>
-                    
-                    <div style="background: #FFFBEB; border-left: 4px solid #F59E0B; padding: 15px; margin-top: 25px; border-radius: 5px;">
-                      <p style="margin: 0; color: #92400E;">🌟 <strong>Your skin transformation journey begins!</strong> Start using Celesta Glow as soon as you receive it for best results.</p>
-                    </div>
-                    
-                    {referral_section}
-                  </div>
-                  
-                  <div style="text-align: center; margin-top: 20px; color: #666; font-size: 12px;">
-                    <p>Questions? Contact us at {smtp_user}</p>
-                    <p style="margin-top: 10px;">&copy; 2025 Celesta Glow. All rights reserved.</p>
-                  </div>
-                </div>
-              </body>
-            </html>
-            """
-            
-            part_customer = MIMEText(html_customer, 'html')
-            msg_customer.attach(part_customer)
-            
-            with smtplib.SMTP(smtp_host, smtp_port) as server:
-                server.starttls()
-                server.login(smtp_user, smtp_password)
-                server.send_message(msg_customer)
-            
-            logging.info(f"Customer confirmation email sent for order {order.order_id}")
-        
-        # Send email to business
-        msg_business = MIMEMultipart('alternative')
-        msg_business['Subject'] = f'New Order Received - {order.order_id}'
-        msg_business['From'] = smtp_user
-        msg_business['To'] = business_email
-        
-        html_business = f"""
-        <html>
-          <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-            <div style="max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9;">
-              <div style="background: #4C1D95; color: white; padding: 20px; text-align: center; border-radius: 10px;">
-                <h2 style="margin: 0;">🛒 New Order Received!</h2>
-                <h1 style="margin: 10px 0; font-size: 36px; letter-spacing: 2px;">{order.order_id}</h1>
-              </div>
-              
-              <div style="background: white; padding: 25px; margin-top: 20px; border-radius: 10px;">
-                <h3 style="color: #4C1D95; margin-bottom: 15px;">Order Details</h3>
-                <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
-                  <tr style="background: #f3f4f6;">
-                    <td style="padding: 12px; border: 1px solid #e5e7eb; font-weight: bold;">Order ID</td>
-                    <td style="padding: 12px; border: 1px solid #e5e7eb;">{order.order_id}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 12px; border: 1px solid #e5e7eb; font-weight: bold;">Product</td>
-                    <td style="padding: 12px; border: 1px solid #e5e7eb;">Celesta Glow Anti-Aging Face Serum (30ml)</td>
-                  </tr>
-                  <tr style="background: #f3f4f6;">
-                    <td style="padding: 12px; border: 1px solid #e5e7eb; font-weight: bold;">Amount</td>
-                    <td style="padding: 12px; border: 1px solid #e5e7eb; color: #059669; font-weight: bold;">₹{order.amount}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 12px; border: 1px solid #e5e7eb; font-weight: bold;">Payment Method</td>
-                    <td style="padding: 12px; border: 1px solid #e5e7eb;">{order.payment_method}</td>
-                  </tr>
-                  <tr style="background: #f3f4f6;">
-                    <td style="padding: 12px; border: 1px solid #e5e7eb; font-weight: bold;">Delivery Timeline</td>
-                    <td style="padding: 12px; border: 1px solid #e5e7eb;">{order.delivery_timeline}</td>
-                  </tr>
-                </table>
-                
-                <h3 style="color: #4C1D95; margin-bottom: 15px;">Customer Details</h3>
-                <table style="width: 100%; border-collapse: collapse;">
-                  <tr style="background: #f3f4f6;">
-                    <td style="padding: 12px; border: 1px solid #e5e7eb; font-weight: bold;">Name</td>
-                    <td style="padding: 12px; border: 1px solid #e5e7eb;">{order.name}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 12px; border: 1px solid #e5e7eb; font-weight: bold;">Phone</td>
-                    <td style="padding: 12px; border: 1px solid #e5e7eb;">+91 {order.phone}</td>
-                  </tr>
-                  <tr style="background: #f3f4f6;">
-                    <td style="padding: 12px; border: 1px solid #e5e7eb; font-weight: bold;">Email</td>
-                    <td style="padding: 12px; border: 1px solid #e5e7eb;">{order.email if order.email else 'Not provided'}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 12px; border: 1px solid #e5e7eb; font-weight: bold;">Address</td>
-                    <td style="padding: 12px; border: 1px solid #e5e7eb;">{full_address}</td>
-                  </tr>
-                </table>
-                
-                <div style="background: #FFFBEB; border-left: 4px solid #F59E0B; padding: 15px; margin-top: 20px; border-radius: 5px;">
-                  <p style="margin: 0; color: #92400E;"><strong>⚠️ Action Required:</strong> Please process this order and arrange shipment.</p>
-                </div>
-              </div>
-            </div>
-          </body>
-        </html>
-        """
-        
-        part_business = MIMEText(html_business, 'html')
-        msg_business.attach(part_business)
-        
-        with smtplib.SMTP(smtp_host, smtp_port) as server:
-            server.starttls()
-            server.login(smtp_user, smtp_password)
-            server.send_message(msg_business)
-        
-        logging.info(f"Business notification email sent for order {order.order_id}")
+            text_c = (
+                f"Order Confirmed: {order.order_id}\n\n"
+                f"Items: {items_list}\n"
+                f"Total: {chr(0x20B9)}{order.amount}\n"
+                f"Payment: {order.payment_method}\n"
+                f"Delivery: {order.delivery_timeline}\n\n"
+                f"Shipping to:\n{order.name}\n+91 {order.phone}\n{full_address}\n\n"
+                f"Thank you for choosing Celesta Glow."
+            )
+            html_c = (
+                "<html><body style=\"font-family:Arial,sans-serif;line-height:1.6;color:#333;\">"
+                "<div style=\"max-width:600px;margin:0 auto;padding:20px;background:#f9f9f9;\">"
+                "<div style=\"background:linear-gradient(135deg,#047857,#0f766e);color:#fff;padding:30px;"
+                "text-align:center;border-radius:10px;\">"
+                "<h1 style=\"margin:0;font-size:28px;\">Order Confirmed</h1>"
+                "<p style=\"margin:10px 0 0;font-size:16px;\">Thank you for choosing Celesta Glow</p>"
+                "</div>"
+                "<div style=\"background:#fff;padding:30px;margin-top:20px;border-radius:10px;\">"
+                "<div style=\"background:#047857;color:#fff;padding:15px;text-align:center;border-radius:8px;margin-bottom:20px;\">"
+                "<p style=\"margin:0;font-size:14px;\">Your Order ID</p>"
+                f"<h2 style=\"margin:5px 0 0;font-size:32px;letter-spacing:2px;\">{order.order_id}</h2>"
+                "</div>"
+                "<h3 style=\"color:#047857;margin-bottom:15px;\">Order Details</h3>"
+                f"<p style=\"margin:5px 0;\"><strong>Items:</strong> {items_list}</p>"
+                f"<p style=\"margin:5px 0;\"><strong>Total:</strong> "
+                f"<span style=\"color:#059669;font-weight:bold;\">{chr(0x20B9)}{order.amount}</span></p>"
+                f"<p style=\"margin:5px 0;\"><strong>Payment:</strong> {order.payment_method}</p>"
+                f"<p style=\"margin:5px 0;\"><strong>Delivery:</strong> {order.delivery_timeline}</p>"
+                "<h3 style=\"color:#047857;margin-top:25px;margin-bottom:15px;\">Delivery Address</h3>"
+                f"<p style=\"margin:5px 0;\"><strong>{order.name}</strong></p>"
+                f"<p style=\"margin:5px 0;\">+91 {order.phone}</p>"
+                f"<p style=\"margin:5px 0;\">{full_address}</p>"
+                f"{referral_block_html}"
+                "</div>"
+                "<div style=\"text-align:center;margin-top:20px;color:#666;font-size:12px;\">"
+                f"<p>Questions? Contact us at {business_email or 'support@celestaglow.com'}</p>"
+                "<p style=\"margin-top:10px;\">&copy; 2025 Celesta Glow. All rights reserved.</p>"
+                "</div></div></body></html>"
+            )
+            res_c = await email_service.send_email(
+                to=order.email,
+                subject=f"Order Confirmed - {order.order_id} | Celesta Glow",
+                text=text_c, html=html_c,
+            )
+            if res_c.get("success"):
+                logging.info(f"[order-email] customer confirmation sent for {order.order_id} via {res_c.get('channel')}")
+            else:
+                logging.warning(f"[order-email] customer send failed for {order.order_id}: {res_c.get('reason')}")
+
+        # ---- Business notification email ----
+        if business_email:
+            text_b = (
+                f"New Order: {order.order_id}\n"
+                f"Items: {items_list}\nTotal: {chr(0x20B9)}{order.amount}\n"
+                f"Payment: {order.payment_method}\nCustomer: {order.name}\n+91 {order.phone}\n"
+                f"Email: {order.email or 'N/A'}\nAddress: {full_address}"
+            )
+            html_b = (
+                "<html><body style=\"font-family:Arial,sans-serif;line-height:1.6;color:#333;\">"
+                "<div style=\"max-width:600px;margin:0 auto;padding:20px;background:#f9f9f9;\">"
+                "<div style=\"background:#047857;color:#fff;padding:20px;text-align:center;border-radius:10px;\">"
+                "<h2 style=\"margin:0;\">New Order Received</h2>"
+                f"<h1 style=\"margin:10px 0;font-size:36px;letter-spacing:2px;\">{order.order_id}</h1>"
+                "</div>"
+                "<div style=\"background:#fff;padding:25px;margin-top:20px;border-radius:10px;\">"
+                "<h3 style=\"color:#047857;margin-bottom:15px;\">Order</h3>"
+                f"<p><strong>Items:</strong> {items_list}</p>"
+                f"<p><strong>Total:</strong> <span style=\"color:#059669;font-weight:bold;\">{chr(0x20B9)}{order.amount}</span></p>"
+                f"<p><strong>Payment:</strong> {order.payment_method}</p>"
+                f"<p><strong>Delivery:</strong> {order.delivery_timeline}</p>"
+                "<h3 style=\"color:#047857;margin-top:20px;margin-bottom:15px;\">Customer</h3>"
+                f"<p><strong>Name:</strong> {order.name}</p>"
+                f"<p><strong>Phone:</strong> +91 {order.phone}</p>"
+                f"<p><strong>Email:</strong> {order.email or 'Not provided'}</p>"
+                f"<p><strong>Address:</strong> {full_address}</p>"
+                "<div style=\"background:#FFFBEB;border-left:4px solid #F59E0B;padding:15px;margin-top:20px;border-radius:5px;\">"
+                "<p style=\"margin:0;color:#92400E;\"><strong>Action:</strong> Review + call customer, then "
+                "send to Delhivery from the admin panel.</p></div>"
+                "</div></div></body></html>"
+            )
+            res_b = await email_service.send_email(
+                to=business_email,
+                subject=f"New Order Received - {order.order_id}",
+                text=text_b, html=html_b,
+            )
+            if res_b.get("success"):
+                logging.info(f"[order-email] business notif sent for {order.order_id} via {res_b.get('channel')}")
+            else:
+                logging.warning(f"[order-email] business send failed for {order.order_id}: {res_b.get('reason')}")
     except Exception as e:
-        logging.error(f"Failed to send email: {str(e)}")
+        logging.error(f"Failed to send order email: {e}")
+
+
+@api_router.get("/admin/email/stats")
+async def admin_email_stats(x_admin_token: str = Header(None, alias="X-Admin-Token")):
+    """How many emails were sent today (IST), broken out by channel (Gmail vs SendGrid).
+    Also tells you which channel the NEXT email will use."""
+    # Cheap auth: session token OR master password. Full check uses verify_admin_token
+    # which lives below in the file — we inline a minimal version to avoid fwd-ref.
+    master = os.environ.get("ADMIN_MASTER_TOKEN") or os.environ.get("ADMIN_PASSWORD") or "celestaglow2024"
+    if not x_admin_token or (x_admin_token != master and x_admin_token not in admin_sessions):
+        raise HTTPException(status_code=401, detail="Invalid admin token")
+    from services import email_service as _es
+    return await _es.get_daily_stats()
 
 
 @api_router.get("/")
@@ -485,7 +435,7 @@ async def create_order(order_input: OrderCreate):
     order_obj_dict['referral_code'] = referral_data['referral_code']
     order_obj_dict['referral_link'] = referral_data['referral_link']
     
-    send_order_confirmation_email(order_obj, referral_data)
+    await send_order_confirmation_email(order_obj, referral_data)
 
     # Auto-Delhivery DISABLED — admin reviews each order, calls the customer, then
     # manually clicks "Send to Delhivery" from the admin panel.
@@ -2931,6 +2881,10 @@ app.include_router(reviews_routes.router, prefix="/api")
 # Customer Email OTP auth + orders + cart
 customer_auth_routes.init_auth_router(db)
 app.include_router(customer_auth_routes.router, prefix="/api")
+
+# Email service (Gmail → SendGrid auto-failover at 250 emails/day IST)
+from services import email_service as _email_service
+_email_service.set_db(db)
 # Cloudinary admin + upload endpoints
 from routes import cloudinary_routes  # noqa: E402
 cloudinary_routes.set_db(db)
@@ -2981,6 +2935,7 @@ async def startup_seed():
         logging.error(f"Failed to hydrate sessions: {e}")
     try:
         await product_routes.seed_products()
+        await product_routes.ensure_indexes()
     except Exception as e:
         logging.error(f"Failed to seed products: {e}")
     try:

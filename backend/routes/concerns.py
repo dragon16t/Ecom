@@ -72,16 +72,55 @@ async def list_niches():
 
 
 @router.get("/concerns/{slug}")
-async def get_concern_with_products(slug: str):
-    """Public: Get a concern + all products that target it"""
+async def get_concern_with_products(
+    slug: str,
+    page: int = 1,
+    limit: int = 24,
+    search: Optional[str] = None,
+    sort: str = "sort_order",
+):
+    """Public: Get a concern + paginated products that target it.
+
+    Response: { concern, products, total, page, limit, has_next }.
+    The legacy shape (concern + products) is preserved; new fields are additive.
+    """
     concern = await db.concerns.find_one({"slug": slug, "is_active": True}, {"_id": 0})
     if not concern:
         raise HTTPException(status_code=404, detail="Concern not found")
-    products = await db.products.find(
-        {"is_active": True, "concerns": slug},
-        {"_id": 0}
-    ).sort("sort_order", 1).to_list(100)
-    return {"concern": concern, "products": products}
+
+    query = {"is_active": True, "concerns": slug}
+    if search and search.strip():
+        import re as _re
+        safe = _re.escape(search.strip())
+        query["$or"] = [
+            {"name":        {"$regex": safe, "$options": "i"}},
+            {"description": {"$regex": safe, "$options": "i"}},
+            {"brand":       {"$regex": safe, "$options": "i"}},
+            {"tags":        {"$regex": safe, "$options": "i"}},
+        ]
+
+    sort_spec = {
+        "sort_order": [("sort_order", 1), ("name", 1)],
+        "price_asc":  [("prepaid_price", 1)],
+        "price_desc": [("prepaid_price", -1)],
+        "newest":     [("created_at", -1)],
+        "popular":    [("total_orders", -1), ("sort_order", 1)],
+    }.get((sort or "sort_order").lower(), [("sort_order", 1)])
+
+    page_i  = max(1, page)
+    limit_i = min(100, max(1, limit))
+    skip_i  = (page_i - 1) * limit_i
+
+    total = await db.products.count_documents(query)
+    products = await db.products.find(query, {"_id": 0}).sort(sort_spec).skip(skip_i).limit(limit_i).to_list(length=None)
+    return {
+        "concern": concern,
+        "products": products,
+        "total": total,
+        "page": page_i,
+        "limit": limit_i,
+        "has_next": skip_i + len(products) < total,
+    }
 
 
 @router.post("/admin/concerns")
@@ -147,16 +186,51 @@ async def list_categories():
 
 
 @router.get("/categories/{slug}")
-async def get_category_with_products(slug: str):
-    """Public: Get a category + all products in it"""
+async def get_category_with_products(
+    slug: str,
+    page: int = 1,
+    limit: int = 24,
+    search: Optional[str] = None,
+    sort: str = "sort_order",
+):
+    """Public: Get a category + paginated products in it."""
     category = await db.categories.find_one({"slug": slug, "is_active": True}, {"_id": 0})
     if not category:
         raise HTTPException(status_code=404, detail="Category not found")
-    products = await db.products.find(
-        {"is_active": True, "category": slug},
-        {"_id": 0}
-    ).sort("sort_order", 1).to_list(100)
-    return {"category": category, "products": products}
+
+    query = {"is_active": True, "category": slug}
+    if search and search.strip():
+        import re as _re
+        safe = _re.escape(search.strip())
+        query["$or"] = [
+            {"name":        {"$regex": safe, "$options": "i"}},
+            {"description": {"$regex": safe, "$options": "i"}},
+            {"brand":       {"$regex": safe, "$options": "i"}},
+            {"tags":        {"$regex": safe, "$options": "i"}},
+        ]
+
+    sort_spec = {
+        "sort_order": [("sort_order", 1), ("name", 1)],
+        "price_asc":  [("prepaid_price", 1)],
+        "price_desc": [("prepaid_price", -1)],
+        "newest":     [("created_at", -1)],
+        "popular":    [("total_orders", -1), ("sort_order", 1)],
+    }.get((sort or "sort_order").lower(), [("sort_order", 1)])
+
+    page_i  = max(1, page)
+    limit_i = min(100, max(1, limit))
+    skip_i  = (page_i - 1) * limit_i
+
+    total = await db.products.count_documents(query)
+    products = await db.products.find(query, {"_id": 0}).sort(sort_spec).skip(skip_i).limit(limit_i).to_list(length=None)
+    return {
+        "category": category,
+        "products": products,
+        "total": total,
+        "page": page_i,
+        "limit": limit_i,
+        "has_next": skip_i + len(products) < total,
+    }
 
 
 @router.post("/admin/categories")

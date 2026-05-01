@@ -32,7 +32,10 @@ const FALLBACK = {
 };
 
 export default function SkincareHome() {
-  const _cp = peek(`${API}/api/products?niche=skincare`) || [];
+  // Cap at 48 — homepage only shows curated sections. At 2000+ SKUs, fetching
+  // the full niche catalog would be 3-5 MB JSON and freeze mobile devices.
+  const _raw = peek(`${API}/api/products?niche=skincare&page=1&limit=48`) || peek(`${API}/api/products?niche=skincare`) || [];
+  const _cp = Array.isArray(_raw) ? _raw : (_raw?.items || []);
   const _cc = peek(`${API}/api/concerns`) || [];
   const _cs = peek(`${API}/api/site-settings`) || {};
   const [products, setProducts] = useState(_cp);
@@ -43,13 +46,14 @@ export default function SkincareHome() {
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      cachedGet(`${API}/api/products?niche=skincare`),
+      cachedGet(`${API}/api/products?niche=skincare&page=1&limit=48`),
       cachedGet(`${API}/api/concerns`),
       cachedGet(`${API}/api/site-settings`),
     ])
       .then(([p, c, s]) => {
         if (cancelled) return;
-        setProducts(p.data || []);
+        const items = Array.isArray(p.data) ? p.data : (p.data?.items || []);
+        setProducts(items);
         setConcerns(c.data || []);
         setSettings(s.data || {});
       })
