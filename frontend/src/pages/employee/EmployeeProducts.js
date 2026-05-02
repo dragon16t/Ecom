@@ -1,30 +1,52 @@
 /**
  * EmployeeProducts — same product CRUD as the admin panel but auth via X-Employee-Token.
- * Easiest path: render AdminProducts inside an employee shell that mirrors the admin token
- * into a header alias. Backend product endpoints already accept either header via verify_auth.
+ *
+ * Implementation: render AdminProducts inside an employee shell that mirrors the
+ * employee token into `sessionStorage.adminToken`. The mirroring happens
+ * SYNCHRONOUSLY (during the lazy import resolution, before AdminProducts ever
+ * mounts) — putting it in useEffect would race AdminProducts' own bootstrap
+ * effect, which redirects to `/admin` when no token is found.
+ *
+ * Backend's `verify_auth` accepts employee tokens in the X-Admin-Token header
+ * transparently, so all of AdminProducts' axios calls just work.
  */
-import React, { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState } from 'react';
+import { Navigate } from 'react-router-dom';
 import AdminProducts from '../admin/AdminProducts';
 
-export default function EmployeeProducts() {
-  const navigate = useNavigate();
-  useEffect(() => {
-    const token = sessionStorage.getItem('employeeToken') || localStorage.getItem('employeeToken');
-    const data = sessionStorage.getItem('employeeData') || localStorage.getItem('employeeData');
-    if (!token) { navigate('/employee/login'); return; }
-    try {
-      const parsed = JSON.parse(data || '{}');
-      if (!parsed?.permissions?.products) {
-        navigate('/employee/dashboard');
-        return;
-      }
-    } catch { /* ignore */ }
-    // AdminProducts uses sessionStorage.adminToken — mirror the employee token there
-    // so its existing axios calls send X-Admin-Token. Backend's verify_auth accepts
-    // employee tokens as admin tokens transparently.
+function syncEmployeeTokenToAdminToken() {
+  if (typeof window === 'undefined') return null;
+  const token =
+    sessionStorage.getItem('employeeToken') ||
+    localStorage.getItem('employeeToken');
+  if (token) {
     sessionStorage.setItem('adminToken', token);
-  }, [navigate]);
+  }
+  return token;
+}
+
+// Run once at module load so AdminProducts sees the token on its very first
+// render. Subsequent navigations call the same helper inside the component to
+// keep the mirror fresh.
+syncEmployeeTokenToAdminToken();
+
+export default function EmployeeProducts() {
+  const [token] = useState(() => syncEmployeeTokenToAdminToken());
+
+  if (!token) return <Navigate to="/employee/login" replace />;
+
+  // Permission gate — keeps the page locked even if the route is hit directly
+  let allowed = true;
+  try {
+    const data =
+      sessionStorage.getItem('employeeData') ||
+      localStorage.getItem('employeeData');
+    const parsed = JSON.parse(data || '{}');
+    allowed = !!parsed?.permissions?.products;
+  } catch {
+    allowed = false;
+  }
+  if (!allowed) return <Navigate to="/employee/dashboard" replace />;
 
   return <AdminProducts />;
 }

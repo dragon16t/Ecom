@@ -7,6 +7,7 @@ import {
   ShieldCheck, CheckCircle2, Truck, KeyRound, ArrowLeft, ExternalLink,
   MapPin, Clock, Box,
 } from 'lucide-react';
+import ReferralWidget from '../components/ReferralWidget';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 const TOKEN_KEY = 'cg_auth_token';
@@ -300,8 +301,13 @@ export default function AccountPage() {
         </div>
       </div>
 
-      {/* Orders */}
+      {/* Referral widget */}
       <div className="max-w-2xl mx-auto px-4 sm:px-6 -mt-7 relative">
+        <ReferralWidget user={user} />
+      </div>
+
+      {/* Orders */}
+      <div className="max-w-2xl mx-auto px-4 sm:px-6 mt-4 relative">
         <div className="bg-white rounded-3xl ring-1 ring-stone-200 shadow-sm overflow-hidden" data-testid="account-orders-card">
           <div className="px-5 py-4 border-b border-stone-100 flex items-center gap-2">
             <Package size={16} className="text-emerald-700" />

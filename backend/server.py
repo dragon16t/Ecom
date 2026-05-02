@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Query, Header, Request, Response, Cookie
+from fastapi import FastAPI, APIRouter, HTTPException, Query, Header, Request, Response, Cookie, Body
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -2338,10 +2338,19 @@ async def test_whatsapp_connection(x_admin_token: str = Header(None), phone: str
 
 @api_router.post("/referral/validate")
 async def validate_referral(referral_code: str = Query(...)):
-    """Validate a referral code and return referrer info"""
+    """Validate a referral code and return referrer info.
+    The ₹50 referral discount only applies on orders ≥ ₹500 (enforced by
+    the existing WELCOME50 coupon, which mirrors the same min-order rule).
+    """
     referral = await referral_service.validate_referral_code(referral_code)
     if referral:
-        return {"valid": True, "referral": referral, "discount": 50}  # ₹50 discount for referred customer
+        return {
+            "valid": True,
+            "referral": referral,
+            "discount": 50,
+            "min_order_amount": 500,
+            "discount_code": "WELCOME50",  # auto-apply the same WELCOME50 coupon
+        }
     return {"valid": False, "discount": 0}
 
 
@@ -2435,6 +2444,86 @@ async def test_referral_purchase(
     }
     
     result = await referral_service.record_referral_purchase(referral_code, test_order)
+    return result
+
+
+# ---- Customer-facing referral dashboard ----
+@api_router.get("/referral/customer-summary")
+async def referral_customer_summary(
+    phone: Optional[str] = Query(None),
+    email: Optional[str] = Query(None),
+):
+    """Returns the data needed to render the customer's referral widget on
+    /account: their share link, lifetime/pending/withdrawable balances, and
+    every order made via their link with its delivery + cashback state.
+    Either `phone` or `email` is required.
+    """
+    summary = await referral_service.get_customer_summary(phone=phone, email=email)
+    if not summary:
+        return {"success": False, "summary": None, "message": "No referral record yet"}
+    return {"success": True, "summary": summary}
+
+
+@api_router.post("/referral/request-withdrawal")
+async def request_referral_withdrawal(payload: dict = Body(...)):
+    """Customer requests a payout of their full withdrawable balance.
+
+    Body: {
+      referral_code: str,
+      payout_method: 'upi' | 'bank',
+      payout_destination: str,   # UPI ID or account number
+      note?: str
+    }
+    """
+    code = (payload.get("referral_code") or "").strip()
+    method = (payload.get("payout_method") or "").strip().lower()
+    dest   = (payload.get("payout_destination") or "").strip()
+    note   = payload.get("note", "")
+    if not code or method not in ("upi", "bank") or not dest:
+        raise HTTPException(status_code=400, detail="referral_code, payout_method (upi/bank) and payout_destination are required")
+    result = await referral_service.request_withdrawal(code, method, dest, note)
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Withdrawal request failed"))
+    return result
+
+
+@api_router.get("/admin/withdrawal-requests")
+async def admin_list_withdrawals(
+    status: Optional[str] = Query(None),
+    x_admin_token: str = Header(None, alias="X-Admin-Token"),
+):
+    """Admin: list withdrawal requests, optionally filter by status
+    (pending | paid | rejected)."""
+    verify_admin_token(x_admin_token)
+    requests = await referral_service.list_withdrawal_requests(status=status)
+    return {"success": True, "requests": requests}
+
+
+@api_router.post("/admin/withdrawal-requests/{request_id}/mark-paid")
+async def admin_mark_withdrawal_paid(
+    request_id: str,
+    payload: dict = Body(default={}),
+    x_admin_token: str = Header(None, alias="X-Admin-Token"),
+):
+    """Admin: mark a withdrawal request as paid. Optional body { txn_ref: str }."""
+    verify_admin_token(x_admin_token)
+    txn_ref = (payload or {}).get("txn_ref", "")
+    result = await referral_service.mark_withdrawal_paid(request_id, txn_ref=txn_ref)
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Mark-paid failed"))
+    return result
+
+
+@api_router.post("/admin/withdrawal-requests/{request_id}/reject")
+async def admin_reject_withdrawal(
+    request_id: str,
+    payload: dict = Body(default={}),
+    x_admin_token: str = Header(None, alias="X-Admin-Token"),
+):
+    """Admin: reject a withdrawal request with a reason."""
+    verify_admin_token(x_admin_token)
+    reason = (payload or {}).get("reason", "")
+    result = await referral_service.reject_withdrawal(request_id, reason)
     return result
 
 

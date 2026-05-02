@@ -1,0 +1,40 @@
+{
+  "summary": "Full regression for Celesta Glow Jan 2026 fixes: referral ₹50 cashback, WELCOME50 coupling, min order ₹500, 7-day hold, withdrawal queue, cosmetics stable sort, add-to-cart toast, employee/products routing, theme-color. 13/13 backend tests pass; all frontend flows verified.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_referral_and_products.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "referral_service._promote_withdrawable_balance is called on every customer-summary read — fine for current scale but consider batching if referrers grow beyond ~10k.",
+    "test_referral_purchase hard-codes order_id/phone; could collide across rapid test runs — not a production bug but may flake in stress tests.",
+    "Withdrawal happy-path in service assumes earnings_withdrawable is in sync with order-level `cashback_status='withdrawable'` count; if they drift (manual DB edit) mark-paid may mis-flag orders. Not a launch blocker."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_referral_and_products.py",
+    "/app/memory/test_credentials.md"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "admin=celestaglow2024; employee testemp_jan2026 / Test@1234 (products+retention perms)",
+  "seed_data_creation": "Created employee 'testemp_jan2026' (retained for re-testing). Test-only referrals seeded inside tests are cleaned up via fixture teardown.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend tests are pytest-native at /app/backend/tests/test_referral_and_products.py (needs REACT_APP_BACKEND_URL + MONGO_URL from .env: `export $(grep -v ^# /app/frontend/.env /app/backend/.env | xargs)`). Employee testemp_jan2026 is persisted; delete with DELETE /api/admin/employees/testemp_jan2026 + X-Admin-Token if cleanup desired.",
+  "verified_behaviors": [
+    "POST /api/referral/validate returns {valid:true, discount:50, min_order_amount:500, discount_code:'WELCOME50'}",
+    "POST /api/admin/referrals/test-purchase adds exactly 50 to earnings_pending (amount 599 >= 500)",
+    "GET /api/referral/customer-summary returns earnings_withdrawable/pending/paid, cashback_per_referral=50, min_order_amount=500, return_window_days=7, orders[]",
+    "POST /api/referral/request-withdrawal: 400 on zero balance, 200 on balance>0 (WR_ id), 400 on duplicate pending request",
+    "GET /api/admin/withdrawal-requests returns {success, requests[]}; 401 without X-Admin-Token; status filter works",
+    "POST /api/admin/withdrawal-requests/{id}/mark-paid moves ₹ from earnings_withdrawable to earnings_paid and returns success; 400 on unknown id",
+    "POST /api/admin/withdrawal-requests/{id}/reject sets status='rejected'",
+    "GET /api/products?niche=cosmetics&page=1&limit=50&sort=sort_order — identical slug ordering across two consecutive calls (slug tie-breaker works)",
+    "GET /api/products (legacy) returns plain array capped at 5000",
+    "Frontend theme-color meta = #ffffff",
+    "Homepage add-to-cart: green 'Added to bag' toast appears + cart badge count increments from 0 to 1",
+    "/cosmetics home page products render in identical order across reloads (12/12 slugs identical)",
+    "/employee/login → /employee/dashboard → /employee/products renders admin Catalog Management UI with 28 products (NO 'Under Construction'). Menu shows Products + Retention."
+  ]
+}

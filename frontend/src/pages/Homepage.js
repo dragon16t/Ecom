@@ -69,12 +69,18 @@ const isComboTbl = (comboId) => {
     return prod ? !!prod.is_to_be_launched : false;
   });
 };
-const _toast = (msg) => {
+const _toast = (msg, variant = 'info') => {
   try {
     const t = document.createElement('div');
     t.textContent = msg;
-    t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#92400e;color:#fff;padding:10px 18px;border-radius:9999px;z-index:9999;font:600 13px system-ui;box-shadow:0 8px 24px rgba(0,0,0,0.18);';
+    const colors = variant === 'success'
+      ? 'background:#15803d;color:#fff;'
+      : variant === 'error'
+      ? 'background:#b91c1c;color:#fff;'
+      : 'background:#92400e;color:#fff;';
+    t.style.cssText = `position:fixed;bottom:84px;left:50%;transform:translateX(-50%);${colors}padding:10px 18px;border-radius:9999px;z-index:9999;font:600 13px system-ui;box-shadow:0 8px 24px rgba(0,0,0,0.18);display:flex;align-items:center;gap:6px;animation:cgToastIn 0.25s ease-out;`;
     document.body.appendChild(t);
+    setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity 0.25s'; }, 1700);
     setTimeout(() => t.remove(), 2200);
   } catch {}
 };
@@ -113,6 +119,8 @@ const addToCart = (slug, quantity = 1) => {
   else cart.items.push({ product_slug: slug, quantity });
   saveCart(cart);
   playCartSound();
+  _toast('✓ Added to bag', 'success');
+  try { window.dispatchEvent(new Event('cart-bounce')); } catch {}
   return true;
 };
 const addComboToCart = (comboId, quantity = 1) => {
@@ -126,6 +134,8 @@ const addComboToCart = (comboId, quantity = 1) => {
   else cart.items.push({ combo_id: comboId, quantity });
   saveCart(cart);
   playCartSound();
+  _toast('✓ Combo added to bag', 'success');
+  try { window.dispatchEvent(new Event('cart-bounce')); } catch {}
   return true;
 };
 const setProductQty = (slug, quantity) => {
@@ -135,6 +145,7 @@ const setProductQty = (slug, quantity) => {
   }
   const cart = getCart();
   const idx = cart.items.findIndex(i => i.product_slug === slug);
+  const wasZero = idx === -1;
   if (quantity <= 0) {
     if (idx > -1) cart.items.splice(idx, 1);
   } else if (idx > -1) {
@@ -142,8 +153,14 @@ const setProductQty = (slug, quantity) => {
   } else {
     cart.items.push({ product_slug: slug, quantity });
     playCartSound();
+    _toast('✓ Added to bag', 'success');
+    try { window.dispatchEvent(new Event('cart-bounce')); } catch {}
   }
   saveCart(cart);
+  // Side-effect: increasing quantity for an item already in cart should also nudge the cart icon
+  if (!wasZero && quantity > 0 && idx > -1) {
+    try { window.dispatchEvent(new Event('cart-bounce')); } catch {}
+  }
 };
 const getProductQty = (slug) => {
   const cart = getCart();
@@ -232,11 +249,20 @@ function Homepage() {
   const sortedProducts = useMemo(() => {
     const arr = [...products];
     const by = bs.sort_by || 'reviews_count';
-    if (by === 'reviews_count') arr.sort((a, b) => (b.reviews_count || 0) - (a.reviews_count || 0));
-    else if (by === 'rating') arr.sort((a, b) => (b.rating || 0) - (a.rating || 0));
-    else if (by === 'price_asc') arr.sort((a, b) => (a.prepaid_price || 0) - (b.prepaid_price || 0));
-    else if (by === 'price_desc') arr.sort((a, b) => (b.prepaid_price || 0) - (a.prepaid_price || 0));
-    else arr.sort((a, b) => (a.sort_order || 99) - (b.sort_order || 99));
+    const tieBreak = (a, b) =>
+      ((a.sort_order ?? 99) - (b.sort_order ?? 99)) ||
+      String(a.slug || '').localeCompare(String(b.slug || ''));
+    if (by === 'reviews_count') {
+      arr.sort((a, b) => ((b.reviews_count || 0) - (a.reviews_count || 0)) || tieBreak(a, b));
+    } else if (by === 'rating') {
+      arr.sort((a, b) => ((b.rating || 0) - (a.rating || 0)) || tieBreak(a, b));
+    } else if (by === 'price_asc') {
+      arr.sort((a, b) => ((a.prepaid_price || 0) - (b.prepaid_price || 0)) || tieBreak(a, b));
+    } else if (by === 'price_desc') {
+      arr.sort((a, b) => ((b.prepaid_price || 0) - (a.prepaid_price || 0)) || tieBreak(a, b));
+    } else {
+      arr.sort(tieBreak);
+    }
     // Default to showing ALL products in the niche so newly added products from admin always appear.
     // Admin can still set a custom limit via niche_settings.bestsellers.limit if they want.
     // Always show every product in the niche so newly added admin products are immediately visible.

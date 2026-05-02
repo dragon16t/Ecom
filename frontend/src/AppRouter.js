@@ -170,6 +170,16 @@ function App() {
             <EmployeeLayout requiredPermission="consultations"><EmployeeConsultations /></EmployeeLayout>
           </Suspense>
         } />
+        <Route path="/employee/products" element={
+          <Suspense fallback={<PageLoader />}>
+            <EmployeeLayout requiredPermission="products"><EmployeeProducts /></EmployeeLayout>
+          </Suspense>
+        } />
+        <Route path="/employee/retention" element={
+          <Suspense fallback={<PageLoader />}>
+            <EmployeeLayout requiredPermission="retention"><EmployeeRetention /></EmployeeLayout>
+          </Suspense>
+        } />
         <Route path="/employee/*" element={
           <Suspense fallback={<PageLoader />}><EmployeeDashboard /></Suspense>
         } />

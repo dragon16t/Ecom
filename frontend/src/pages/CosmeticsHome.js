@@ -87,11 +87,23 @@ export default function CosmeticsHome() {
   const sortedProducts = useMemo(() => {
     const arr = [...products];
     const by = bs.sort_by || 'reviews_count';
-    if (by === 'reviews_count') arr.sort((a, b) => (b.reviews_count || 0) - (a.reviews_count || 0));
-    else if (by === 'rating') arr.sort((a, b) => (b.rating || 0) - (a.rating || 0));
-    else if (by === 'price_asc') arr.sort((a, b) => (a.prepaid_price || 0) - (b.prepaid_price || 0));
-    else if (by === 'price_desc') arr.sort((a, b) => (b.prepaid_price || 0) - (a.prepaid_price || 0));
-    else arr.sort((a, b) => (a.sort_order || 99) - (b.sort_order || 99));
+    // Stable tie-breaker chain: when the primary key ties (e.g. all products
+    // have 0 reviews), fall back to admin sort_order, then to slug. This kills
+    // the "random / shuffled order" bug on the Cosmetics home grid.
+    const tieBreak = (a, b) =>
+      ((a.sort_order ?? 99) - (b.sort_order ?? 99)) ||
+      String(a.slug || '').localeCompare(String(b.slug || ''));
+    if (by === 'reviews_count') {
+      arr.sort((a, b) => ((b.reviews_count || 0) - (a.reviews_count || 0)) || tieBreak(a, b));
+    } else if (by === 'rating') {
+      arr.sort((a, b) => ((b.rating || 0) - (a.rating || 0)) || tieBreak(a, b));
+    } else if (by === 'price_asc') {
+      arr.sort((a, b) => ((a.prepaid_price || 0) - (b.prepaid_price || 0)) || tieBreak(a, b));
+    } else if (by === 'price_desc') {
+      arr.sort((a, b) => ((b.prepaid_price || 0) - (a.prepaid_price || 0)) || tieBreak(a, b));
+    } else {
+      arr.sort(tieBreak);
+    }
     // Always show every product in the niche so newly added admin products are immediately visible.
     return arr;
   }, [products, bs.sort_by]);

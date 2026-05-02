@@ -273,3 +273,28 @@ input, select, textarea {
     text-wrap: balance;
   }
 }
+
+/* Cart-add micro-interactions: nudges the cart icon + count badge whenever
+   a product is added so the user gets clear "it landed in the cart" feedback. */
+@keyframes cgCartBounce {
+  0%   { transform: translateY(0)   rotate(0deg); }
+  25%  { transform: translateY(-6px) rotate(-8deg); }
+  50%  { transform: translateY(0)   rotate(0deg); }
+  75%  { transform: translateY(-3px) rotate(6deg); }
+  100% { transform: translateY(0)   rotate(0deg); }
+}
+@keyframes cgCartPop {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.45); }
+  70%  { transform: scale(0.92); }
+  100% { transform: scale(1); }
+}
+@keyframes cgToastIn {
+  0%   { opacity: 0; transform: translate(-50%, 16px) scale(0.92); }
+  100% { opacity: 1; transform: translate(-50%, 0)    scale(1); }
+}
+.animate-cart-bounce { animation: cgCartBounce 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.animate-cart-pop    { animation: cgCartPop    0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+@media (prefers-reduced-motion: reduce) {
+  .animate-cart-bounce, .animate-cart-pop { animation: none; }
+}

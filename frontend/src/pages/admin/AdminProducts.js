@@ -644,7 +644,9 @@ function AdminProducts() {
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const [p, c, cp, s, cn, ct] = await Promise.all([
+      // Use allSettled so a single 401 (e.g. employees lacking access to
+      // /admin/coupons) doesn't blank out the entire products list.
+      const [pR, cR, cpR, sR, cnR, ctR] = await Promise.allSettled([
         axios.get(`${API}/products?active_only=false`, { headers }),
         axios.get(`${API}/combos?active_only=false`, { headers }),
         axios.get(`${API}/admin/coupons`, { headers }),
@@ -652,12 +654,12 @@ function AdminProducts() {
         axios.get(`${API}/concerns`),
         axios.get(`${API}/categories`),
       ]);
-      setProducts(p.data);
-      setCombos(c.data);
-      setCoupons(cp.data);
-      setSettings(s.data);
-      setConcerns(cn.data || []);
-      setCategories(ct.data || []);
+      if (pR.status === 'fulfilled') setProducts(pR.value.data);
+      if (cR.status === 'fulfilled') setCombos(cR.value.data);
+      if (cpR.status === 'fulfilled') setCoupons(cpR.value.data);
+      if (sR.status === 'fulfilled') setSettings(sR.value.data);
+      if (cnR.status === 'fulfilled') setConcerns(cnR.value.data || []);
+      if (ctR.status === 'fulfilled') setCategories(ctR.value.data || []);
     } catch (err) { console.error(err); }
     setLoading(false);
   };

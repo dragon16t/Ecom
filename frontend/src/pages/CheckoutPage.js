@@ -118,7 +118,8 @@ function CheckoutPage() {
     if (!validate() || !cartData) return;
     setSubmitting(true);
     trackAction('payment_method_selected', { method: paymentMethod });
-    const payload = { ...formData, payment_method: paymentMethod, amount: cartData.total, items: cartData.items, coupon_code: coupon?.code || null, coupon_discount: coupon?.discount || 0 };
+    const referralCode = (typeof window !== 'undefined') ? sessionStorage.getItem('referralCode') : null;
+    const payload = { ...formData, payment_method: paymentMethod, amount: cartData.total, items: cartData.items, coupon_code: coupon?.code || null, coupon_discount: coupon?.discount || 0, referral_code: referralCode || null };
     const fireConversion = (orderId) => {
       trackAction('order_complete', { order_id: orderId, total: cartData.total, items: cartData.item_count, payment_method: paymentMethod });
       trackPurchase(orderId, cartData.total, paymentMethod);

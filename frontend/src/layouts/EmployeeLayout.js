@@ -21,7 +21,9 @@ export const useEmployeeAuth = () => {
 
 const MENU_ITEMS = [
   { key: 'orders', label: 'Orders', icon: Package, path: '/employee/orders' },
+  { key: 'products', label: 'Products', icon: Package, path: '/employee/products' },
   { key: 'customers', label: 'Customers', icon: Users, path: '/employee/customers' },
+  { key: 'retention', label: 'Retention', icon: RefreshCw, path: '/employee/retention' },
   { key: 'blogs', label: 'Blogs', icon: FileText, path: '/employee/blogs' },
   { key: 'ai_studio', label: 'AI Studio', icon: Sparkles, path: '/employee/ai-studio' },
   { key: 'analytics', label: 'Analytics', icon: BarChart3, path: '/employee/analytics' },

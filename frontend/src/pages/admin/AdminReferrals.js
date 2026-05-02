@@ -21,6 +21,9 @@ function AdminReferrals() {
   const [copiedCode, setCopiedCode] = useState(null);
   const [selectedReferral, setSelectedReferral] = useState(null);
   const [processingPayment, setProcessingPayment] = useState(null);
+  // Withdrawal queue (option-A manual payouts)
+  const [withdrawals, setWithdrawals] = useState([]);
+  const [wdLoading, setWdLoading] = useState(false);
 
   const fetchReferrals = async (token) => {
     if (!token) return;
@@ -38,11 +41,60 @@ function AdminReferrals() {
     }
   };
 
+  const fetchWithdrawals = async (token) => {
+    if (!token) return;
+    setWdLoading(true);
+    try {
+      const res = await axios.get(`${API}/admin/withdrawal-requests`, {
+        headers: { 'X-Admin-Token': token }
+      });
+      setWithdrawals(res.data.requests || []);
+    } catch (err) {
+      console.error('Failed to fetch withdrawals:', err);
+    } finally {
+      setWdLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!authLoading && isAuthenticated && adminToken) {
       fetchReferrals(adminToken);
+      fetchWithdrawals(adminToken);
     }
   }, [authLoading, isAuthenticated, adminToken]);
+
+  const markWithdrawalPaid = async (requestId) => {
+    const txnRef = window.prompt('Optional: enter UPI/Bank transaction reference (or leave blank).') || '';
+    setProcessingPayment(requestId);
+    try {
+      await axios.post(
+        `${API}/admin/withdrawal-requests/${requestId}/mark-paid`,
+        { txn_ref: txnRef },
+        { headers: { 'X-Admin-Token': adminToken } }
+      );
+      await fetchWithdrawals(adminToken);
+      await fetchReferrals(adminToken);
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Mark-paid failed');
+    } finally {
+      setProcessingPayment(null);
+    }
+  };
+
+  const rejectWithdrawal = async (requestId) => {
+    const reason = window.prompt('Reason for rejecting this withdrawal request:');
+    if (!reason) return;
+    try {
+      await axios.post(
+        `${API}/admin/withdrawal-requests/${requestId}/reject`,
+        { reason },
+        { headers: { 'X-Admin-Token': adminToken } }
+      );
+      fetchWithdrawals(adminToken);
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Reject failed');
+    }
+  };
 
   const handleTestPurchase = async () => {
     if (!testReferralCode) return;
@@ -199,6 +251,100 @@ function AdminReferrals() {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Withdrawal Queue */}
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden" data-testid="withdrawal-queue">
+          <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+            <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+              <CreditCard size={18} className="text-amber-600" />
+              Withdrawal Requests
+              {withdrawals.filter(w => w.status === 'pending').length > 0 && (
+                <span className="ml-1 bg-amber-100 text-amber-800 text-xs font-black px-2 py-0.5 rounded-full">
+                  {withdrawals.filter(w => w.status === 'pending').length} pending
+                </span>
+              )}
+            </h3>
+            <button
+              type="button"
+              onClick={() => fetchWithdrawals(adminToken)}
+              className="text-xs font-bold text-gray-500 hover:text-gray-800 flex items-center gap-1"
+              data-testid="withdrawals-refresh"
+            >
+              <RefreshCw size={12} /> Refresh
+            </button>
+          </div>
+          {wdLoading ? (
+            <div className="p-6 text-center text-sm text-gray-500">Loading…</div>
+          ) : withdrawals.length === 0 ? (
+            <div className="p-6 text-center text-sm text-gray-500" data-testid="withdrawals-empty">
+              No withdrawal requests yet.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 text-[11px] font-black tracking-wide text-gray-500 uppercase">
+                  <tr>
+                    <th className="px-4 py-2 text-left">Date</th>
+                    <th className="px-4 py-2 text-left">Customer</th>
+                    <th className="px-4 py-2 text-left">Method · Destination</th>
+                    <th className="px-4 py-2 text-right">Amount</th>
+                    <th className="px-4 py-2 text-center">Status</th>
+                    <th className="px-4 py-2 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {withdrawals.map(w => (
+                    <tr key={w.request_id} className="hover:bg-gray-50" data-testid={`withdrawal-${w.request_id}`}>
+                      <td className="px-4 py-2 text-xs text-gray-500 whitespace-nowrap">{(w.created_at || '').slice(0, 10)}</td>
+                      <td className="px-4 py-2">
+                        <p className="font-semibold text-gray-900 truncate">{w.referrer_name || '—'}</p>
+                        <p className="text-[11px] text-gray-500">{w.referrer_phone || w.referrer_email}</p>
+                      </td>
+                      <td className="px-4 py-2 text-xs">
+                        <span className="font-bold uppercase text-gray-700">{w.payout_method}</span>
+                        <span className="text-gray-500"> · </span>
+                        <span className="font-mono">{w.payout_destination}</span>
+                      </td>
+                      <td className="px-4 py-2 text-right font-bold">₹{w.amount}</td>
+                      <td className="px-4 py-2 text-center">
+                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                          w.status === 'paid' ? 'bg-green-100 text-green-800' :
+                          w.status === 'rejected' ? 'bg-rose-100 text-rose-700' :
+                          'bg-amber-100 text-amber-800'
+                        }`}>
+                          {w.status?.toUpperCase()}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2 text-right">
+                        {w.status === 'pending' ? (
+                          <div className="flex justify-end gap-1.5">
+                            <button
+                              onClick={() => markWithdrawalPaid(w.request_id)}
+                              disabled={processingPayment === w.request_id}
+                              className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded-lg text-[11px] font-bold disabled:opacity-50"
+                              data-testid={`withdrawal-pay-${w.request_id}`}
+                            >
+                              {processingPayment === w.request_id ? 'Processing…' : 'Mark Paid'}
+                            </button>
+                            <button
+                              onClick={() => rejectWithdrawal(w.request_id)}
+                              className="px-3 py-1 bg-stone-200 hover:bg-stone-300 text-stone-700 rounded-lg text-[11px] font-bold"
+                              data-testid={`withdrawal-reject-${w.request_id}`}
+                            >
+                              Reject
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-gray-500">{w.txn_ref ? `Ref: ${w.txn_ref}` : '—'}</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         {/* Test Section */}

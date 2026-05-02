@@ -23,6 +23,7 @@ function Navigation() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [cartCount, setCartCount] = useState(0);
+  const [cartBounce, setCartBounce] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -31,9 +32,17 @@ function Navigation() {
     update();
     // Prune TBL items first, then read the count
     pruneTblItemsFromCart();
+    const onBounce = () => {
+      setCartBounce(true);
+      setTimeout(() => setCartBounce(false), 600);
+    };
     window.addEventListener('cartUpdated', update);
+    window.addEventListener('cart-bounce', onBounce);
     window.addEventListener('admin-data-changed', () => { pruneTblItemsFromCart(); update(); });
-    return () => window.removeEventListener('cartUpdated', update);
+    return () => {
+      window.removeEventListener('cartUpdated', update);
+      window.removeEventListener('cart-bounce', onBounce);
+    };
   }, []);
 
   const handleSearch = (e) => {
@@ -74,9 +83,9 @@ function Navigation() {
               <Search size={22} className="text-gray-900" />
             </button>
             <Link to="/cart" className="p-2 relative" data-testid="cart-button" aria-label="Cart" {...prefetchHandlers('/cart')}>
-              <ShoppingCart size={22} className="text-gray-900" />
+              <ShoppingCart size={22} className={`text-gray-900 transition-transform ${cartBounce ? 'animate-cart-bounce' : ''}`} />
               {cartCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 w-5 h-5 bg-green-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center">{cartCount}</span>
+                <span className={`absolute -top-0.5 -right-0.5 w-5 h-5 bg-green-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center ${cartBounce ? 'animate-cart-pop' : ''}`}>{cartCount}</span>
               )}
             </Link>
           </div>
@@ -112,9 +121,9 @@ function Navigation() {
               <Search size={20} className="text-gray-900" />
             </button>
             <Link to="/cart" className="p-2.5 relative rounded-full hover:bg-gray-50" data-testid="cart-button-desktop" aria-label="Cart" {...prefetchHandlers('/cart')}>
-              <ShoppingCart size={20} className="text-gray-900" />
+              <ShoppingCart size={20} className={`text-gray-900 transition-transform ${cartBounce ? 'animate-cart-bounce' : ''}`} />
               {cartCount > 0 && (
-                <span className="absolute top-0 right-0 w-5 h-5 bg-green-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center">{cartCount}</span>
+                <span className={`absolute top-0 right-0 w-5 h-5 bg-green-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center ${cartBounce ? 'animate-cart-pop' : ''}`}>{cartCount}</span>
               )}
             </Link>
           </div>

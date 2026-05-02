@@ -211,14 +211,17 @@ async def get_all_products(
             {"slug":        {"$regex": safe, "$options": "i"}},
         ]
 
-    # Sort map
+    # Sort map. Each entry includes `slug` as a stable final tie-breaker so the
+    # ordering is deterministic across requests (otherwise Mongo can return
+    # documents in different orders when the primary key ties — that's the
+    # "Cosmetics shuffled" bug we hit).
     sort_spec = {
-        "sort_order": [("sort_order", 1), ("name", 1)],
-        "price_asc":  [("prepaid_price", 1)],
-        "price_desc": [("prepaid_price", -1)],
-        "newest":     [("created_at", -1)],
-        "popular":    [("total_orders", -1), ("sort_order", 1)],
-    }.get((sort or "sort_order").lower(), [("sort_order", 1)])
+        "sort_order": [("sort_order", 1), ("name", 1), ("slug", 1)],
+        "price_asc":  [("prepaid_price", 1), ("sort_order", 1), ("slug", 1)],
+        "price_desc": [("prepaid_price", -1), ("sort_order", 1), ("slug", 1)],
+        "newest":     [("created_at", -1), ("sort_order", 1), ("slug", 1)],
+        "popular":    [("total_orders", -1), ("sort_order", 1), ("slug", 1)],
+    }.get((sort or "sort_order").lower(), [("sort_order", 1), ("slug", 1)])
 
     # Whether to paginate
     paginating = page is not None or limit is not None or bool(search and search.strip())
