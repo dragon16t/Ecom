@@ -166,13 +166,25 @@ export default function ConcernCategoryPage({ mode = 'concern' }) {
       {/* SLIM HEADER — same compact look for both concern and category modes */}
       <section className="bg-white border-b border-stone-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-5">
-          <Link
-            to={mode === 'concern' ? '/skincare' : '/cosmetics'}
-            className="inline-flex items-center gap-1 text-[11px] sm:text-xs font-semibold mb-2 hover:underline"
-            style={{ color: accentText }}
-          >
-            <ChevronLeft size={13} /> Back to {mode === 'concern' ? 'Skincare' : 'Cosmetics'}
-          </Link>
+          {(() => {
+            // Branch the "Back to ..." link based on the concern's own niche.
+            // Cosmetic concerns send users back to /cosmetics; everything else
+            // (skincare + anti-aging + categories) defaults to /skincare —
+            // which matches the existing flow.
+            const isCosmetic = (mode === 'concern' && head?.niche === 'cosmetics') || mode === 'category-cosmetics';
+            const backTo = isCosmetic
+              ? { path: '/cosmetics', label: 'Cosmetics' }
+              : (mode === 'concern' ? { path: '/skincare', label: 'Skincare' } : { path: '/cosmetics', label: 'Cosmetics' });
+            return (
+              <Link
+                to={backTo.path}
+                className="inline-flex items-center gap-1 text-[11px] sm:text-xs font-semibold mb-2 hover:underline"
+                style={{ color: accentText }}
+              >
+                <ChevronLeft size={13} /> Back to {backTo.label}
+              </Link>
+            );
+          })()}
           <h1 className="font-heading text-xl sm:text-3xl font-black leading-tight tracking-tight" style={{ color: accentText }}>
             {head.icon && <span className="mr-2">{head.icon}</span>}
             {mode === 'concern'
