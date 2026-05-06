@@ -394,6 +394,13 @@ async def create_product(
 ):
     """Admin: Create a new product"""
     verify_auth(x_admin_token=x_admin_token)
+    # Mandatory category — surfaced as a clear 422 so the admin form can show
+    # a friendly error instead of a generic 500.
+    if not (data.category and str(data.category).strip()):
+        raise HTTPException(
+            status_code=422,
+            detail="Category is required. Pick one from /admin/categories before saving the product."
+        )
     existing = await db.products.find_one({"slug": data.slug})
     if existing:
         raise HTTPException(status_code=400, detail="Product slug already exists")

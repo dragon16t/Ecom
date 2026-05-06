@@ -6,6 +6,7 @@ import TrustStrip from '../components/TrustStrip';
 import NicheHero from '../components/NicheHero';
 import HeroCarousel from '../components/HeroCarousel';
 import CircularCategoryStrip from '../components/CircularCategoryStrip';
+import CategoryShowcase from '../components/CategoryShowcase';
 import { DermatologistSection, FaqSection } from '../components/NicheSections';
 import ReviewsCarousel from '../components/ReviewsCarousel';
 import { ProductCard } from './ConcernCategoryPage';
@@ -189,6 +190,21 @@ export default function CosmeticsHome() {
           )}
         </section>
       )}
+
+      {/* Shop by Category — rich preview cards. Hidden when there's no
+          categories-with-products yet so empty merchants don't see a hole. */}
+      <CategoryShowcase
+        categories={categories}
+        products={products}
+        niche="cosmetics"
+        accent={accent}
+        accentBg="#fce7f3"
+        testIdPrefix="cosmetics-category-showcase"
+        enabled={niche.show_category_showcase !== false}
+        title={niche.category_showcase_title || 'Shop by Category'}
+        subtitle={niche.category_showcase_subtitle || "Find what you're looking for"}
+        highlight={niche.category_showcase_highlight || 'looking for'}
+      />
 
       {niche.show_reviews && <ReviewsCarousel title={niche.reviews_title || 'What our community says'} eyebrow={niche.reviews_eyebrow || 'Real reviews · Verified buyers'} />}
       {niche.show_dermatologist && <DermatologistSection accent={accent} accentDark={accentDark} cfg={niche.dermatologist} />}

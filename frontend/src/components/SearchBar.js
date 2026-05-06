@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Search, X, Sparkles } from 'lucide-react';
 import axios from 'axios';
+import { productPrimaryImage } from '../utils/productImage';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -154,7 +155,7 @@ export default function SearchBar({ accent = '#16a34a', niche, testId = 'home-se
                     >
                       <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-stone-50 to-stone-100 ring-1 ring-stone-200 flex items-center justify-center overflow-hidden flex-shrink-0">
                         {p.images?.[0] ? (
-                          <img src={p.images[0]} alt="" className="w-full h-full object-contain" />
+                          <img src={productPrimaryImage(p)} alt="" className="w-full h-full object-contain" />
                         ) : (
                           <Sparkles size={16} className="text-stone-300" />
                         )}

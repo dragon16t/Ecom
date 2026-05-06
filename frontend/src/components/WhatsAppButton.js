@@ -37,7 +37,7 @@ function WhatsAppButton({
   return (
     <button
       onClick={handleClick}
-      className={`fixed bottom-24 right-4 z-40 w-12 h-12 bg-green-500 active:bg-green-600 text-white rounded-full shadow-lg transition-transform active:scale-95 flex items-center justify-center ${className}`}
+      className={`fixed bottom-[calc(96px+env(safe-area-inset-bottom))] right-4 z-40 w-12 h-12 bg-green-500 active:bg-green-600 text-white rounded-full shadow-lg transition-transform active:scale-95 flex items-center justify-center ${className}`}
       data-testid="whatsapp-float-btn"
       aria-label="Chat on WhatsApp"
       style={{ touchAction: 'manipulation' }}

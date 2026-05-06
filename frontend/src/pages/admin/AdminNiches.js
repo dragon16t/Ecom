@@ -550,7 +550,56 @@ export default function AdminNiches() {
                   <Toggle value={cur.show_reviews !== false} onChange={v => setCur({ ...cur, show_reviews: v })} label={`Reviews section (${cur.show_reviews !== false ? 'shown' : 'hidden'})`} testId={`vis-reviews-${activeNiche}`} />
                   <Toggle value={cur.show_dermatologist !== false} onChange={v => setCur({ ...cur, show_dermatologist: v })} label={`Dermatologist section (${cur.show_dermatologist !== false ? 'shown' : 'hidden'})`} testId={`vis-derm-${activeNiche}`} />
                   <Toggle value={cur.show_faq !== false} onChange={v => setCur({ ...cur, show_faq: v })} label={`FAQ section (${cur.show_faq !== false ? 'shown' : 'hidden'})`} testId={`vis-faq-${activeNiche}`} />
+                  {(activeNiche === 'skincare' || activeNiche === 'cosmetics') && (
+                    <Toggle
+                      value={cur.show_category_showcase !== false}
+                      onChange={v => setCur({ ...cur, show_category_showcase: v })}
+                      label={`Shop-by-Category preview cards (${cur.show_category_showcase !== false ? 'shown' : 'hidden'})`}
+                      testId={`vis-category-showcase-${activeNiche}`}
+                    />
+                  )}
                 </div>
+                {(activeNiche === 'skincare' || activeNiche === 'cosmetics') && (
+                  <div className="bg-stone-50 rounded-2xl p-4 ring-1 ring-stone-200" data-testid={`category-showcase-config-${activeNiche}`}>
+                    <h3 className="font-black text-sm text-gray-900 mb-2">Shop-by-Category Preview Cards</h3>
+                    <p className="text-[11px] text-gray-500 mb-3">Rich category cards (with 4 product previews) shown after the bestsellers grid. They auto-populate from products you've assigned to each category.</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <Field label="Eyebrow (uppercase)">
+                        <input
+                          value={cur.category_showcase_title || 'Shop by Category'}
+                          onChange={e => setCur({ ...cur, category_showcase_title: e.target.value })}
+                          className="w-full px-3 py-2 border rounded-lg text-sm"
+                          data-testid={`category-showcase-title-${activeNiche}`}
+                          placeholder="Shop by Category"
+                        />
+                      </Field>
+                      <Field label="Section heading">
+                        <input
+                          value={cur.category_showcase_subtitle || "Find what you're looking for"}
+                          onChange={e => setCur({ ...cur, category_showcase_subtitle: e.target.value })}
+                          className="w-full px-3 py-2 border rounded-lg text-sm"
+                          data-testid={`category-showcase-subtitle-${activeNiche}`}
+                          placeholder="Find what you're looking for"
+                        />
+                      </Field>
+                      <Field label="Italic accent (must appear in heading)">
+                        <input
+                          value={cur.category_showcase_highlight || 'looking for'}
+                          onChange={e => setCur({ ...cur, category_showcase_highlight: e.target.value })}
+                          className="w-full px-3 py-2 border rounded-lg text-sm"
+                          data-testid={`category-showcase-highlight-${activeNiche}`}
+                          placeholder="looking for"
+                        />
+                      </Field>
+                    </div>
+                    <p className="text-[11px] text-gray-500 mt-2">
+                      Manage which categories appear (and create new ones) in
+                      <button className="text-green-700 underline font-semibold ml-1" onClick={() => navigate('/admin/categories')}>
+                        Concerns &amp; Categories
+                      </button>.
+                    </p>
+                  </div>
+                )}
                 <div className="bg-emerald-50 ring-1 ring-emerald-200 rounded-xl p-3 text-xs text-emerald-900">
                   Reviews / Dermatologist / FAQ are now available on all 3 niches. Customize their content in the dedicated tabs above (Reviews, FAQ, Dermatologist).
                 </div>

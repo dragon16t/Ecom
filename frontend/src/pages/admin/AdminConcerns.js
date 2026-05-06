@@ -18,7 +18,12 @@ const EMPTY_CATEGORY = {
 
 export default function AdminConcerns() {
   const navigate = useNavigate();
-  const [tab, setTab] = useState('concerns');
+  // Default tab: when the user lands on /admin/categories, jump straight to
+  // the categories list rather than the concerns one.
+  const initialTab = (typeof window !== 'undefined' && window.location.pathname.includes('/admin/categories'))
+    ? 'skincare'
+    : 'concerns';
+  const [tab, setTab] = useState(initialTab);
   const [concerns, setConcerns] = useState([]);
   const [categories, setCategories] = useState([]);
   const [editing, setEditing] = useState(null); // {type, data}
@@ -118,8 +123,8 @@ export default function AdminConcerns() {
         <div className="max-w-7xl mx-auto px-5 flex gap-1 overflow-x-auto">
           {[
             { id: 'concerns', label: `Skin Concerns (${concerns.length})`, icon: Sparkles },
-            { id: 'skincare', label: `Skincare Categories (${categories.filter(c => c.group !== 'cosmetics').length})`, icon: Package },
-            { id: 'cosmetics', label: `💄 Cosmetics Categories (${categories.filter(c => c.group === 'cosmetics').length})`, icon: Package },
+            { id: 'skincare', label: `Skincare Categories (${categories.filter(c => (c.niche || c.group) === 'skincare').length})`, icon: Package },
+            { id: 'cosmetics', label: `💄 Cosmetics Categories (${categories.filter(c => (c.niche || c.group) === 'cosmetics').length})`, icon: Package },
           ].map(t => {
             const Icon = t.icon;
             return (
@@ -172,12 +177,16 @@ export default function AdminConcerns() {
 
         {(tab === 'skincare' || tab === 'cosmetics') && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {categories.filter(c => tab === 'cosmetics' ? c.group === 'cosmetics' : c.group !== 'cosmetics').map(c => (
+            {categories.filter(c => {
+              // Categorise by niche first (canonical), fall back to legacy `group` field for old data.
+              const n = c.niche || c.group;
+              return tab === 'cosmetics' ? n === 'cosmetics' : n === 'skincare';
+            }).map(c => (
               <div key={c.slug} className="bg-white ring-1 ring-gray-200 rounded-2xl overflow-hidden hover:ring-green-300 transition-all" data-testid={`category-card-${c.slug}`}>
                 <div className="aspect-[16/9] relative overflow-hidden bg-gradient-to-br from-green-50 via-white to-stone-50">
                   {c.image && <img src={c.image} alt={c.name} className="absolute inset-0 w-full h-full object-cover" />}
                   <div className="absolute top-2 right-2 flex gap-1">
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${c.group === 'cosmetics' ? 'bg-rose-100 text-rose-800' : 'bg-green-100 text-green-800'}`}>{c.group}</span>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${(c.niche || c.group) === 'cosmetics' ? 'bg-rose-100 text-rose-800' : 'bg-green-100 text-green-800'}`}>{c.niche || c.group}</span>
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${c.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-600'}`}>{c.is_active ? 'Active' : 'Off'}</span>
                   </div>
                 </div>

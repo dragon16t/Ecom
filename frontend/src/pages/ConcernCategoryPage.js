@@ -3,6 +3,7 @@ import BackButton from '../components/BackButton';
 import { Link, useParams } from 'react-router-dom';
 import axios from 'axios';
 import { Star, ArrowRight, BadgeCheck, Heart, Share2, ChevronLeft, Sparkles, Award, Clock, Check } from 'lucide-react';
+import { resolveImageUrl } from '../utils/productImage';
 import { addToCart } from './Homepage';
 import AddToBagButton from '../components/AddToBagButton';
 import CircularCategoryStrip from '../components/CircularCategoryStrip';
@@ -382,7 +383,7 @@ export function ProductCard({ product, compact = false }) {
             {product.images?.[0] ? (
               <>
                 <img
-                  src={product.images[0]}
+                  src={resolveImageUrl(product.images[0])}
                   alt={product.short_name}
                   loading="lazy"
                   className="relative z-[2] w-full h-full object-cover transition-all duration-700 ease-out group-hover:scale-[1.06]"
@@ -390,7 +391,7 @@ export function ProductCard({ product, compact = false }) {
                 {/* Secondary image crossfade on hover */}
                 {product.images?.[1] && (
                   <img
-                    src={product.images[1]}
+                    src={resolveImageUrl(product.images[1])}
                     alt=""
                     loading="lazy"
                     className="absolute inset-0 w-full h-full object-cover opacity-0 group-hover:opacity-100 transition-opacity duration-500 z-[3]"

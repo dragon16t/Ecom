@@ -1,0 +1,41 @@
+{
+  "summary": "Verified Shop-by-Category follow-ups: (1) no <a>-in-<a> warnings, (2) all category-card images load on /skincare and /cosmetics, (3) admin Sections/Visibility tab exposes new toggle + 3-input config block for both niches, (4) toggle off + save hides the section on the niche home, toggle on + custom eyebrow round-trips correctly, (5) AI Auto-fill button on the Create New Product flow works (200 from /api/admin/ai/generate-product-content and tagline/description/key_ingredients/size React state populated). Backend regression 17/17 still passes.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_referral_and_products.py",
+    "/app/backend/tests/test_categories_jan2026.py",
+    "/app/test_reports/pytest/iteration_3.xml"
+  ],
+  "action_items": [
+    "(Minor / test-coverage only) Create-flow inputs at AdminProducts.js lines ~1039/1041/key-ingredients/packaging-size have no data-testid. Add data-testid='new-tagline', 'new-description', 'new-key-ingredients', 'new-size' so future automated tests can assert AI-fill results without screenshot inspection.",
+    "(Minor) /api/site-settings returns null for category_showcase_subtitle / category_showcase_highlight when the admin hasn't explicitly edited them. The CategoryShowcase component falls back to defaults (works fine), but consider seeding these in the default niche_settings payload for clarity in admin UI."
+  ],
+  "critical_code_review_comments": [
+    "utils/productImage.js cleanly normalises legacy '/api/uploads/...' relative paths and Cloudinary absolute URLs — good single-source-of-truth helper, used consistently across SearchBar, ConcernCategoryPage, AdminProducts and CategoryShowcase.",
+    "CategoryShowcase outer card is now role='link' div with keyboard handler — no more <a>-in-<a> nesting and inner ProductChip <button>s stop event propagation correctly.",
+    "AdminNiches Save round-trips through PUT /api/admin/site-settings persisting show_category_showcase / category_showcase_title|subtitle|highlight under niche_settings.<niche>; verified persisted values via GET /api/site-settings.",
+    "AI Auto-fill (ai-fill-from-name) handler in AdminProducts.js correctly merges AI response into editProduct state (tagline/description/key_ingredients/packaging_size). API returned 200 in <5s for prompt 'Vitamin C Brightening Serum'."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (17/17)", "frontend": "100% (all 4 flows)"},
+  "test_credentials": "admin password: celestaglow2024 (X-Admin-Token)",
+  "seed_data_creation": "None. Toggled skincare show_category_showcase off then back ON during the test and restored eyebrow to 'Shop by Category' default — final state matches pre-test state.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All Shop-by-Category + AI auto-fill follow-ups validated end-to-end. Backend pytest suite at /app/backend/tests/ passes 17/17 (run with: cd /app/backend && set -a && . /app/frontend/.env && . /app/backend/.env && set +a && python -m pytest tests/ -v). For UI: vis-category-showcase-{skincare,cosmetics} is a button toggle (text 'shown'/'hidden', not aria-checked) — to flip programmatically, click and read innerText. The 3 config inputs use testids category-showcase-{title,subtitle,highlight}-{niche}. Save button is [data-testid='save-niches']. Skincare home + Cosmetics home re-render using niche_settings on each load (no client cache).",
+  "verified_behaviors": [
+    "Backend 17/17 pytest pass (referrals+withdrawals+categories regression).",
+    "/skincare loads with [data-testid='skincare-category-showcase'] + 7 cards; 10/10 product images successfully loaded (img.complete && naturalWidth>0); zero validateDOMNesting warnings in console.",
+    "/cosmetics loads with [data-testid='cosmetics-category-showcase'] + 5 cards; 12/12 images loaded; zero nesting warnings.",
+    "Admin /admin/niches → Skincare → Sections/Visibility shows [data-testid='vis-category-showcase-skincare'] toggle + [data-testid='category-showcase-config-skincare'] block with 3 inputs (testids: category-showcase-title-skincare, category-showcase-subtitle-skincare, category-showcase-highlight-skincare).",
+    "Same set present for cosmetics (vis-category-showcase-cosmetics + category-showcase-config-cosmetics).",
+    "Toggling vis-category-showcase-skincare from 'shown' to 'hidden' + clicking save-niches persists show_category_showcase=false to /api/site-settings; reloading /skincare no longer renders the showcase section.",
+    "Toggling back ON + setting eyebrow text persists; reloading /skincare renders the showcase with the updated eyebrow text (uppercased visually).",
+    "Admin /admin/products → Add new product → [data-testid='ai-fill-from-name'] button rendered next to [data-testid='new-name']; clicking after typing 'Vitamin C Brightening Serum' calls POST /api/admin/ai/generate-product-content which returns 200 in <5s; tagline/description/key-ingredient chips/packaging size all auto-populated."
+  ]
+}

@@ -91,7 +91,7 @@ export default function CircularCategoryStrip({ items, routePrefix, title, subti
 
         <div
           ref={scrollRef}
-          className="flex gap-3 sm:gap-5 overflow-x-auto hide-scrollbar scroll-smooth py-2 sm:px-6 snap-x snap-mandatory"
+          className="flex gap-4 sm:gap-5 overflow-x-auto hide-scrollbar scroll-smooth py-2 pb-3 sm:px-6 snap-x snap-mandatory"
         >
           {items.map(it => {
             const fromColor = it.accent_from || '#dcfce7';

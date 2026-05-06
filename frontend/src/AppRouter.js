@@ -127,6 +127,7 @@ function App() {
         <Route path="/admin/customers" element={<AdminLayout><AdminCustomers /></AdminLayout>} />
         <Route path="/admin/products" element={<AdminLayout><AdminProducts /></AdminLayout>} />
         <Route path="/admin/concerns" element={<AdminLayout><AdminConcerns /></AdminLayout>} />
+        <Route path="/admin/categories" element={<AdminLayout><AdminConcerns /></AdminLayout>} />
         <Route path="/admin/niches" element={<AdminLayout><AdminNiches /></AdminLayout>} />
         <Route path="/admin/retention" element={<AdminLayout><AdminRetention /></AdminLayout>} />
         <Route path="/admin/reviews" element={<AdminLayout><AdminReviews /></AdminLayout>} />

@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Package, Plus, Edit, Trash2, Image as ImageIcon, DollarSign, Eye, EyeOff, Save, X, ChevronDown, Tag, Settings, Layers, Upload, Trash, Clock, Rocket, GripVertical, ArrowUp, ArrowDown, ArrowLeft, LayoutDashboard, Sparkles, Crop } from 'lucide-react';
 import { List } from 'react-window';
 import ImageCropperModal from '../../components/admin/ImageCropperModal';
+import { resolveImageUrl } from '../../utils/productImage';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -251,7 +252,7 @@ function ImageManager({ images = [], onChange, label = 'Images', single = false,
                 isDropTarget ? 'border-green-500 scale-[1.02]' : 'border-gray-200'
               } ${isDragSource ? 'opacity-40' : ''}`}
             >
-              <img src={url} alt="" className="w-full h-full object-cover pointer-events-none" />
+              <img src={resolveImageUrl(url)} alt="" className="w-full h-full object-cover pointer-events-none" />
 
               {/* Position badge (1, 2, 3 ...) */}
               <div className="absolute top-1.5 left-1.5 bg-black/70 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center shadow-md">
@@ -671,6 +672,23 @@ function AdminProducts() {
 
   const updateProduct = async (slug, data) => {
     try {
+      // Mandatory category check on both create and edit. We only enforce
+      // this on real product saves (the cropper / image uploads route through
+      // their own helpers).
+      if (data && !data.__skipValidation) {
+        if (!data.name || !data.name.trim()) {
+          alert('Please enter a product name.');
+          return;
+        }
+        if (!data.niche) {
+          alert('Please pick a niche (Anti-Aging / Skincare / Cosmetics).');
+          return;
+        }
+        if (!data.category || !data.category.trim()) {
+          alert('Please pick a category. Every product must belong to one — head to Admin → Concerns & Categories to create new ones.');
+          return;
+        }
+      }
       if (data && data.__isNew) {
         // CREATE flow
         const payload = { ...data };
@@ -934,7 +952,49 @@ function AdminProducts() {
                   {/* 2. Product Name */}
                   <div>
                     <label className="text-xs font-semibold text-gray-500">2. Product Name <span className="text-red-500">*</span></label>
-                    <input value={editProduct.name} onChange={e => setEditProduct({...editProduct, name: e.target.value, short_name: editProduct.short_name || e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" data-testid="new-name" placeholder="e.g. Vitamin C Brightening Serum" />
+                    <div className="flex gap-1.5">
+                      <input value={editProduct.name} onChange={e => setEditProduct({...editProduct, name: e.target.value, short_name: editProduct.short_name || e.target.value})} className="flex-1 px-3 py-2 border rounded-lg text-sm" data-testid="new-name" placeholder="e.g. Vitamin C Brightening Serum" />
+                      <button
+                        type="button"
+                        disabled={!editProduct.name || aiGenerating}
+                        onClick={async () => {
+                          if (!editProduct.name) return;
+                          setAiGenerating(true);
+                          try {
+                            const res = await axios.post(`${API}/admin/ai/generate-product-content`, {
+                              name: editProduct.name,
+                              niche: editProduct.niche || 'skincare',
+                              category: editProduct.category || '',
+                              concerns: editProduct.concerns || [],
+                              brand: editProduct.brand || '',
+                              key_ingredients: editProduct.key_ingredients || '',
+                            }, { headers });
+                            if (res.data?.success) {
+                              setEditProduct({
+                                ...editProduct,
+                                tagline: res.data.tagline || editProduct.tagline,
+                                description: res.data.description || editProduct.description,
+                                key_ingredients: res.data.key_ingredients || editProduct.key_ingredients,
+                                ingredients_full: res.data.ingredients_full || editProduct.ingredients_full,
+                                benefits: res.data.benefits?.length ? res.data.benefits : (editProduct.benefits || []),
+                                how_to_use: res.data.how_to_use || editProduct.how_to_use,
+                                size: res.data.size || editProduct.size,
+                                faqs: res.data.faqs?.length ? res.data.faqs : (editProduct.faqs || []),
+                              });
+                            }
+                          } catch (e) {
+                            alert(e.response?.data?.detail || 'AI generation failed');
+                          } finally {
+                            setAiGenerating(false);
+                          }
+                        }}
+                        className="px-2.5 py-2 bg-fuchsia-600 hover:bg-fuchsia-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-lg text-xs font-bold flex items-center gap-1 whitespace-nowrap"
+                        data-testid="ai-fill-from-name"
+                        title="Type a product name and let AI fill tagline / description / benefits / ingredients / FAQs"
+                      >
+                        <Sparkles size={12} /> {aiGenerating ? 'AI…' : 'AI Fill'}
+                      </button>
+                    </div>
                   </div>
                   {/* 3. Niche */}
                   <div>
@@ -951,11 +1011,14 @@ function AdminProducts() {
                   </div>
                   {/* 4. Category */}
                   <div>
-                    <label className="text-xs font-semibold text-gray-500">4. Category</label>
-                    <select value={editProduct.category || ''} onChange={e => setEditProduct({...editProduct, category: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm bg-white" data-testid="new-category">
-                      <option value="">— None —</option>
+                    <label className="text-xs font-semibold text-gray-500">4. Category <span className="text-red-500">*</span></label>
+                    <select value={editProduct.category || ''} onChange={e => setEditProduct({...editProduct, category: e.target.value})} className={`w-full px-3 py-2 border rounded-lg text-sm bg-white ${!editProduct.category ? 'border-red-300' : ''}`} data-testid="new-category" required>
+                      <option value="">— Select category (required) —</option>
                       {categories.filter(c => !c.niche || c.niche === (editProduct.niche || 'anti-aging')).map(c => <option key={c.slug} value={c.slug}>{c.icon} {c.name}</option>)}
                     </select>
+                    {categories.filter(c => !c.niche || c.niche === (editProduct.niche || 'anti-aging')).length === 0 && (
+                      <p className="text-[11px] text-amber-700 mt-1">No category for this niche yet. <Link to="/admin/categories" className="underline font-bold">Create one</Link>.</p>
+                    )}
                   </div>
                   {/* 5. MRP */}
                   <div>
@@ -1226,16 +1289,17 @@ function AdminProducts() {
                       </select>
                     </div>
                     <div>
-                      <label className="text-xs font-semibold text-gray-500 mb-1 block">Category</label>
+                      <label className="text-xs font-semibold text-gray-500 mb-1 block">Category <span className="text-red-500">*</span></label>
                       <select
                         value={editProduct.category || ''}
                         onChange={e => setEditProduct({ ...editProduct, category: e.target.value })}
-                        className="w-full px-3 py-2 border rounded-lg text-sm bg-white"
+                        className={`w-full px-3 py-2 border rounded-lg text-sm bg-white ${!editProduct.category ? 'border-red-300' : ''}`}
                         data-testid="edit-product-category"
+                        required
                       >
-                        <option value="">— Select category —</option>
-                        {categories.map(c => (
-                          <option key={c.slug} value={c.slug}>{c.icon} {c.name} ({c.group})</option>
+                        <option value="">— Select category (required) —</option>
+                        {categories.filter(c => !c.niche || c.niche === (editProduct.niche || 'anti-aging')).map(c => (
+                          <option key={c.slug} value={c.slug}>{c.icon} {c.name}</option>
                         ))}
                       </select>
                     </div>
@@ -1368,7 +1432,7 @@ function AdminProducts() {
                     <GripVertical size={18} />
                   </div>
                   <div className="w-16 h-16 bg-gray-100 rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden">
-                    {product.images?.[0] ? <img src={product.images[0]} alt="" className="w-full h-full object-cover" /> : <Package className="w-6 h-6 text-gray-400" />}
+                    {product.images?.[0] ? <img src={resolveImageUrl(product.images[0])} alt="" className="w-full h-full object-cover" /> : <Package className="w-6 h-6 text-gray-400" />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">

@@ -6,6 +6,7 @@ import TrustStrip from '../components/TrustStrip';
 import NicheHero from '../components/NicheHero';
 import HeroCarousel from '../components/HeroCarousel';
 import CircularCategoryStrip from '../components/CircularCategoryStrip';
+import CategoryShowcase from '../components/CategoryShowcase';
 import { DermatologistSection, FaqSection } from '../components/NicheSections';
 import ReviewsCarousel from '../components/ReviewsCarousel';
 import { ProductCard } from './ConcernCategoryPage';
@@ -38,9 +39,11 @@ export default function SkincareHome() {
   const _cp = Array.isArray(_raw) ? _raw : (_raw?.items || []);
   const _cc = peek(`${API}/api/concerns`) || [];
   const _cs = peek(`${API}/api/site-settings`) || {};
+  const _cat = peek(`${API}/api/categories`) || [];
   const [products, setProducts] = useState(_cp);
   const [concerns, setConcerns] = useState(_cc);
   const [settings, setSettings] = useState(_cs);
+  const [categories, setCategories] = useState(_cat);
   const [loading, setLoading] = useState(_cp.length === 0);
 
   useEffect(() => {
@@ -49,13 +52,15 @@ export default function SkincareHome() {
       cachedGet(`${API}/api/products?niche=skincare&page=1&limit=48`),
       cachedGet(`${API}/api/concerns`),
       cachedGet(`${API}/api/site-settings`),
+      cachedGet(`${API}/api/categories`),
     ])
-      .then(([p, c, s]) => {
+      .then(([p, c, s, cats]) => {
         if (cancelled) return;
         const items = Array.isArray(p.data) ? p.data : (p.data?.items || []);
         setProducts(items);
         setConcerns(c.data || []);
         setSettings(s.data || {});
+        setCategories(cats.data || []);
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
@@ -177,6 +182,20 @@ export default function SkincareHome() {
           )}
         </section>
       )}
+
+      {/* Shop by Category — rich preview cards */}
+      <CategoryShowcase
+        categories={categories}
+        products={products}
+        niche="skincare"
+        accent={accent}
+        accentBg="#cffafe"
+        testIdPrefix="skincare-category-showcase"
+        enabled={niche.show_category_showcase !== false}
+        title={niche.category_showcase_title || 'Shop by Category'}
+        subtitle={niche.category_showcase_subtitle || "Find what you're looking for"}
+        highlight={niche.category_showcase_highlight || 'looking for'}
+      />
 
       {niche.show_reviews && <ReviewsCarousel title={niche.reviews_title || 'What our community says'} eyebrow={niche.reviews_eyebrow || 'Real reviews · Verified buyers'} />}
       {niche.show_dermatologist && <DermatologistSection accent={accent} accentDark={accentDark} cfg={niche.dermatologist} />}
