@@ -131,13 +131,14 @@ export default function ConcernCategoryPage({ mode = 'concern' }) {
     return products;
   }, [products, activeCat, activeSubcat, mode]);
 
-  // Subcategories that have at least 1 matching product, in admin sort order.
-  // Empty subcategories are hidden so the chip strip stays tidy.
+  // All subcategories for this category (admin-defined), in sort order.
+  // We show ALL of them as chips so the merchant + customer always see the
+  // structure ("Best Sellers / Luxury / Everyday") even when products aren't
+  // tagged yet. Empty chips are shown disabled with (0) count.
   const visibleSubcategories = useMemo(() => {
-    if (mode !== 'category' || !subcategories.length || !products.length) return [];
-    const used = new Set(products.map(p => p.subcategory).filter(Boolean));
-    return subcategories.filter(s => used.has(s.slug));
-  }, [subcategories, products, mode]);
+    if (mode !== 'category' || !subcategories.length) return [];
+    return [...subcategories].sort((a, b) => (a.sort_order ?? 99) - (b.sort_order ?? 99));
+  }, [subcategories, mode]);
 
   if (loading) {
     return (
@@ -284,14 +285,18 @@ export default function ConcernCategoryPage({ mode = 'concern' }) {
               {visibleSubcategories.map(s => {
                 const count = products.filter(p => p.subcategory === s.slug).length;
                 const isActive = activeSubcat === s.slug;
+                const isEmpty  = count === 0;
                 return (
                   <button
                     key={s.slug}
                     type="button"
+                    disabled={isEmpty}
                     onClick={() => setActiveSubcat(prev => prev === s.slug ? 'all' : s.slug)}
                     className={`flex-shrink-0 px-4 py-2 rounded-full text-xs sm:text-sm font-bold transition-all flex items-center gap-1.5 ${
                       isActive
                         ? 'text-white shadow-md'
+                        : isEmpty
+                        ? 'bg-stone-50 text-stone-300 cursor-not-allowed'
                         : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
                     }`}
                     style={isActive ? { backgroundColor: accentText } : undefined}
