@@ -32,6 +32,8 @@ export default function ConcernCategoryPage({ mode = 'concern' }) {
   const [allCategories, setAllCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeCat, setActiveCat] = useState('all');
+  const [activeSubcat, setActiveSubcat] = useState('all');
+  const [subcategories, setSubcategories] = useState([]);
   // --- Pagination + server-side search (same pattern as ShopPage) ---
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -51,6 +53,7 @@ export default function ConcernCategoryPage({ mode = 'concern' }) {
     let cancelled = false;
     setLoading(true);
     setActiveCat('all');
+    setActiveSubcat('all');
     setPage(1);
     const base = mode === 'concern'
       ? `${API}/api/concerns/${slug}`
@@ -60,14 +63,21 @@ export default function ConcernCategoryPage({ mode = 'concern' }) {
     const calls = [ axios.get(`${base}?${qs}`) ];
     if (mode === 'concern') {
       calls.push(cachedGet(`${API}/api/categories`));
+    } else {
+      // Category mode — fetch subcategories scoped to this parent so we can
+      // show filter chips at the top of the page.
+      calls.push(cachedGet(`${API}/api/subcategories?category=${encodeURIComponent(slug)}`));
     }
     Promise.all(calls)
-      .then(([main, cats]) => {
+      .then(([main, second]) => {
         if (cancelled) return;
         setData(main.data);
         setTotal(main.data?.total ?? (main.data?.products?.length || 0));
         setHasMore(!!main.data?.has_next);
-        if (cats) setAllCategories(cats.data || []);
+        if (second) {
+          if (mode === 'concern') setAllCategories(second.data || []);
+          else setSubcategories(second.data || []);
+        }
       })
       .catch(() => { if (!cancelled) setData(null); })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -110,13 +120,24 @@ export default function ConcernCategoryPage({ mode = 'concern' }) {
       }));
   }, [products, allCategories, mode, head]);
 
-  // Product grid filter based on activeCat (concern mode only)
+  // Product grid filter based on activeCat (concern mode) or activeSubcat (category mode)
   const visibleProducts = useMemo(() => {
     if (mode === 'concern' && activeCat !== 'all') {
       return products.filter(p => p.category === activeCat);
     }
+    if (mode === 'category' && activeSubcat !== 'all') {
+      return products.filter(p => p.subcategory === activeSubcat);
+    }
     return products;
-  }, [products, activeCat, mode]);
+  }, [products, activeCat, activeSubcat, mode]);
+
+  // Subcategories that have at least 1 matching product, in admin sort order.
+  // Empty subcategories are hidden so the chip strip stays tidy.
+  const visibleSubcategories = useMemo(() => {
+    if (mode !== 'category' || !subcategories.length || !products.length) return [];
+    const used = new Set(products.map(p => p.subcategory).filter(Boolean));
+    return subcategories.filter(s => used.has(s.slug));
+  }, [subcategories, products, mode]);
 
   if (loading) {
     return (
@@ -186,7 +207,6 @@ export default function ConcernCategoryPage({ mode = 'concern' }) {
             );
           })()}
           <h1 className="font-heading text-xl sm:text-3xl font-black leading-tight tracking-tight" style={{ color: accentText }}>
-            {head.icon && <span className="mr-2">{head.icon}</span>}
             {mode === 'concern'
               ? <>For {head.name.toLowerCase()}, choose a <span className="italic">product type</span></>
               : <>{head.name}</>
@@ -233,6 +253,55 @@ export default function ConcernCategoryPage({ mode = 'concern' }) {
                 </button>
               </div>
             )}
+          </div>
+        </section>
+      )}
+
+      {/* CATEGORY MODE: SUBCATEGORY CHIPS — only render when subcategories exist
+          for this category, AND at least one product is tagged. This becomes the
+          "Best Sellers / Luxury / Everyday" filter row inside e.g. /category/brow.
+          Tap a chip to filter inline; tap "All" to clear. */}
+      {mode === 'category' && visibleSubcategories.length > 0 && (
+        <section className="bg-white border-b border-stone-100" data-testid="subcategory-chips-section">
+          <div className="max-w-7xl mx-auto px-3 sm:px-6 py-5 sm:py-7">
+            <p className="text-[10px] sm:text-[11px] font-black tracking-[0.2em] uppercase mb-2.5" style={{ color: accentText }}>
+              Browse {head.name}
+            </p>
+            <div className="flex gap-2 sm:gap-2.5 overflow-x-auto hide-scrollbar pb-1 -mx-1 px-1">
+              <button
+                type="button"
+                onClick={() => setActiveSubcat('all')}
+                className={`flex-shrink-0 px-4 py-2 rounded-full text-xs sm:text-sm font-bold transition-all ${
+                  activeSubcat === 'all'
+                    ? 'text-white shadow-md'
+                    : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
+                }`}
+                style={activeSubcat === 'all' ? { backgroundColor: accentText } : undefined}
+                data-testid="subcat-chip-all"
+              >
+                All ({products.length})
+              </button>
+              {visibleSubcategories.map(s => {
+                const count = products.filter(p => p.subcategory === s.slug).length;
+                const isActive = activeSubcat === s.slug;
+                return (
+                  <button
+                    key={s.slug}
+                    type="button"
+                    onClick={() => setActiveSubcat(prev => prev === s.slug ? 'all' : s.slug)}
+                    className={`flex-shrink-0 px-4 py-2 rounded-full text-xs sm:text-sm font-bold transition-all flex items-center gap-1.5 ${
+                      isActive
+                        ? 'text-white shadow-md'
+                        : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
+                    }`}
+                    style={isActive ? { backgroundColor: accentText } : undefined}
+                    data-testid={`subcat-chip-${s.slug}`}
+                  >
+                    {s.name} <span className="text-[10px] opacity-75">({count})</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </section>
       )}

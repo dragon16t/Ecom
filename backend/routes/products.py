@@ -107,6 +107,7 @@ class ProductUpdate(BaseModel):
     is_active: Optional[bool] = None
     sort_order: Optional[int] = None
     category: Optional[str] = None
+    subcategory: Optional[str] = None  # filter chip within parent category
     concerns: Optional[List[str]] = None
     niche: Optional[str] = None
     # TBL / Preorder
@@ -134,6 +135,7 @@ class ProductCreate(BaseModel):
     tagline: str = ""
     description: str = ""
     category: str = "skincare"
+    subcategory: str = ""  # optional filter chip slug within the parent category
     concerns: List[str] = []
     niche: str = "anti-aging"  # 'anti-aging' | 'skincare' | 'cosmetics'
     key_ingredients: str = ""

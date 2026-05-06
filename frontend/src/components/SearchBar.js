@@ -72,9 +72,24 @@ export default function SearchBar({ accent = '#16a34a', niche, testId = 'home-se
   const submit = (e) => {
     e?.preventDefault();
     const trimmed = q.trim();
+    // Pressing Enter:
+    //   1. If a suggestion is highlighted (arrow keys), open it directly.
+    //   2. Otherwise if there are suggestions, open the FIRST one — this
+    //      means the user never lands on a separate /shop loading-skeleton
+    //      page; the search experience stays inline.
+    //   3. Only when there are zero matches do we fall back to /shop?q=...
+    //      (with the empty-state UI in the dropdown the user usually clicks
+    //      "Browse all in Shop" instead).
     if (highlight >= 0 && suggestions[highlight]) {
       navigate(`/product/${suggestions[highlight].slug}`);
       setOpen(false);
+      setQ('');
+      return;
+    }
+    if (suggestions.length > 0) {
+      navigate(`/product/${suggestions[0].slug}`);
+      setOpen(false);
+      setQ('');
       return;
     }
     if (!trimmed) return;

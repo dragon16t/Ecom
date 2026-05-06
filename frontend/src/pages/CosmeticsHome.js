@@ -132,8 +132,11 @@ export default function CosmeticsHome() {
         </section>
       )}
 
-      {/* Cosmetic concerns strip — Full Coverage / Bridal Glam / Long Wear / etc. */}
-      {concerns.length > 0 && niche.show_concerns_strip !== false && (
+      {/* Shop by Look (cosmetic concerns) — moved off the home page; users
+          access this via Categories → drilldown chips on the category detail
+          page instead. Toggleable via niche.show_concerns_strip if the
+          merchant ever wants to surface it on home again. */}
+      {concerns.length > 0 && niche.show_concerns_strip === true && (
         <section className="bg-stone-50 border-b border-stone-100" data-testid="cosmetics-concerns-strip">
           <div className="max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-6">
             <CircularCategoryStrip

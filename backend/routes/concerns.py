@@ -272,3 +272,90 @@ async def admin_list_categories(x_admin_token: str = Header(None, alias="X-Admin
     verify_admin(x_admin_token)
     items = await db.categories.find({}, {"_id": 0}).sort("sort_order", 1).to_list(100)
     return items
+
+
+# ==================== SUBCATEGORIES ====================
+# Subcategories are filter chips inside a category page. Example:
+#   parent_category="brow" → ["Best Sellers", "Luxury", "Everyday", "Pro Use"]
+#
+# Each product carries an optional `subcategory` field. The category detail
+# page reads subcategories for the current parent + filters products
+# client-side.
+
+class SubcategoryUpsert(BaseModel):
+    slug: str
+    name: str
+    parent_category: str   # slug of the parent category
+    niche: Optional[str] = None  # auto-derived from parent if missing
+    tagline: str = ""
+    icon: str = ""
+    image: str = ""
+    sort_order: int = 0
+    is_active: bool = True
+    accent_from: str = "#dcfce7"
+    accent_to: str = "#bbf7d0"
+    accent_text: str = "#14532d"
+
+
+@router.get("/subcategories")
+async def list_subcategories(
+    category: Optional[str] = None,
+    niche: Optional[str] = None,
+):
+    """Public list. Filter by parent category and/or niche. Only active rows."""
+    query = {"is_active": True}
+    if category:
+        query["parent_category"] = category
+    if niche:
+        query["niche"] = niche
+    items = await db.subcategories.find(query, {"_id": 0}).sort("sort_order", 1).to_list(200)
+    return items
+
+
+@router.get("/admin/subcategories")
+async def admin_list_subcategories(x_admin_token: str = Header(None, alias="X-Admin-Token")):
+    verify_admin(x_admin_token)
+    items = await db.subcategories.find({}, {"_id": 0}).sort("sort_order", 1).to_list(500)
+    return items
+
+
+@router.post("/admin/subcategories")
+async def create_subcategory(data: SubcategoryUpsert, x_admin_token: str = Header(None, alias="X-Admin-Token")):
+    verify_admin(x_admin_token)
+    # Validate parent category exists
+    parent = await db.categories.find_one({"slug": data.parent_category}, {"_id": 0, "niche": 1, "group": 1})
+    if not parent:
+        raise HTTPException(status_code=400, detail="Parent category not found. Pick an existing category as parent.")
+    existing = await db.subcategories.find_one({"slug": data.slug})
+    if existing:
+        raise HTTPException(status_code=400, detail="Subcategory slug already exists")
+    doc = data.dict()
+    if not doc.get("niche"):
+        doc["niche"] = parent.get("niche") or parent.get("group") or "skincare"
+    now = datetime.now(timezone.utc).isoformat()
+    doc["created_at"] = now
+    doc["updated_at"] = now
+    await db.subcategories.insert_one(doc)
+    return {"success": True, "slug": data.slug}
+
+
+@router.put("/admin/subcategories/{slug}")
+async def update_subcategory(slug: str, data: SubcategoryUpsert, x_admin_token: str = Header(None, alias="X-Admin-Token")):
+    verify_admin(x_admin_token)
+    update = data.dict()
+    update["updated_at"] = datetime.now(timezone.utc).isoformat()
+    result = await db.subcategories.update_one({"slug": slug}, {"$set": update})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Subcategory not found")
+    return {"success": True}
+
+
+@router.delete("/admin/subcategories/{slug}")
+async def delete_subcategory(slug: str, x_admin_token: str = Header(None, alias="X-Admin-Token")):
+    verify_admin(x_admin_token)
+    result = await db.subcategories.delete_one({"slug": slug})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Subcategory not found")
+    # Also clear `subcategory` field from any products that referenced it
+    await db.products.update_many({"subcategory": slug}, {"$set": {"subcategory": ""}})
+    return {"success": True}

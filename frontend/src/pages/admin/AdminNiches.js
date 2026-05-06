@@ -152,6 +152,7 @@ export default function AdminNiches() {
 
   const tabs = [
     { id: 'hero', label: 'Hero Banner', icon: ImageIcon },
+    { id: 'card-image', label: 'Niche Card (3-up)', icon: ImageIcon },
     { id: 'carousel', label: 'Banner Carousel', icon: Layers },
     { id: 'bestsellers', label: 'Bestsellers Grid', icon: Flame },
     { id: 'cta', label: 'CTA Section', icon: MessageSquare },
@@ -282,6 +283,47 @@ export default function AdminNiches() {
                     <input type="color" value={cur.hero?.accent_bg || '#d1fae5'} onChange={e => patchHero('accent_bg', e.target.value)} className="w-full h-10 border rounded-lg" />
                   </Field>
                 </div>
+              </div>
+            )}
+
+            {activeTab === 'card-image' && (
+              <div className="space-y-4" data-testid={`card-image-tab-${activeNiche}`}>
+                <div className="bg-amber-50 ring-1 ring-amber-200 rounded-xl p-3 text-xs text-amber-900">
+                  <strong>Niche card on the homepage</strong> — the 3-up grid (Anti-Aging / Skincare / Cosmetics) shown right above the bestsellers carousel. Upload a different image for each device so nothing important gets cropped on small/large screens. Mobile is the most important since most traffic comes from phones.
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <ImageInput
+                    value={cur.card_image_mobile}
+                    onChange={v => setCur({ ...cur, card_image_mobile: v })}
+                    headers={headers}
+                    label="📱 Mobile / phone card image (≤640px) — portrait 7:6 works best"
+                    testId={`card-image-mobile-${activeNiche}`}
+                  />
+                  <ImageInput
+                    value={cur.card_image_tablet}
+                    onChange={v => setCur({ ...cur, card_image_tablet: v })}
+                    headers={headers}
+                    label="📲 Tablet card image (640-1024px) — 5:3 landscape"
+                    testId={`card-image-tablet-${activeNiche}`}
+                  />
+                  <ImageInput
+                    value={cur.card_image_desktop}
+                    onChange={v => setCur({ ...cur, card_image_desktop: v })}
+                    headers={headers}
+                    label="💻 Desktop / PC card image (>1024px) — 5:3 landscape, leave headroom for buttons"
+                    testId={`card-image-desktop-${activeNiche}`}
+                  />
+                  <ImageInput
+                    value={cur.card_image_tv}
+                    onChange={v => setCur({ ...cur, card_image_tv: v })}
+                    headers={headers}
+                    label="📺 TV / 4K card image (>1920px, optional) — falls back to desktop"
+                    testId={`card-image-tv-${activeNiche}`}
+                  />
+                </div>
+                <p className="text-[11px] text-stone-500">
+                  When a slot is empty, the next-smallest image is used (TV → Desktop → Tablet → Mobile → built-in stock photo). Click Save at the top to publish.
+                </p>
               </div>
             )}
 

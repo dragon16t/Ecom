@@ -51,9 +51,27 @@ async function fetchNichesOnce() {
 /**
  * NicheCardSwitcher — three image-only cards. No code-rendered text or icons.
  * Uses static defaults for instant render + module cache for zero re-fetch.
+ *
+ * Per-device images: admin can upload card_image_mobile / _tablet / _desktop /
+ * _tv inside `niche_settings.<slug>.card_image_*`. We fall back smoothly:
+ *   TV → Desktop → Tablet → Mobile → Built-in stock photo.
+ * Implemented as a <picture> element so the browser picks the best source
+ * before downloading anything.
  */
-export default function NicheCardSwitcher() {
+
+function pickCardImages(slug, settingsForNiche) {
+  const fallback = CARD_IMAGES[slug];
+  const ns = settingsForNiche || {};
+  const desktop = ns.card_image_desktop || ns.card_image_tablet || ns.card_image_mobile || fallback;
+  const tablet  = ns.card_image_tablet  || ns.card_image_mobile  || ns.card_image_desktop || fallback;
+  const mobile  = ns.card_image_mobile  || ns.card_image_tablet  || ns.card_image_desktop || fallback;
+  const tv      = ns.card_image_tv      || desktop;
+  return { mobile, tablet, desktop, tv };
+}
+
+export default function NicheCardSwitcher({ nicheSettings = {} } = {}) {
   const [niches, setNiches] = useState(() => NICHES_CACHE || DEFAULT_NICHES);
+  const [siteSettings, setSiteSettings] = useState(nicheSettings);
   const location = useLocation();
 
   useEffect(() => {
@@ -61,8 +79,15 @@ export default function NicheCardSwitcher() {
     fetchNichesOnce().then((data) => {
       if (mounted && data && data.length) setNiches(data);
     });
+    // If the parent didn't pass nicheSettings, fetch site-settings here so the
+    // cards still respect the admin's per-device uploads.
+    if (!Object.keys(nicheSettings).length) {
+      cachedGet(`${API}/api/site-settings`).then(r => {
+        if (mounted && r?.data?.niche_settings) setSiteSettings(r.data.niche_settings);
+      }).catch(() => {});
+    }
     return () => { mounted = false; };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Prefetch the destination niche's product list on hover/touchstart so the
   // first switch is instant (runs silently, no UI impact).
@@ -88,9 +113,9 @@ export default function NicheCardSwitcher() {
       <div className="max-w-7xl mx-auto px-3 sm:px-6">
         <div className="grid grid-cols-3 gap-2 sm:gap-4 lg:gap-6">
           {niches.map((n) => {
-            const image = CARD_IMAGES[n.slug];
             const ring = ACTIVE_RING[n.slug] || '#22c55e';
             const active = isActive(n.route);
+            const imgs = pickCardImages(n.slug, siteSettings?.[n.slug]);
             return (
               <Link
                 key={n.slug}
@@ -100,23 +125,30 @@ export default function NicheCardSwitcher() {
                 onMouseEnter={() => prefetchNiche(n.slug)}
                 onTouchStart={() => prefetchNiche(n.slug)}
                 onFocus={() => prefetchNiche(n.slug)}
-                className={`group relative block aspect-[7/6] sm:aspect-[5/3] lg:aspect-[2/1] rounded-2xl overflow-hidden bg-stone-100 transition-all duration-300 ${
+                className={`group relative block aspect-[7/6] sm:aspect-[5/3] lg:aspect-[5/3] rounded-2xl overflow-hidden bg-stone-100 transition-all duration-300 ${
                   active
                     ? 'ring-2 sm:ring-[3px] shadow-lg shadow-black/10 scale-[1.01]'
                     : 'ring-1 ring-stone-200 hover:ring-stone-300 hover:-translate-y-0.5 hover:shadow-md'
                 }`}
                 style={active ? { '--tw-ring-color': ring } : undefined}
               >
-                {image && (
+                {/* <picture> lets the browser pick the right source by viewport
+                    BEFORE it starts downloading. Largest first (TV) → smallest
+                    (mobile). The <img> fallback handles browsers that don't
+                    support <picture>. */}
+                <picture>
+                  <source media="(min-width: 1920px)" srcSet={imgs.tv} />
+                  <source media="(min-width: 1024px)" srcSet={imgs.desktop} />
+                  <source media="(min-width: 640px)"  srcSet={imgs.tablet} />
                   <img
-                    src={image}
+                    src={imgs.mobile}
                     alt={n.name}
                     loading="eager"
                     fetchpriority="high"
                     decoding="async"
-                    className="absolute inset-0 w-full h-full object-cover object-center transition-transform duration-500 group-hover:scale-[1.03]"
+                    className="absolute inset-0 w-full h-full object-cover sm:object-contain transition-transform duration-500 group-hover:scale-[1.03]"
                   />
-                )}
+                </picture>
               </Link>
             );
           })}

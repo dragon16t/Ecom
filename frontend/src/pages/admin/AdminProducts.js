@@ -632,6 +632,7 @@ function AdminProducts() {
   const [editSettings, setEditSettings] = useState(null);
   const [concerns, setConcerns] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [subcategories, setSubcategories] = useState([]);
   // Filters
   const [filterNiche, setFilterNiche] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all'); // all | active | inactive | tbl | live | low_stock
@@ -647,13 +648,14 @@ function AdminProducts() {
     try {
       // Use allSettled so a single 401 (e.g. employees lacking access to
       // /admin/coupons) doesn't blank out the entire products list.
-      const [pR, cR, cpR, sR, cnR, ctR] = await Promise.allSettled([
+      const [pR, cR, cpR, sR, cnR, ctR, scR] = await Promise.allSettled([
         axios.get(`${API}/products?active_only=false`, { headers }),
         axios.get(`${API}/combos?active_only=false`, { headers }),
         axios.get(`${API}/admin/coupons`, { headers }),
         axios.get(`${API}/site-settings`),
         axios.get(`${API}/concerns`),
         axios.get(`${API}/categories`),
+        axios.get(`${API}/subcategories`),
       ]);
       if (pR.status === 'fulfilled') setProducts(pR.value.data);
       if (cR.status === 'fulfilled') setCombos(cR.value.data);
@@ -661,6 +663,7 @@ function AdminProducts() {
       if (sR.status === 'fulfilled') setSettings(sR.value.data);
       if (cnR.status === 'fulfilled') setConcerns(cnR.value.data || []);
       if (ctR.status === 'fulfilled') setCategories(ctR.value.data || []);
+      if (scR.status === 'fulfilled') setSubcategories(scR.value.data || []);
     } catch (err) { console.error(err); }
     setLoading(false);
   };
@@ -1018,7 +1021,7 @@ function AdminProducts() {
                   {/* 4. Category */}
                   <div>
                     <label className="text-xs font-semibold text-gray-500">4. Category <span className="text-red-500">*</span></label>
-                    <select value={editProduct.category || ''} onChange={e => setEditProduct({...editProduct, category: e.target.value})} className={`w-full px-3 py-2 border rounded-lg text-sm bg-white ${!editProduct.category ? 'border-red-300' : ''}`} data-testid="new-category" required>
+                    <select value={editProduct.category || ''} onChange={e => setEditProduct({...editProduct, category: e.target.value, subcategory: ''})} className={`w-full px-3 py-2 border rounded-lg text-sm bg-white ${!editProduct.category ? 'border-red-300' : ''}`} data-testid="new-category" required>
                       <option value="">— Select category (required) —</option>
                       {categories.filter(c => !c.niche || c.niche === (editProduct.niche || 'anti-aging')).map(c => <option key={c.slug} value={c.slug}>{c.icon} {c.name}</option>)}
                     </select>
@@ -1026,6 +1029,18 @@ function AdminProducts() {
                       <p className="text-[11px] text-amber-700 mt-1">No category for this niche yet. <Link to="/admin/categories" className="underline font-bold">Create one</Link>.</p>
                     )}
                   </div>
+                  {/* 4b. Subcategory (filtered by parent category) */}
+                  {editProduct.category && subcategories.filter(s => s.parent_category === editProduct.category).length > 0 && (
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500">4b. Subcategory <span className="text-gray-400 font-normal">(optional filter chip)</span></label>
+                      <select value={editProduct.subcategory || ''} onChange={e => setEditProduct({...editProduct, subcategory: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm bg-white" data-testid="new-subcategory">
+                        <option value="">— None —</option>
+                        {subcategories.filter(s => s.parent_category === editProduct.category).map(s => (
+                          <option key={s.slug} value={s.slug}>{s.icon} {s.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                   {/* 5. MRP */}
                   <div>
                     <label className="text-xs font-semibold text-gray-500">5. MRP (₹) <span className="text-red-500">*</span></label>

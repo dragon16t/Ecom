@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { ArrowLeft, Plus, Trash2, Save, Edit, Sparkles, Package, Image as ImageIcon } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Save, Edit, Sparkles, Package, Image as ImageIcon, Layers } from 'lucide-react';
 import { getAdminToken, clearAdminToken } from '../../utils/adminAuth';
 
 const API = process.env.REACT_APP_BACKEND_URL;
@@ -15,6 +15,12 @@ const EMPTY_CATEGORY = {
   slug: '', name: '', tagline: '', icon: '🧴', image: '',
   sort_order: 99, is_active: true, group: 'skincare', niche: 'skincare',
 };
+const EMPTY_SUBCATEGORY = {
+  slug: '', name: '', parent_category: '', niche: 'skincare',
+  tagline: '', icon: '✨', image: '',
+  accent_from: '#dcfce7', accent_to: '#bbf7d0', accent_text: '#14532d',
+  sort_order: 99, is_active: true,
+};
 
 export default function AdminConcerns() {
   const navigate = useNavigate();
@@ -26,6 +32,8 @@ export default function AdminConcerns() {
   const [tab, setTab] = useState(initialTab);
   const [concerns, setConcerns] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [subcategories, setSubcategories] = useState([]);
+  const [subcategoryFilter, setSubcategoryFilter] = useState(''); // parent slug filter
   const [editing, setEditing] = useState(null); // {type, data}
   const [loading, setLoading] = useState(true);
 
@@ -35,12 +43,14 @@ export default function AdminConcerns() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [a, b] = await Promise.all([
+      const [a, b, sc] = await Promise.all([
         axios.get(`${API}/api/admin/concerns`, auth),
         axios.get(`${API}/api/admin/categories`, auth),
+        axios.get(`${API}/api/admin/subcategories`, auth),
       ]);
       setConcerns(a.data || []);
       setCategories(b.data || []);
+      setSubcategories(sc.data || []);
     } catch (e) {
       if (e?.response?.status === 401) { clearAdminToken(); navigate('/admin'); }
     }
@@ -59,6 +69,9 @@ export default function AdminConcerns() {
       if (type === 'concern') {
         if (isNew) await axios.post(`${API}/api/admin/concerns`, data, auth);
         else await axios.put(`${API}/api/admin/concerns/${data.slug}`, data, auth);
+      } else if (type === 'subcategory') {
+        if (isNew) await axios.post(`${API}/api/admin/subcategories`, data, auth);
+        else await axios.put(`${API}/api/admin/subcategories/${data.slug}`, data, auth);
       } else {
         if (isNew) await axios.post(`${API}/api/admin/categories`, data, auth);
         else await axios.put(`${API}/api/admin/categories/${data.slug}`, data, auth);
@@ -73,7 +86,10 @@ export default function AdminConcerns() {
   const remove = async (type, slug) => {
     if (!window.confirm(`Delete ${type} "${slug}"?`)) return;
     try {
-      await axios.delete(`${API}/api/admin/${type === 'concern' ? 'concerns' : 'categories'}/${slug}`, auth);
+      const url = type === 'concern' ? 'concerns'
+        : type === 'subcategory' ? 'subcategories'
+        : 'categories';
+      await axios.delete(`${API}/api/admin/${url}/${slug}`, auth);
       await load();
     } catch (e) {
       alert('Failed to delete');
@@ -107,6 +123,23 @@ export default function AdminConcerns() {
                   },
                   isNew: true,
                 });
+              } else if (tab === 'subcategories') {
+                // Default subcategory niche to whatever the active filter is
+                // (or fall back to skincare). Parent category is left empty
+                // so the admin must explicitly pick one.
+                const presetParent = subcategoryFilter || '';
+                const presetNiche = (categories.find(c => c.slug === presetParent)?.niche
+                  || categories.find(c => c.slug === presetParent)?.group
+                  || 'skincare');
+                setEditing({
+                  type: 'subcategory',
+                  data: {
+                    ...EMPTY_SUBCATEGORY,
+                    parent_category: presetParent,
+                    niche: presetNiche,
+                  },
+                  isNew: true,
+                });
               } else {
                 // Pre-fill group + niche so the new category lands on the right tab
                 const isCosmetics = tab === 'cosmetics';
@@ -124,7 +157,7 @@ export default function AdminConcerns() {
             className="bg-green-600 hover:bg-green-700 text-white text-xs font-bold px-3.5 py-2 rounded-lg flex items-center gap-1.5"
             data-testid="add-new-btn"
           >
-            <Plus size={14} /> Add {tab === 'concerns' ? 'skincare concern' : tab === 'cosmetic-concerns' ? 'cosmetic concern' : tab === 'cosmetics' ? 'cosmetic category' : 'skincare category'}
+            <Plus size={14} /> Add {tab === 'concerns' ? 'skincare concern' : tab === 'cosmetic-concerns' ? 'cosmetic concern' : tab === 'subcategories' ? 'subcategory' : tab === 'cosmetics' ? 'cosmetic category' : 'skincare category'}
           </button>
         </div>
         {/* Tabs */}
@@ -134,6 +167,7 @@ export default function AdminConcerns() {
             { id: 'cosmetic-concerns', label: `💄 Cosmetic Concerns (${concerns.filter(c => c.niche === 'cosmetics').length})`, icon: Sparkles },
             { id: 'skincare', label: `Skincare Categories (${categories.filter(c => (c.niche || c.group) === 'skincare').length})`, icon: Package },
             { id: 'cosmetics', label: `💄 Cosmetics Categories (${categories.filter(c => (c.niche || c.group) === 'cosmetics').length})`, icon: Package },
+            { id: 'subcategories', label: `Subcategories (${subcategories.length})`, icon: Layers },
           ].map(t => {
             const Icon = t.icon;
             return (
@@ -238,6 +272,79 @@ export default function AdminConcerns() {
             ))}
           </div>
         )}
+
+        {tab === 'subcategories' && (
+          <div className="space-y-4" data-testid="subcategories-tab">
+            <div className="bg-white ring-1 ring-stone-200 rounded-2xl px-4 py-3 flex items-center gap-3">
+              <label className="text-xs font-bold text-stone-700">Filter by category:</label>
+              <select
+                value={subcategoryFilter}
+                onChange={(e) => setSubcategoryFilter(e.target.value)}
+                className="flex-1 max-w-xs px-3 py-1.5 border border-stone-300 rounded-lg text-sm bg-white"
+                data-testid="subcategory-filter"
+              >
+                <option value="">All parent categories</option>
+                <optgroup label="Skincare">
+                  {categories.filter(c => (c.niche || c.group) === 'skincare').map(c => (
+                    <option key={c.slug} value={c.slug}>{c.icon} {c.name}</option>
+                  ))}
+                </optgroup>
+                <optgroup label="Cosmetics">
+                  {categories.filter(c => (c.niche || c.group) === 'cosmetics').map(c => (
+                    <option key={c.slug} value={c.slug}>{c.icon} {c.name}</option>
+                  ))}
+                </optgroup>
+              </select>
+              <span className="text-[11px] text-stone-500">
+                {subcategories.filter(s => !subcategoryFilter || s.parent_category === subcategoryFilter).length} subcategories
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {subcategories
+                .filter(s => !subcategoryFilter || s.parent_category === subcategoryFilter)
+                .map(s => {
+                  const parent = categories.find(c => c.slug === s.parent_category);
+                  return (
+                    <div key={s.slug} className="bg-white ring-1 ring-stone-200 rounded-2xl overflow-hidden hover:ring-green-300 transition-all" data-testid={`subcategory-card-${s.slug}`}>
+                      <div className="aspect-[16/9] relative overflow-hidden bg-gradient-to-br from-amber-50 via-white to-stone-50">
+                        {s.image && <img src={s.image} alt={s.name} className="absolute inset-0 w-full h-full object-cover" />}
+                        <div className="absolute top-2 right-2 flex gap-1">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${s.niche === 'cosmetics' ? 'bg-rose-100 text-rose-800' : 'bg-green-100 text-green-800'}`}>{s.niche}</span>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${s.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-600'}`}>{s.is_active ? 'Active' : 'Off'}</span>
+                        </div>
+                      </div>
+                      <div className="p-3.5">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-xl">{s.icon}</span>
+                          <h3 className="font-black text-gray-900 text-sm">{s.name}</h3>
+                        </div>
+                        <p className="text-[11px] text-amber-700 font-bold mb-1.5">↳ inside {parent ? `${parent.icon} ${parent.name}` : s.parent_category}</p>
+                        <p className="text-xs text-gray-500 line-clamp-1 mb-2">{s.tagline}</p>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] text-gray-500 font-mono truncate">/{s.slug}</span>
+                          <div className="flex gap-1">
+                            <button onClick={() => setEditing({ type: 'subcategory', data: { ...s }, isNew: false })} className="text-blue-600 hover:bg-blue-50 p-1.5 rounded" data-testid={`edit-subcategory-${s.slug}`}>
+                              <Edit size={14} />
+                            </button>
+                            <button onClick={() => remove('subcategory', s.slug)} className="text-red-600 hover:bg-red-50 p-1.5 rounded" data-testid={`delete-subcategory-${s.slug}`}>
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              {subcategories.filter(s => !subcategoryFilter || s.parent_category === subcategoryFilter).length === 0 && (
+                <div className="col-span-full bg-amber-50 ring-1 ring-amber-200 rounded-2xl p-6 text-center text-sm text-amber-800" data-testid="subcategories-empty">
+                  {subcategoryFilter
+                    ? `No subcategories under "${subcategoryFilter}" yet. Click "Add subcategory" to create the first one.`
+                    : 'No subcategories yet. Pick a parent category above and click "Add subcategory".'}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Edit modal */}
@@ -297,6 +404,39 @@ export default function AdminConcerns() {
                   <option value="cosmetics">💄 Cosmetics</option>
                 </select>
               </Field>
+              {editing.type === 'subcategory' && (
+                <Field label="Parent category (REQUIRED — products will be grouped under this)">
+                  <select
+                    value={editing.data.parent_category || ''}
+                    onChange={e => {
+                      const slug = e.target.value;
+                      const parent = categories.find(c => c.slug === slug);
+                      setEditing({
+                        ...editing,
+                        data: {
+                          ...editing.data,
+                          parent_category: slug,
+                          niche: parent ? (parent.niche || parent.group || editing.data.niche) : editing.data.niche,
+                        },
+                      });
+                    }}
+                    data-testid="field-parent-category"
+                    required
+                  >
+                    <option value="">— Pick a parent —</option>
+                    <optgroup label="Skincare">
+                      {categories.filter(c => (c.niche || c.group) === 'skincare').map(c => (
+                        <option key={c.slug} value={c.slug}>{c.icon} {c.name}</option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="Cosmetics">
+                      {categories.filter(c => (c.niche || c.group) === 'cosmetics').map(c => (
+                        <option key={c.slug} value={c.slug}>{c.icon} {c.name}</option>
+                      ))}
+                    </optgroup>
+                  </select>
+                </Field>
+              )}
               {editing.type === 'concern' && (
                 <>
                   <Field label="Description (long)">

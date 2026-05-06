@@ -1,0 +1,50 @@
+{
+  "summary": "Iteration 5 (subcategories + per-device niche cards + ConcernCategoryPage emoji removal + cosmetics strip toggle + SearchBar Enter behaviour) VERIFIED. Backend: 12/12 new subcategory tests pass + 36/36 regression = 48/48 total. Frontend: 6 critical flows confirmed at runtime; AdminProducts subcategory dropdown verified by code inspection.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_subcategories_jan2026.py",
+    "/app/test_reports/pytest/iteration_5.xml",
+    "/app/test_reports/pytest/iteration_5_full.xml"
+  ],
+  "verified_flows": [
+    "GET /api/subcategories returns list (200). brow seeds (brow-best-sellers, brow-luxury, brow-everyday) all present with parent_category=brow, niche=cosmetics, no _id leak.",
+    "POST /api/admin/subcategories: 200 on success; 400 on invalid parent_category; 400 on duplicate slug; requires X-Admin-Token (401 without).",
+    "PUT /api/admin/subcategories/{slug}: 200 + persists name/tagline; 404 verified path.",
+    "DELETE /api/admin/subcategories/{slug}: 200; 404 for unknown; cascade-clears `subcategory` field on referencing products (verified end-to-end with TEST_ product).",
+    "ProductInput.subcategory: existing brow-definer-pencil tagged subcategory='brow-best-sellers' is queryable through /api/products?category=brow.",
+    "/category/brow renders [data-testid='subcategory-chips-section'] with chips: All (1), Best Sellers (1). H1 = 'Brow' (no emoji span). Back link = 'Back to Cosmetics'.",
+    "/cosmetics homepage no longer renders [data-testid='cosmetics-concerns-strip'] by default (only when niche.show_concerns_strip === true).",
+    "SearchBar — typing 'serum' on /skincare shows suggestions; pressing Enter navigates to /product/<first-matching-slug> (verified: /product/1-hyaluronic-sunscreen-aqua-gel-...). NO redirect to /shop.",
+    "Homepage NicheCardSwitcher [data-testid='niche-card-switcher'] renders 3 <picture> elements with src URLs from CARD_IMAGES fallback (anti-aging/skincare/cosmetics jpegs).",
+    "Admin /admin/categories has 5th tab [data-testid='tab-subcategories'] labelled 'Subcategories (3)'. Clicking shows 3 cards (Best Sellers / Luxury / Everyday) under '↳ inside ✏️ Brow' with edit + delete icons. Filter dropdown 'All parent categories' present.",
+    "Admin /admin/niches → 'Niche Card (3-up)' tab renders 4 ImageInputs labelled MOBILE / TABLET / DESKTOP / TV with 4 Upload buttons.",
+    "Admin /admin/products edit modal source code confirmed: select with data-testid='new-subcategory' is conditionally rendered ONLY when editProduct.category has matching subcategories (line 1036 of AdminProducts.js)."
+  ],
+  "action_items": [
+    "(Carry-over from iter4, still unaddressed) ConcernCategoryPage 'Back to …' link still hard-codes 'Back to Skincare' even when concern.niche='cosmetics'. Cosmetic shoppers get bounced to /skincare on back. Low priority but worth fixing.",
+    "(Observation, not a bug) Admin Subcategories cards show parent as '✏️ Brow' — the ✏️ pencil icon comes from the brow category's icon field. Looks fine, but if icon display is the parent category's emoji it might confuse admins (looks like an edit icon). Consider rendering the icon differently from action icons."
+  ],
+  "critical_code_review_comments": [
+    "concerns.py SubcategoryUpsert.delete cascade: `db.products.update_many({'subcategory': slug}, {'$set': {'subcategory': ''}})` is correct & atomic. Test confirms cascade works end-to-end.",
+    "create_subcategory validates parent_category existence via db.categories.find_one — prevents orphan subcategories. Good defensive coding.",
+    "NicheCardSwitcher.pickCardImages cascading fallback (TV→Desktop→Tablet→Mobile→stock) is solid. <picture> with media queries lets browser pick before download — correct pattern.",
+    "SearchBar.submit() opens first match on Enter (suggestions[0]) and only falls back to /shop?q= when zero matches. Requirement met.",
+    "AdminProducts subcategory dropdown is conditionally rendered (`editProduct.category && subcategories.filter(s => s.parent_category === editProduct.category).length > 0`) — clean UX, no empty dropdowns.",
+    "On category change the form clears subcategory (`setEditProduct({...editProduct, category: e.target.value, subcategory: ''})`) — prevents stale subcategory from previous parent. Nice.",
+    "Subcategories tab card UI hard-codes the parent category's icon field next to each card. If a category has no icon set, fallback may look odd; consider a default."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_subcategories_jan2026.py (new — 12 tests across 4 classes: public list, admin CRUD with auth, delete cascade clearing product field, ProductInput subcategory smoke)"
+  ],
+  "success_rate": {"backend": "100% (48/48 — 12 new + 36 regression)", "frontend": "95% (10/11 runtime-verified; AdminProducts edit-modal subcategory dropdown verified by source-code inspection only — modal opening via JS evaluate hit 3-attempt loop limit)"},
+  "test_credentials": "admin password: celestaglow2024 (X-Admin-Token / login form)",
+  "seed_data_creation": "Test created/deleted ephemeral subcategories TEST_test-sub-* and TEST_test-cascade-* via teardown_class; brow-best-sellers / brow-luxury / brow-everyday seeds preserved as instructed.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Run regression: cd /app/backend && export REACT_APP_BACKEND_URL=https://weather-preview-6.preview.emergentagent.com ADMIN_PASSWORD=celestaglow2024 MONGO_URL='mongodb://localhost:27017' DB_NAME=test_database && python -m pytest tests/ --ignore=tests/test_iteration2_fixes.py -v (test_iteration2_fixes.py has stale URL — keep ignored). Subcategory CRUD endpoints under /api/admin/subcategories (POST/PUT/DELETE) — DELETE cascade clears product.subcategory, fully covered. To open AdminProducts edit modal in playwright: there are 6 icon buttons per row (up/down/clock/edit/eye/trash) but the 4th-icon click via document.evaluate matched a wrong row in nested DOM — recommend using a more targeted Locator like page.locator('div:has-text(\"Microblade Brow Definer\") >> button:nth-of-type(4)').first.click(force=True) or add a data-testid='product-edit-{slug}' on the edit button to make E2E robust."
+}
