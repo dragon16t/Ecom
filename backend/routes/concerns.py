@@ -322,6 +322,12 @@ async def admin_list_subcategories(x_admin_token: str = Header(None, alias="X-Ad
 @router.post("/admin/subcategories")
 async def create_subcategory(data: SubcategoryUpsert, x_admin_token: str = Header(None, alias="X-Admin-Token")):
     verify_admin(x_admin_token)
+    # Reject empty / whitespace-only slug — prevents zombie rows that break
+    # PUT/DELETE URL construction (the path becomes /admin/subcategories/).
+    if not data.slug or not data.slug.strip():
+        raise HTTPException(status_code=400, detail="Slug is required (lowercase, dashes only — e.g. lipstick-matte).")
+    if not data.name or not data.name.strip():
+        raise HTTPException(status_code=400, detail="Name is required.")
     # Validate parent category exists
     parent = await db.categories.find_one({"slug": data.parent_category}, {"_id": 0, "niche": 1, "group": 1})
     if not parent:

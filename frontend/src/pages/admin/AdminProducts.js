@@ -673,6 +673,25 @@ function AdminProducts() {
     fetchAll();
   }, []);
 
+  // Refresh taxonomy (concerns/categories/subcategories) every time the product
+  // modal opens. Admins often add a new concern or subcategory in another tab
+  // and come back here — without this refetch, the chip list would be stale.
+  useEffect(() => {
+    if (!editProduct) return;
+    (async () => {
+      try {
+        const [cnR, ctR, scR] = await Promise.allSettled([
+          axios.get(`${API}/concerns`),
+          axios.get(`${API}/categories`),
+          axios.get(`${API}/subcategories`),
+        ]);
+        if (cnR.status === 'fulfilled') setConcerns(cnR.value.data || []);
+        if (ctR.status === 'fulfilled') setCategories(ctR.value.data || []);
+        if (scR.status === 'fulfilled') setSubcategories(scR.value.data || []);
+      } catch { /* non-fatal */ }
+    })();
+  }, [editProduct?.__isNew, editProduct?.slug]);
+
   const updateProduct = async (slug, data) => {
     try {
       // Mandatory category check on both create and edit. We only enforce
@@ -1330,7 +1349,7 @@ function AdminProducts() {
                       <label className="text-xs font-semibold text-gray-500 mb-1 block">Category <span className="text-red-500">*</span></label>
                       <select
                         value={editProduct.category || ''}
-                        onChange={e => setEditProduct({ ...editProduct, category: e.target.value })}
+                        onChange={e => setEditProduct({ ...editProduct, category: e.target.value, subcategory: '' })}
                         className={`w-full px-3 py-2 border rounded-lg text-sm bg-white ${!editProduct.category ? 'border-red-300' : ''}`}
                         data-testid="edit-product-category"
                         required
@@ -1341,10 +1360,39 @@ function AdminProducts() {
                         ))}
                       </select>
                     </div>
+                    {/* Subcategory — cascades from chosen Category. Always visible once a category is picked. */}
+                    {editProduct.category && (() => {
+                      const subs = subcategories.filter(s => s.parent_category === editProduct.category && s.is_active !== false);
+                      const parentName = (categories.find(c => c.slug === editProduct.category)?.name) || editProduct.category;
+                      return (
+                        <div>
+                          <label className="text-xs font-semibold text-gray-500 mb-1 block">
+                            Subcategory <span className="text-gray-400 font-normal">(optional · only those under "{parentName}")</span>
+                          </label>
+                          {subs.length > 0 ? (
+                            <select
+                              value={editProduct.subcategory || ''}
+                              onChange={e => setEditProduct({ ...editProduct, subcategory: e.target.value })}
+                              className="w-full px-3 py-2 border rounded-lg text-sm bg-white"
+                              data-testid="edit-product-subcategory"
+                            >
+                              <option value="">— None —</option>
+                              {subs.map(s => (
+                                <option key={s.slug} value={s.slug}>{s.icon} {s.name}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <p className="text-[11px] text-amber-700 mt-1 bg-amber-50 ring-1 ring-amber-200 rounded-lg px-2.5 py-1.5" data-testid="edit-product-subcategory-empty">
+                              No subcategories under "{parentName}" yet. <Link to="/admin/categories" className="underline font-bold">Add some</Link> (e.g. Matte / Glossy under Lipstick) — products without a subcategory simply skip this filter.
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })()}
                     <div>
                       <label className="text-xs font-semibold text-gray-500 mb-1 block">Skin Concerns (multi-select)</label>
                       <div className="flex flex-wrap gap-1.5">
-                        {concerns.map(cn => {
+                        {concerns.filter(c => !c.niche || c.niche === (editProduct.niche || 'anti-aging')).map(cn => {
                           const selected = (editProduct.concerns || []).includes(cn.slug);
                           return (
                             <button

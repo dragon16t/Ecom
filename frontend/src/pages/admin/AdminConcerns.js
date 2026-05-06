@@ -65,16 +65,34 @@ export default function AdminConcerns() {
   const save = async () => {
     if (!editing) return;
     const { type, data, isNew } = editing;
+    // Auto-derive slug from name if admin left it blank — prevents the "empty
+    // slug" zombie row that breaks the API URL on update/delete.
+    let payload = { ...data };
+    if (!payload.slug || !payload.slug.trim()) {
+      const auto = (payload.name || '').toLowerCase().trim()
+        .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      if (!auto) {
+        alert('Please enter a Name first — slug will be derived from it automatically.');
+        return;
+      }
+      payload.slug = type === 'subcategory' && payload.parent_category
+        ? `${payload.parent_category}-${auto}`
+        : auto;
+    }
     try {
       if (type === 'concern') {
-        if (isNew) await axios.post(`${API}/api/admin/concerns`, data, auth);
-        else await axios.put(`${API}/api/admin/concerns/${data.slug}`, data, auth);
+        if (isNew) await axios.post(`${API}/api/admin/concerns`, payload, auth);
+        else await axios.put(`${API}/api/admin/concerns/${payload.slug}`, payload, auth);
       } else if (type === 'subcategory') {
-        if (isNew) await axios.post(`${API}/api/admin/subcategories`, data, auth);
-        else await axios.put(`${API}/api/admin/subcategories/${data.slug}`, data, auth);
+        if (!payload.parent_category) {
+          alert('Pick a parent category. A subcategory must live inside an existing category.');
+          return;
+        }
+        if (isNew) await axios.post(`${API}/api/admin/subcategories`, payload, auth);
+        else await axios.put(`${API}/api/admin/subcategories/${payload.slug}`, payload, auth);
       } else {
-        if (isNew) await axios.post(`${API}/api/admin/categories`, data, auth);
-        else await axios.put(`${API}/api/admin/categories/${data.slug}`, data, auth);
+        if (isNew) await axios.post(`${API}/api/admin/categories`, payload, auth);
+        else await axios.put(`${API}/api/admin/categories/${payload.slug}`, payload, auth);
       }
       setEditing(null);
       await load();

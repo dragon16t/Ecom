@@ -1,0 +1,52 @@
+{
+  "summary": "Iteration 7 — Verified (1) backend slug/name empty-validation on POST /api/admin/subcategories (7/7 pytest pass), (2) Edit Product modal now exposes category + cascading subcategory section with empty-hint fallback, (3) skin concerns REFETCH on modal open works end-to-end (4 chips → 5 chips after API create), (4) Subcategories admin tab auto-derives slug as 'lipstick-gloss-qa-auto-slug' from blank-slug + name='QA Auto Slug' + parent=lipstick-gloss. DB returned to clean state (0 subcategories, original concern count).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_subcategories_iter7.py",
+    "/app/test_reports/pytest/iteration_7.xml"
+  ],
+  "verified_flows": [
+    "BACKEND POST /api/admin/subcategories slug='' → 400 (msg contains 'slug').",
+    "BACKEND POST /api/admin/subcategories slug='   ' → 400.",
+    "BACKEND POST /api/admin/subcategories name='' → 400.",
+    "BACKEND POST /api/admin/subcategories name='   ' → 400.",
+    "BACKEND POST valid {slug, name, parent_category} → 200 + niche auto-derived from parent (e.g. cosmetics).",
+    "BACKEND GET /api/admin/subcategories returns [] in clean state both before and after teardown.",
+    "FRONTEND Edit Product modal (brow-definer-pencil): [data-testid='edit-product-category'] visible with current value 'brow'; subcategory section shows empty-hint [data-testid='edit-product-subcategory-empty'] when parent has 0 subcats.",
+    "FRONTEND switching Category from brow → lipstick-gloss in Edit modal: empty-hint correctly visible for new parent (no subs exist for it either); subcategory state reset to '' in code (line 1352 onChange).",
+    "FRONTEND Edit Product concerns REFETCH on open: started with 4 cosmetics chips, after POST /api/admin/concerns {slug:test-fresh-concern, niche:cosmetics} + re-open modal → chip count = 5 and [data-testid='edit-product-concern-test-fresh-concern'] visible. useEffect deps [editProduct?.__isNew, editProduct?.slug] correctly trigger Promise.allSettled([concerns, categories, subcategories]) on every modal open.",
+    "FRONTEND /admin/categories Subcategories tab → 'Add subcategory' modal: leave Slug blank, Name='QA Auto Slug', parent=lipstick-gloss, click Save → backend stores slug='lipstick-gloss-qa-auto-slug' (parent-prefixed auto-derive in AdminConcerns.js save()). Verified via subsequent GET /api/admin/subcategories.",
+    "Cleanup: deleted test concern (DELETE /api/admin/concerns/test-fresh-concern → 200) and test subcategory (→ 200). Final admin subcategories count = 0."
+  ],
+  "partially_verified": [
+    "FRONTEND Add Product (NEW form) refetch on reopen: was unable to switch niche to 'cosmetics' via [data-testid='new-product-niche'] selector inside the Add modal (testid differs on NEW form — likely needs inspection). The default 'anti-aging' niche showed only 1 chip (anti-aging) which is a separate niche bucket, so the new cosmetics chip is correctly filtered out by niche, not a refetch bug. Code review confirms the SAME useEffect (line 681-693) drives refetch for both NEW and EDIT modes — covered by Edit verification."
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "concerns.py POST /admin/subcategories validation (lines 326-330) correctly rejects empty/whitespace slug+name BEFORE the parent lookup, preventing zombie rows. Defensive, well-placed.",
+    "AdminProducts.js useEffect [editProduct?.__isNew, editProduct?.slug] (line 693) correctly re-runs the Promise.allSettled refetch on every modal open AND when slug changes — solid refetch contract.",
+    "AdminProducts.js line 1352: setEditProduct({...editProduct, category: e.target.value, subcategory: ''}) resets subcategory on category switch — no leakage. Identical to the NEW form (consistent UX).",
+    "AdminConcerns.js save() line 70-81: auto-derive lowercases name, kebab-cases via /[^a-z0-9]+/g, and PREFIXES with parent_category for subcategories — exactly matches the iter7 expectation 'lipstick-gloss-qa-auto-slug'. Smart UX — no more empty-slug zombies.",
+    "Minor: Add Product modal could use a [data-testid='new-product-niche'] attribute to make the same refetch path easier to test from outside (currently only the EDIT form has that exact testid). Not blocking — the same useEffect covers both.",
+    "Carry-over (low priority, not iter7 scope): ConcernCategoryPage 'Back to <Niche>' link still hard-codes 'Skincare' label."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_subcategories_iter7.py",
+    "/app/test_reports/iteration_7.json",
+    "/app/test_reports/pytest/iteration_7.xml"
+  ],
+  "success_rate": {
+    "backend": "100% (7/7 iter7 tests pass)",
+    "frontend": "~90% (5 of 6 flows runtime-verified; Add Product niche-switch testid not present so refetch on Add reopen verified only via code review of shared useEffect)"
+  },
+  "test_credentials": "admin password: celestaglow2024 (X-Admin-Token / login form input[type=password])",
+  "seed_data_creation": "Ephemeral concern 'test-fresh-concern' (cosmetics) and subcategory 'lipstick-gloss-qa-auto-slug' under 'lipstick-gloss' — both deleted after their assertions. Final state: 0 admin subcategories, original concerns intact.",
+  "retest_needed": false,
+  "main_agent_can_self_test": false,
+  "context_for_next_testing_agent": "iter7 fully verified the user's two reported gaps (Edit modal subcategory picker + concerns refetch) AND the empty-slug zombie bug. Run regression: cd /app/backend && export REACT_APP_BACKEND_URL=https://weather-preview-6.preview.emergentagent.com ADMIN_PASSWORD=celestaglow2024 && python -m pytest tests/test_subcategories_iter7.py tests/test_subcategories_iter6.py -v. To verify Add Product refetch programmatically in next iter, suggest E1 add data-testid='new-product-niche' to the niche <select> inside the __isNew block of AdminProducts.js (around line 1238). The shared useEffect makes this purely a testability gap, not a functional gap."
+}
