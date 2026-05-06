@@ -275,6 +275,17 @@ export default function AdminConcerns() {
 
         {tab === 'subcategories' && (
           <div className="space-y-4" data-testid="subcategories-tab">
+            <div className="bg-gradient-to-r from-amber-50 to-rose-50 ring-1 ring-amber-200 rounded-2xl p-4">
+              <p className="text-xs font-black text-amber-900 mb-1">How subcategories work</p>
+              <p className="text-[11px] text-amber-800 leading-relaxed">
+                A subcategory is a real group <em>inside</em> a category — exactly how an e-commerce site nests
+                products. Pick a parent category first, then create the subcategories that actually exist there.
+                Examples: <span className="font-bold">Lipstick → Matte / Glossy / Liquid</span>,
+                <span className="font-bold"> Foundation → Liquid / Stick / Cushion</span>,
+                <span className="font-bold"> Eyeshadow → Single / Palette / Glitter</span>. Avoid generic tags
+                ("Best Sellers", "Luxury") — those belong to badges or filters, not the taxonomy.
+              </p>
+            </div>
             <div className="bg-white ring-1 ring-stone-200 rounded-2xl px-4 py-3 flex items-center gap-3">
               <label className="text-xs font-bold text-stone-700">Filter by category:</label>
               <select

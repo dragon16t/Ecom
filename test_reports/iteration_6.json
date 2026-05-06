@@ -1,0 +1,41 @@
+{
+  "summary": "Iteration 6 (post-wipe subcategory taxonomy + cascading Add Product modal + Subcategories tab explainer) FULLY VERIFIED. Backend: 12/12 new tests pass. Frontend: all 4 cascading flows + explainer banner + parent-required modal verified at runtime. DB returned to clean state (0 subcategories).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_subcategories_iter6.py",
+    "/app/test_reports/pytest/iteration_6.xml"
+  ],
+  "verified_flows": [
+    "GET /api/subcategories returns [] (no generic seeds remain after wipe).",
+    "GET /api/admin/subcategories with X-Admin-Token returns []; without token -> 401.",
+    "POST /api/admin/subcategories {slug:test-iter6-matte-*, parent_category:lipstick-gloss} -> 200, niche auto-derived = 'cosmetics' from parent. Verified via admin list.",
+    "POST /api/admin/subcategories with parent_category='this-does-not-exist-xyz' -> 400 with 'parent category not found' detail.",
+    "POST duplicate slug -> 400 'Subcategory slug already exists'.",
+    "GET /api/subcategories?category=<parent> returns only that category's subcategories.",
+    "GET /api/subcategories?category=foundation-concealer returns [] (wiped + no seeding).",
+    "PUT /api/admin/subcategories/{slug} updates name + sort_order; 404 for unknown slug.",
+    "DELETE /api/admin/subcategories/{slug} -> 200 + removes; 404 for unknown.",
+    "DELETE cascade clears product.subcategory field (covered in regression test_subcategories_jan2026.py from iter5 — unchanged).",
+    "Frontend Add Product modal: Niche=Cosmetics + Category=Lipsticks & Glosses → empty-state hint visible at [data-testid='new-subcategory-empty'] with text 'No subcategories under \"Lipsticks & Glosses\" yet. Add some...'; <select data-testid='new-subcategory'> is NOT rendered (correctly hidden).",
+    "After seeding 1 subcategory under lipstick-gloss via API, modal re-rendered: <select data-testid='new-subcategory'> appears with options ['', 'test-ui-matte-iter6']; selecting it sets value correctly.",
+    "Switching Category from lipstick-gloss → brow: select element disappears, empty-state hint shows for 'Brow'. Switching back to lipstick-gloss: select reappears with value reset to '' (no leakage from previous parent). 100% correct cascading reset.",
+    "Frontend /admin/categories Subcategories tab: explainer banner 'How subcategories work' is visible with examples (Lipstick → Matte/Glossy/Liquid). Empty grid shows [data-testid='subcategories-empty']. Clicking 'Add subcategory' opens modal with [data-testid='field-parent-category'] required <select> showing optgroups Skincare + Cosmetics."
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Backend create_subcategory correctly validates parent existence + auto-derives niche from parent.niche || parent.group || 'skincare'. Defensive and correct.",
+    "DELETE cascade `db.products.update_many({'subcategory': slug}, {'$set': {'subcategory': ''}})` is atomic and tested.",
+    "AdminProducts.js line 1024 Category onChange: setEditProduct({...editProduct, category: e.target.value, subcategory: ''}) — correct reset on switch.",
+    "AdminProducts.js subcategory section is fully conditional on (category && subs.length) — clean UX, no empty selects.",
+    "AdminConcerns.js Subcategories modal forces parent_category pick (required select) and auto-derives niche from chosen parent — exactly the e-commerce mental model.",
+    "Carry-over (low priority, NOT this iteration's scope): ConcernCategoryPage 'Back to Skincare' link still hard-codes 'Skincare' label even when concern.niche='cosmetics'."
+  ],
+  "updated_files": ["/app/backend/tests/test_subcategories_iter6.py"],
+  "success_rate": {"backend": "100% (12/12 new + iter5 regression intact)", "frontend": "100% (all 6 flows runtime-verified incl. cascading reset)"},
+  "test_credentials": "admin password: celestaglow2024 (X-Admin-Token / login form input[type=password])",
+  "seed_data_creation": "Test created+deleted ephemeral subcategory test-ui-matte-iter6 + test-iter6-matte-* via teardown. DB returned to clean state — final GET /api/subcategories count = 0 as instructed.",
+  "retest_needed": false,
+  "main_agent_can_self_test": false,
+  "context_for_next_testing_agent": "Subcategory CRUD + cascading Add Product UX is solid. Run regression: cd /app/backend && export REACT_APP_BACKEND_URL=https://weather-preview-6.preview.emergentagent.com ADMIN_PASSWORD=celestaglow2024 && python -m pytest tests/test_subcategories_iter6.py tests/test_subcategories_jan2026.py -v. To open Add Product modal in playwright: page.click('[data-testid=add-product-btn]') after admin login. Niche=cosmetics → Category=lipstick-gloss is the cleanest path to test cascading."
+}

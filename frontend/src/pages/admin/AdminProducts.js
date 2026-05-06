@@ -1029,18 +1029,35 @@ function AdminProducts() {
                       <p className="text-[11px] text-amber-700 mt-1">No category for this niche yet. <Link to="/admin/categories" className="underline font-bold">Create one</Link>.</p>
                     )}
                   </div>
-                  {/* 4b. Subcategory (filtered by parent category) */}
-                  {editProduct.category && subcategories.filter(s => s.parent_category === editProduct.category).length > 0 && (
-                    <div>
-                      <label className="text-xs font-semibold text-gray-500">4b. Subcategory <span className="text-gray-400 font-normal">(optional filter chip)</span></label>
-                      <select value={editProduct.subcategory || ''} onChange={e => setEditProduct({...editProduct, subcategory: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm bg-white" data-testid="new-subcategory">
-                        <option value="">— None —</option>
-                        {subcategories.filter(s => s.parent_category === editProduct.category).map(s => (
-                          <option key={s.slug} value={s.slug}>{s.icon} {s.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
+                  {/* 4b. Subcategory — cascades from chosen Category. Hidden until a category is picked. */}
+                  {editProduct.category && (() => {
+                    const subs = subcategories.filter(s => s.parent_category === editProduct.category && s.is_active !== false);
+                    const parentName = (categories.find(c => c.slug === editProduct.category)?.name) || editProduct.category;
+                    return (
+                      <div>
+                        <label className="text-xs font-semibold text-gray-500">
+                          4b. Subcategory <span className="text-gray-400 font-normal">(optional · only those under "{parentName}")</span>
+                        </label>
+                        {subs.length > 0 ? (
+                          <select
+                            value={editProduct.subcategory || ''}
+                            onChange={e => setEditProduct({ ...editProduct, subcategory: e.target.value })}
+                            className="w-full px-3 py-2 border rounded-lg text-sm bg-white"
+                            data-testid="new-subcategory"
+                          >
+                            <option value="">— None —</option>
+                            {subs.map(s => (
+                              <option key={s.slug} value={s.slug}>{s.icon} {s.name}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <p className="text-[11px] text-amber-700 mt-1 bg-amber-50 ring-1 ring-amber-200 rounded-lg px-2.5 py-1.5" data-testid="new-subcategory-empty">
+                            No subcategories under "{parentName}" yet. <Link to="/admin/categories" className="underline font-bold">Add some</Link> (e.g. Matte / Glossy under Lipstick) — products created without a subcategory simply skip this filter.
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()}
                   {/* 5. MRP */}
                   <div>
                     <label className="text-xs font-semibold text-gray-500">5. MRP (₹) <span className="text-red-500">*</span></label>
