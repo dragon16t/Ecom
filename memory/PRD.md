@@ -38,31 +38,37 @@ and a referral system.
 - 2026-02-04 — Image-only category cards, AI fill returns mrp/offer_price/brand/
   size-with-fl-oz, URL scraper repaired (bs4+lxml).
 - 2026-02-05 — Cosmetics concern drill-down, smoother search, live visitor tracking.
-- 2026-02-05 — **Subcategories** end-to-end: new collection + GET/POST/PUT/DELETE
+- 2026-02-05 — Subcategories end-to-end: new collection + GET/POST/PUT/DELETE
   admin endpoints, ProductInput.subcategory field, AdminConcerns 5th tab with
   parent-category filter, AdminProducts subcategory dropdown filtered by selected
-  category, ConcernCategoryPage chip strip on category-mode pages. **Best Sellers
-  / Luxury / Everyday seeded for all 16 cosmetic categories** (48 total). Empty
-  chips render disabled with (0) count.
-- 2026-02-05 — **Per-device niche card images** for the homepage 3-up:
-  niche_settings.<slug>.card_image_{mobile, tablet, desktop, tv} with cascading
-  fallback. Admin tab "Niche Card (3-up)" exposes 4 image inputs per niche.
-  NicheCardSwitcher renders a <picture> element with media-query sources.
-- 2026-02-05 — ConcernCategoryPage: removed emoji from H1, back-link branches by
-  niche (cosmetics → /cosmetics, skincare → /skincare). SearchBar Enter key opens
-  the first matching product directly; only falls back to /shop?q= when 0 matches.
-  Tested 100% (Backend 48/48 + Frontend 11/11).
+  category, ConcernCategoryPage chip strip on category-mode pages.
+- 2026-02-05 — Per-device niche card images for the homepage 3-up.
+- 2026-02-05 — ConcernCategoryPage emoji removed; SearchBar Enter opens first
+  matching product directly.
+- **2026-02-06 — Subcategory taxonomy reset to standard e-commerce model**:
+  • Wiped 48 generic auto-seeded subcategories (Best Sellers / Luxury / Everyday)
+    that were polluting every cosmetic category.
+  • AdminProducts create form: Subcategory dropdown only renders when chosen
+    Category has real subcategories; otherwise an amber "No subcategories under
+    {parent} yet — Add some" hint links straight to /admin/categories.
+  • AdminConcerns Subcategories tab: added prominent "How subcategories work"
+    explainer banner with real examples (Lipstick → Matte / Glossy / Liquid).
+  • Verified by testing agent iter6: 12/12 backend + 6/6 frontend flows pass.
 
 ## Backlog (priority order)
 - 🔴 P0 (user-verification pending): deployed employee login. User must
   redeploy + delete/recreate the affected employee in admin panel.
 - 🟡 P1: Cloudinary plan / ImageKit migration before 2,000+ SKUs go live.
-- 🟢 P2: Refactor `backend/server.py` (>3000 lines) into routes/orders.py etc.
-- 🟢 P2: AI image generation button next to image uploader (Nano Banana) so
-  product creation becomes "type name → AI Fill → AI Image → Save".
-- 🟢 P2: Tag products with subcategories (admin data-entry — UI already ready).
+- 🟢 P2: Refactor `backend/server.py` (>3000 lines) into routes/orders.py,
+  routes/referrals.py, routes/visitor_tracking.py.
+- 🟢 P2: AI image generation button next to image uploader (Nano Banana).
+- 🟢 P2: Razorpay Payouts API for automated referral withdrawal.
+- 🟢 P2: Tag products with subcategories (admin data-entry — UI is ready, DB
+  is now clean for fresh real-world subcategories).
 - 🟢 P2: Add data-testids to ImageInput component for E2E testing of the niche
   card image admin uploads.
+- 🟢 P2: ConcernCategoryPage 'Back to Skincare' link still says 'Skincare' even
+  when concern.niche='cosmetics' (low-priority polish, noted iter6).
 
 ## Test credentials
 See `/app/memory/test_credentials.md`.
