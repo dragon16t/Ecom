@@ -980,6 +980,12 @@ function AdminProducts() {
                                 how_to_use: res.data.how_to_use || editProduct.how_to_use,
                                 size: res.data.size || editProduct.size,
                                 faqs: res.data.faqs?.length ? res.data.faqs : (editProduct.faqs || []),
+                                // Only fill prices if the admin hasn't entered them yet, so AI never
+                                // overwrites real numbers an admin has already typed.
+                                mrp: editProduct.mrp || res.data.mrp || editProduct.mrp,
+                                prepaid_price: editProduct.prepaid_price || res.data.offer_price || editProduct.prepaid_price,
+                                cod_price: editProduct.cod_price || res.data.offer_price || editProduct.cod_price,
+                                brand: editProduct.brand || res.data.brand_suggestion || editProduct.brand,
                               });
                             }
                           } catch (e) {
@@ -1408,6 +1414,10 @@ function AdminProducts() {
                               how_to_use: res.data.how_to_use || editProduct.how_to_use,
                               size: res.data.size || editProduct.size,
                               faqs: res.data.faqs?.length ? res.data.faqs : (editProduct.faqs || []),
+                              mrp: editProduct.mrp || res.data.mrp || editProduct.mrp,
+                              prepaid_price: editProduct.prepaid_price || res.data.offer_price || editProduct.prepaid_price,
+                              cod_price: editProduct.cod_price || res.data.offer_price || editProduct.cod_price,
+                              brand: editProduct.brand || res.data.brand_suggestion || editProduct.brand,
                             });
                           }
                         } catch (e) {

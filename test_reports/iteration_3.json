@@ -1,0 +1,35 @@
+{
+  "summary": "Iteration 3 follow-ups VERIFIED. (1) AI generate-product-content now returns mrp=1299, offer_price=849 (<mrp), brand_suggestion='Celesta Glow', size='30ml / 1.01 fl oz' — backend pytest passes. (2) URL scraper /api/admin/scrape/product no longer 500s — returns 200 JSON for both blocked Amazon URL and invalid domain. (3) /skincare 7/7 cards have <img> in icon (no emoji), /cosmetics 5/5 cards have <img>. (4) Icon container = 64x64 px, gap = 16px exactly. (5) Admin Add-Product → AI Fill button populates MRP, Offer Price (<MRP), Brand, and Packaging Size in the documented format end-to-end. Backend regression: 29/29 pytest pass.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration3_followups.py",
+    "/app/backend/tests/test_referral_and_products.py",
+    "/app/backend/tests/test_categories_jan2026.py",
+    "/app/backend/tests/test_celesta_fixes.py",
+    "/app/test_reports/pytest/iteration_3.xml"
+  ],
+  "action_items": [
+    "(Carry-over from iter 2, low priority) Create-flow inputs in AdminProducts.js (MRP / offer_price / packaging_size / tagline) still lack data-testid attributes. Visual + DOM-index inspection confirms AI Fill works, but adding data-testid='new-mrp', 'new-prepaid-price', 'new-brand', 'new-size', 'new-tagline' would let future automated suites assert without label-walking heuristics.",
+    "(Pre-existing, NOT this iteration) tests/test_iteration2_fixes.py::test_create_employee_with_login_url hardcodes the old preview URL https://design-cgu.preview.emergentagent.com — the live preview domain is now https://weather-preview-6.preview.emergentagent.com. Stale test, unrelated to current fixes. Either delete the test or load expected ORIGIN from REACT_APP_BACKEND_URL."
+  ],
+  "critical_code_review_comments": [
+    "image_ai.py prompt extension is solid: explicit 'NNml / N.NN fl oz' format constraint + integer-coercing the mrp/offer_price guards against the LLM returning '₹1299' or '1,299'. Verified one-shot return: mrp=1299, offer_price=849, size='30ml / 1.01 fl oz'.",
+    "CategoryShowcase.js correctly prefers category.image, falls back to first product image, and only renders the emoji <span> when both are missing. With current seed data 7/7 skincare and 5/5 cosmetics cards render <img>, confirming the headerImg fallback chain.",
+    "Card icon styling w-14 h-14 sm:w-16 sm:h-16 produced 64x64 actual pixels at 1920px viewport — matches the 56-64 design spec. gap-4 -> 16px gap verified in computed style.",
+    "URL scraper endpoint POST /api/admin/scrape/product now returns 200 JSON consistently — Amazon block and DNS-fail both return success:false bodies instead of HTML 500. bs4 + lxml install was the missing dep, supervisor restart picked them up cleanly."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration3_followups.py (new file - 3 tests for AI gen + scraper)"
+  ],
+  "success_rate": {"backend": "100% (29/29 - excludes pre-existing stale test_iteration2_fixes login_url test)", "frontend": "100% (4/4 flows: skincare img, cosmetics img, icon size+gap, admin AI fill)"},
+  "test_credentials": "admin password: celestaglow2024 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "None. Admin Add-Product modal opened and AI-filled but Cancel was implicit (no Create clicked, no DB write).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend pytest run command: cd /app/backend && export REACT_APP_BACKEND_URL=https://weather-preview-6.preview.emergentagent.com && export MONGO_URL='mongodb://localhost:27017' && export DB_NAME=test_database && export ADMIN_PASSWORD=celestaglow2024 && python -m pytest tests/ -v --ignore=tests/test_iteration2_fixes.py. The .env shell-source used in iter 2 breaks now because line 19 has unquoted whitespace ('aqlz jwuk uvfa udun' — SMTP_PASSWORD). Use explicit env vars instead. test_iteration2_fixes.py needs the URL updated by main agent before it can be re-included. AI fill in admin UI: rendered values verified VISUALLY in iter3 screenshot (Brand=Celesta Glow, MRP=1299, Offer=849, Packaging Size='30ml / 1.01 fl oz', Tagline+Description+5 key-ingredient chips) and via DOM-input-index dump."
+}

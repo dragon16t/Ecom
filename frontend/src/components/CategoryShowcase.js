@@ -11,7 +11,7 @@
 import React, { useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ChevronRight } from 'lucide-react';
-import { productPrimaryImage } from '../utils/productImage';
+import { productPrimaryImage, resolveImageUrl } from '../utils/productImage';
 
 const PLACEHOLDER = 'https://images.unsplash.com/photo-1556228720-195a672e8a03?w=300';
 
@@ -107,7 +107,15 @@ export default function CategoryShowcase({
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
-        {groups.map(({ category, items, total }) => (
+        {groups.map(({ category, items, total }) => {
+          // Prefer the admin-uploaded category image, fall back to the first
+          // product image so the card never looks empty. Emoji icon is the
+          // last resort.
+          const headerImg = resolveImageUrl(
+            category.image || items[0]?.images?.[0] || null,
+            null
+          );
+          return (
           <div
             key={category.slug}
             role="link"
@@ -118,18 +126,27 @@ export default function CategoryShowcase({
             style={{ '--tw-ring-color': accent }}
             data-testid={`${testIdPrefix}-card-${category.slug}`}
           >
-            <div className="flex items-center gap-3 mb-4">
+            <div className="flex items-center gap-4 mb-5">
               <div
-                className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center text-2xl flex-shrink-0"
-                style={{ background: `linear-gradient(135deg, ${category.accent_from || accentBg} 0%, ${category.accent_to || accentBg} 100%)` }}
+                className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl overflow-hidden flex items-center justify-center flex-shrink-0 ring-1 ring-stone-200"
+                style={!headerImg ? { background: `linear-gradient(135deg, ${category.accent_from || accentBg} 0%, ${category.accent_to || accentBg} 100%)` } : undefined}
               >
-                {category.icon || '✨'}
+                {headerImg ? (
+                  <img
+                    src={headerImg}
+                    alt={category.name}
+                    loading="lazy"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <span className="text-2xl">{category.icon || '✨'}</span>
+                )}
               </div>
               <div className="min-w-0 flex-1">
                 <h3 className="font-heading text-base sm:text-lg font-black text-stone-900 truncate group-hover:underline decoration-2 underline-offset-4">
                   {category.name}
                 </h3>
-                <p className="text-[11px] sm:text-xs text-stone-500 truncate">
+                <p className="text-[11px] sm:text-xs text-stone-500 truncate mt-0.5">
                   {total} {total === 1 ? 'product' : 'products'}{category.tagline ? ` · ${category.tagline}` : ''}
                 </p>
               </div>
@@ -143,7 +160,8 @@ export default function CategoryShowcase({
               ))}
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </section>
   );

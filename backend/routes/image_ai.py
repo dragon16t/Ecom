@@ -224,7 +224,10 @@ Return ONLY a JSON object (no markdown, no commentary) with EXACTLY these keys:
   "ingredients_full": "<full INCI-style ingredients list (realistic, comma-separated)>",
   "benefits": ["<benefit 1>", "<benefit 2>", "<benefit 3>", "<benefit 4>"],
   "how_to_use": "<3-4 short steps separated by newlines, e.g. 1. Cleanse...\\n2. Apply...>",
-  "size": "<typical pack size for this product, e.g. 30ml or 50g>",
+  "size": "<typical pack size for this product in INDIAN units, format strictly as 'NNml / N.NN fl oz' for liquids or 'NNg / N.NN oz' for solids — e.g. '30ml / 1.01 fl oz' or '50g / 1.76 oz'>",
+  "mrp": <integer Indian MRP in ₹ — typical realistic price for this product type in India, NO currency symbol>,
+  "offer_price": <integer ₹ sale price, ~30-40% lower than mrp, NO currency symbol>,
+  "brand_suggestion": "<short brand name suggestion if input brand is empty, otherwise repeat input brand>",
   "faqs": [
     {{"q": "<question 1>", "a": "<short answer>"}},
     {{"q": "<question 2>", "a": "<short answer>"}},
@@ -232,7 +235,7 @@ Return ONLY a JSON object (no markdown, no commentary) with EXACTLY these keys:
   ]
 }}
 
-Tone: trustworthy, clinical-but-warm, India-aware (no foreign units). Avoid hype words like "miracle", "instant cure".
+Tone: trustworthy, clinical-but-warm, India-aware (no foreign units except inside the size field which dual-prints both). Avoid hype words like "miracle", "instant cure".
 """
 
     try:
@@ -278,5 +281,8 @@ Tone: trustworthy, clinical-but-warm, India-aware (no foreign units). Avoid hype
         "benefits": data.get("benefits", []) if isinstance(data.get("benefits"), list) else [],
         "how_to_use": data.get("how_to_use", ""),
         "size": data.get("size", ""),
+        "mrp": int(data.get("mrp") or 0) if str(data.get("mrp", "")).strip().replace("-", "").isdigit() else 0,
+        "offer_price": int(data.get("offer_price") or 0) if str(data.get("offer_price", "")).strip().replace("-", "").isdigit() else 0,
+        "brand_suggestion": data.get("brand_suggestion", "") or brand,
         "faqs": data.get("faqs", []) if isinstance(data.get("faqs"), list) else [],
     }
