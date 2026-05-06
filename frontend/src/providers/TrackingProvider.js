@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
+import useVisitorPing from '../hooks/useVisitorPing';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -42,6 +43,9 @@ const waitForFbq = (callback, maxWait = 5000) => {
 
 // Tracking Provider Component
 export function TrackingProvider({ children }) {
+  // Live presence ping for the admin's "Active Visitors" panel.
+  // Runs only on customer pages (the hook self-skips /admin and /employee).
+  useVisitorPing();
   const trackedPagesRef = useRef(new Set());
   const eventQueueRef = useRef([]);
   const flushTimeoutRef = useRef(null);

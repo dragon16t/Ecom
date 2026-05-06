@@ -2967,6 +2967,11 @@ app.include_router(concerns_routes.router, prefix="/api")
 app.include_router(image_ai_routes.router, prefix="/api")
 app.include_router(reviews_routes.router, prefix="/api")
 
+# Live visitor tracking — anonymous presence pings ("who's online right now")
+from routes import visitor_tracking as _visitor_tracking  # noqa: E402
+_visitor_tracking.init_visitor_tracking(db, verify_admin_token)
+app.include_router(_visitor_tracking.router)
+
 # Customer Email OTP auth + orders + cart
 customer_auth_routes.init_auth_router(db)
 app.include_router(customer_auth_routes.router, prefix="/api")
@@ -3037,6 +3042,11 @@ async def startup_seed():
         await run_concerns_seed(db)
     except Exception as e:
         logging.error(f"Failed to seed concerns: {e}", exc_info=True)
+    # Live visitor tracking TTL index (5-min auto-expiry on `last_seen`)
+    try:
+        await _visitor_tracking.ensure_indexes()
+    except Exception as e:
+        logging.error(f"Failed to create visitor tracking indexes: {e}")
     # Refresh admin password cache so DB-stored password works for verify_auth
     try:
         await product_routes._refresh_admin_pw_cache()

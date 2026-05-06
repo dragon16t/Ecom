@@ -97,8 +97,16 @@ export default function AdminConcerns() {
           </h1>
           <button
             onClick={() => {
-              if (tab === 'concerns') {
-                setEditing({ type: 'concern', data: { ...EMPTY_CONCERN }, isNew: true });
+              if (tab === 'concerns' || tab === 'cosmetic-concerns') {
+                const isCosmeticConcern = tab === 'cosmetic-concerns';
+                setEditing({
+                  type: 'concern',
+                  data: {
+                    ...EMPTY_CONCERN,
+                    niche: isCosmeticConcern ? 'cosmetics' : 'skincare',
+                  },
+                  isNew: true,
+                });
               } else {
                 // Pre-fill group + niche so the new category lands on the right tab
                 const isCosmetics = tab === 'cosmetics';
@@ -116,13 +124,14 @@ export default function AdminConcerns() {
             className="bg-green-600 hover:bg-green-700 text-white text-xs font-bold px-3.5 py-2 rounded-lg flex items-center gap-1.5"
             data-testid="add-new-btn"
           >
-            <Plus size={14} /> Add {tab === 'concerns' ? 'concern' : tab === 'cosmetics' ? 'cosmetic' : 'skincare'}
+            <Plus size={14} /> Add {tab === 'concerns' ? 'skincare concern' : tab === 'cosmetic-concerns' ? 'cosmetic concern' : tab === 'cosmetics' ? 'cosmetic category' : 'skincare category'}
           </button>
         </div>
         {/* Tabs */}
         <div className="max-w-7xl mx-auto px-5 flex gap-1 overflow-x-auto">
           {[
-            { id: 'concerns', label: `Skin Concerns (${concerns.length})`, icon: Sparkles },
+            { id: 'concerns', label: `Skincare Concerns (${concerns.filter(c => (c.niche || 'skincare') === 'skincare' || (c.niche || 'skincare') === 'anti-aging').length})`, icon: Sparkles },
+            { id: 'cosmetic-concerns', label: `💄 Cosmetic Concerns (${concerns.filter(c => c.niche === 'cosmetics').length})`, icon: Sparkles },
             { id: 'skincare', label: `Skincare Categories (${categories.filter(c => (c.niche || c.group) === 'skincare').length})`, icon: Package },
             { id: 'cosmetics', label: `💄 Cosmetics Categories (${categories.filter(c => (c.niche || c.group) === 'cosmetics').length})`, icon: Package },
           ].map(t => {
@@ -143,9 +152,15 @@ export default function AdminConcerns() {
 
       {/* Body */}
       <div className="max-w-7xl mx-auto px-5 py-8">
-        {tab === 'concerns' && (
+        {(tab === 'concerns' || tab === 'cosmetic-concerns') && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {concerns.map(c => (
+            {concerns
+              .filter(c => {
+                const cn = c.niche || 'skincare';
+                if (tab === 'cosmetic-concerns') return cn === 'cosmetics';
+                return cn === 'skincare' || cn === 'anti-aging';
+              })
+              .map(c => (
               <div key={c.slug} className="bg-white ring-1 ring-gray-200 rounded-2xl overflow-hidden hover:ring-pink-300 transition-all" data-testid={`concern-card-${c.slug}`}>
                 <div className="aspect-[16/9] relative overflow-hidden" style={{ background: `linear-gradient(135deg, ${c.accent_from} 0%, ${c.accent_to} 100%)` }}>
                   {c.image && <img src={c.image} alt={c.name} className="absolute inset-0 w-full h-full object-cover opacity-70" />}
@@ -172,6 +187,17 @@ export default function AdminConcerns() {
                 </div>
               </div>
             ))}
+            {concerns.filter(c => {
+              const cn = c.niche || 'skincare';
+              if (tab === 'cosmetic-concerns') return cn === 'cosmetics';
+              return cn === 'skincare' || cn === 'anti-aging';
+            }).length === 0 && (
+              <div className="col-span-full bg-amber-50 ring-1 ring-amber-200 rounded-2xl p-6 text-center text-sm text-amber-800" data-testid="concerns-empty">
+                {tab === 'cosmetic-concerns'
+                  ? 'No cosmetic concerns yet. Click "Add cosmetic concern" to create one (e.g. Full Coverage, Bridal Glam, Long-Wear).'
+                  : 'No skincare concerns yet. Click "Add skincare concern" to create one (e.g. Pigmentation, Dryness, Acne).'}
+              </div>
+            )}
           </div>
         )}
 

@@ -38,6 +38,7 @@ export default function CosmeticsHome() {
   const _cp = Array.isArray(_raw) ? _raw : (_raw?.items || []);
   const _cc = peek(`${API}/api/categories`) || [];
   const _cs = peek(`${API}/api/site-settings`) || {};
+  const _concerns = peek(`${API}/api/concerns`) || [];
   const [products, setProducts] = useState(_cp);
   const [categories, setCategories] = useState(
     _cc.filter(x => x.niche === 'cosmetics' || x.group === 'cosmetics')
@@ -48,6 +49,7 @@ export default function CosmeticsHome() {
          accent_text: x.accent_text || '#831843',
        }))
   );
+  const [concerns, setConcerns] = useState(_concerns.filter(x => x.niche === 'cosmetics'));
   const [settings, setSettings] = useState(_cs);
   const [loading, setLoading] = useState(_cp.length === 0);
 
@@ -57,8 +59,9 @@ export default function CosmeticsHome() {
       cachedGet(`${API}/api/products?niche=cosmetics&page=1&limit=48`),
       cachedGet(`${API}/api/categories`),
       cachedGet(`${API}/api/site-settings`),
+      cachedGet(`${API}/api/concerns`),
     ])
-      .then(([p, c, s]) => {
+      .then(([p, c, s, cn]) => {
         if (cancelled) return;
         const items = Array.isArray(p.data) ? p.data : (p.data?.items || []);
         setProducts(items);
@@ -71,6 +74,7 @@ export default function CosmeticsHome() {
             accent_text: x.accent_text || '#831843',
           }))
         );
+        setConcerns((cn.data || []).filter(x => x.niche === 'cosmetics'));
         setSettings(s.data || {});
       })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -123,6 +127,22 @@ export default function CosmeticsHome() {
               subtitle={niche.category_strip_subtitle || 'Lip · Eye · Brow · Face'}
               accent={accent}
               testIdPrefix="cosmetics-cat"
+            />
+          </div>
+        </section>
+      )}
+
+      {/* Cosmetic concerns strip — Full Coverage / Bridal Glam / Long Wear / etc. */}
+      {concerns.length > 0 && niche.show_concerns_strip !== false && (
+        <section className="bg-stone-50 border-b border-stone-100" data-testid="cosmetics-concerns-strip">
+          <div className="max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-6">
+            <CircularCategoryStrip
+              items={concerns}
+              routePrefix="/concern"
+              title={<>Shop by <span className="italic" style={{ color: accent }}>Look</span></>}
+              subtitle="Full Coverage · Bridal · Long Wear · Everyday"
+              accent={accent}
+              testIdPrefix="cosmetics-concerns"
             />
           </div>
         </section>

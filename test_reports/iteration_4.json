@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration 4 features VERIFIED. Backend: 7/7 new visitor-tracking & cosmetic-concerns tests pass; 36/36 full regression pass. POST /api/visitor/ping is idempotent (1 doc per session, ping_count incremented), TTL index on last_seen with expireAfterSeconds=300 confirmed via Mongo indexInformation. GET /api/admin/visitors/active returns {success, count, visitors[], by_page[], by_niche[]}, requires X-Admin-Token, excludes mongodb _id. 4 cosmetic concerns (full-coverage, everyday-natural, bridal-glam, long-wear) present in /api/concerns with niche='cosmetics'; admin POST/PUT preserves niche. Frontend: /cosmetics renders [data-testid='cosmetics-concerns-strip'] with 4 circle links (hrefs /concern/full-coverage, /concern/everyday-natural, /concern/bridal-glam, /concern/long-wear). Click navigates to /concern/<slug> and ConcernCategoryPage renders with '0 products' empty state. SearchBar dropdown on /skincare shows 5 rich rows for 'serum' with 48px images, tagline, ₹price + ₹MRP strikethrough; no-results query 'zzzzzz...' shows 'No products match' + 'Browse all in Shop →' empty state. Admin /admin/concerns tabs render as 'Skincare Concerns (8)', '💄 Cosmetic Concerns (4)', 'Skincare Categories (15)', '💄 Cosmetics Categories (16)'. Cosmetic Concerns tab shows all 4 cards (Full Coverage / Everyday Natural / Bridal Glam / Long Wear). Admin /admin/live-visitors combines endpoints; active visitors list contains /skincare, /concern/full-coverage (customer pages) and ZERO /admin or /employee paths — confirming useVisitorPing self-skip works.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "ConcernCategoryPage under /concern/<cosmetic-slug>", "issues": ["Back link reads 'Back to Skincare' even when the concern's niche is 'cosmetics'. Should conditionally show 'Back to Cosmetics' based on concern.niche so cosmetic shoppers aren't bounced to the wrong home."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_visitor_tracking.py",
+    "/app/backend/tests/test_iteration3_followups.py",
+    "/app/test_reports/pytest/iteration_4.xml",
+    "/app/test_reports/pytest/iteration_4_full.xml"
+  ],
+  "action_items": [
+    "(Minor) ConcernCategoryPage: branch the 'Back to …' link on concern.niche so cosmetic concerns link back to /cosmetics instead of /skincare.",
+    "(Observation, not a bug) Review request expected 'Skincare Concerns (12)' but seeded DB currently has 8 (Anti-Aging, Acne & Blemishes, Pigmentation, Dullness & Glow, Dark Circles, Dryness, Oily Skin, Sensitive Skin). Tab label correctly reflects actual count; main agent to confirm whether 4 more skincare concerns were expected to be seeded this iteration."
+  ],
+  "critical_code_review_comments": [
+    "visitor_tracking.py is well-scoped: TTL-based self-cleaning collection via create_index(expireAfterSeconds=300), upsert keyed on session_id with $setOnInsert for first_seen and $inc for ping_count — idempotent AND retains counter semantics in one atomic call. Nice.",
+    "admin_active_visitors correctly projects out _id/ip_hash/user_agent at the driver level ({'_id':0,'ip_hash':0,'user_agent':0}) so no ObjectId leaks to JSON. Verified via test — '_id' absent in response.",
+    "useVisitorPing.js self-skips /admin and /employee paths, persists session_id in localStorage, pings on route change + every 60s + visibilitychange. Confirmed at runtime: admin's own browsing did NOT appear in visitors list.",
+    "SearchBar dropdown empty state now shows a dedicated 'No products match' + 'Browse all in Shop →' CTA — a meaningful UX upgrade over the previous empty skeleton."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_visitor_tracking.py (new — 7 tests: ping success, ping idempotency + Mongo single-doc assertion, TTL=300s index verification, admin auth required, active visitors payload shape + seeded-session roundtrip, cosmetic concerns presence, admin concerns niche preservation POST/PUT)"
+  ],
+  "success_rate": {"backend": "100% (36/36 including new 7)", "frontend": "100% (6/6 flows: cosmetics strip, concern nav, search dropdown results, search no-results, admin concerns tabs+labels, admin live-visitors combined + admin-path exclusion)"},
+  "test_credentials": "admin password: celestaglow2024 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Ephemeral pings inserted during test run for session_ids prefixed TEST_pytest_* — cleaned up in teardown_method. No persistent writes.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Run backend regression with: cd /app/backend && export REACT_APP_BACKEND_URL=https://weather-preview-6.preview.emergentagent.com MONGO_URL='mongodb://localhost:27017' DB_NAME=test_database ADMIN_PASSWORD=celestaglow2024 && python -m pytest tests/ -v --ignore=tests/test_iteration2_fixes.py (the iteration2 file still has a stale preview URL — skip). Admin login flow: GET /admin -> fill [data-testid='admin-password-input'] with 'celestaglow2024' -> click button containing 'Sign In' -> redirects to /admin/dashboard. DiscountPopup ([data-testid='discount-popup']) intercepts clicks on storefront — dismiss its inner <button> before interacting with the search input."
+}

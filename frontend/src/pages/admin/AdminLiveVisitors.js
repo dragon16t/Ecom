@@ -76,12 +76,53 @@ export default function AdminLiveVisitors() {
 
   const fetchLive = useCallback(async () => {
     try {
-      const r = await axios.get(`${API}/admin/analytics/live`, { headers: getAdminHeaders() });
-      setLive(r.data?.live_visitors || { total: 0, by_page: {} });
+      // Fire BOTH endpoints in parallel:
+      //   • /admin/analytics/live  — legacy in-memory enhanced_analytics (fast,
+      //     but resets on pod restart)
+      //   • /admin/visitors/active — Mongo-backed TTL pings (durable, exact
+      //     "X people on /product/Y right now" feed)
+      // We prefer Mongo numbers when available because they survive deploys.
+      const [legacy, mongo] = await Promise.allSettled([
+        axios.get(`${API}/admin/analytics/live`, { headers: getAdminHeaders() }),
+        axios.get(`${API}/admin/visitors/active`, { headers: getAdminHeaders() }),
+      ]);
+
+      const legacyData = legacy.status === 'fulfilled' ? legacy.value.data : {};
+      const mongoData  = mongo.status  === 'fulfilled' ? mongo.value.data  : {};
+
+      // Merge — Mongo wins on `total` and `by_page` if it has data.
+      let total = legacyData?.live_visitors?.total ?? 0;
+      let byPage = legacyData?.live_visitors?.by_page || {};
+      if (mongoData?.success) {
+        total = mongoData.count;
+        byPage = Object.fromEntries(mongoData.by_page || []);
+      }
+      setLive({ total, by_page: byPage });
+
+      // Surface the live ping rows for the table (replaces the 7-day legacy
+      // visitors list when Mongo data is fresher).
+      if (mongoData?.success && Array.isArray(mongoData.visitors)) {
+        setVisitors(mongoData.visitors.map(v => ({
+          visitor_id:        v.session_id,
+          current_page:      v.path,
+          last_seen:         v.last_seen,
+          first_seen:        v.first_seen,
+          niche:             v.niche,
+          product_slug:      v.product_slug,
+          customer_email:    v.customer_email,
+          customer_phone:    v.customer_phone,
+          customer_name:     v.customer_name,
+          referrer:          v.referrer,
+          page_title:        v.title,
+          ping_count:        v.ping_count,
+          source:            'mongo',
+        })));
+      }
+
       setStats({
-        total_visits: r.data?.total_visits,
-        page_totals: r.data?.page_totals || {},
-        top_locations: r.data?.top_locations || [],
+        total_visits: legacyData?.total_visits,
+        page_totals: legacyData?.page_totals || {},
+        top_locations: legacyData?.top_locations || [],
       });
       setLastRefresh(new Date());
     } catch (e) {

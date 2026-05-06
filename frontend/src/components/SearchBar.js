@@ -66,7 +66,7 @@ export default function SearchBar({ accent = '#16a34a', niche, testId = 'home-se
         const hay = `${p.name || ''} ${p.short_name || ''} ${p.tagline || ''} ${p.key_ingredients || ''} ${p.category || ''}`.toLowerCase();
         return hay.includes(s);
       })
-      .slice(0, 6);
+      .slice(0, 12);
   }, [q, allProducts]);
 
   const submit = (e) => {
@@ -142,20 +142,23 @@ export default function SearchBar({ accent = '#16a34a', niche, testId = 'home-se
               className="absolute left-0 right-0 mt-2 bg-white rounded-2xl ring-1 ring-stone-200 shadow-2xl shadow-stone-900/10 overflow-hidden z-30"
               data-testid="search-suggestions"
             >
-              <ul className="max-h-[320px] overflow-y-auto">
+              <p className="px-3 pt-3 pb-1 text-[10px] font-black tracking-[0.2em] uppercase text-stone-400">
+                {suggestions.length} matches
+              </p>
+              <ul className="max-h-[60vh] overflow-y-auto">
                 {suggestions.map((p, i) => (
                   <li key={p.slug}>
                     <Link
                       to={`/product/${p.slug}`}
-                      onClick={() => setOpen(false)}
+                      onClick={() => { setOpen(false); setQ(''); }}
                       className={`flex items-center gap-3 px-3 py-2.5 transition-colors ${
                         i === highlight ? 'bg-stone-100' : 'hover:bg-stone-50'
                       }`}
                       data-testid={`search-suggestion-${p.slug}`}
                     >
-                      <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-stone-50 to-stone-100 ring-1 ring-stone-200 flex items-center justify-center overflow-hidden flex-shrink-0">
+                      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-stone-50 to-stone-100 ring-1 ring-stone-200 flex items-center justify-center overflow-hidden flex-shrink-0">
                         {p.images?.[0] ? (
-                          <img src={productPrimaryImage(p)} alt="" className="w-full h-full object-contain" />
+                          <img src={productPrimaryImage(p)} alt="" className="w-full h-full object-cover" />
                         ) : (
                           <Sparkles size={16} className="text-stone-300" />
                         )}
@@ -163,30 +166,35 @@ export default function SearchBar({ accent = '#16a34a', niche, testId = 'home-se
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-bold text-stone-900 truncate">{p.short_name || p.name}</p>
                         <p className="text-[11px] text-stone-500 truncate">
-                          {p.key_ingredients || p.tagline || p.category}
+                          {p.tagline || p.key_ingredients || p.category}
                         </p>
                       </div>
-                      <span
-                        className="text-xs font-black flex-shrink-0"
-                        style={{ color: accent }}
-                      >
-                        ₹{p.prepaid_price}
-                      </span>
+                      <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
+                        <span className="text-sm font-black" style={{ color: accent }}>₹{p.prepaid_price}</span>
+                        {p.mrp > p.prepaid_price && (
+                          <span className="text-[10px] line-through text-stone-400">₹{p.mrp}</span>
+                        )}
+                      </div>
                     </Link>
                   </li>
                 ))}
               </ul>
-              <div className="border-t border-stone-100 px-3 py-2 bg-stone-50/60">
-                <button
-                  type="button"
-                  onClick={submit}
-                  className="text-xs font-bold w-full text-left hover:underline"
-                  style={{ color: accent }}
-                  data-testid="search-see-all-btn"
-                >
-                  See all results for "{q}" →
-                </button>
-              </div>
+              {/* No "See all" footer — results are now rich enough to be the
+                  primary search experience. Press Enter or tap a row to open
+                  the product directly without navigating to a loading skeleton. */}
+            </div>
+          )}
+          {open && q.trim().length >= 1 && suggestions.length === 0 && (
+            <div className="absolute left-0 right-0 mt-2 bg-white rounded-2xl ring-1 ring-stone-200 shadow-xl px-4 py-5 text-center text-sm text-stone-500 z-30" data-testid="search-no-results">
+              No products match "{q}".
+              <button
+                type="button"
+                onClick={submit}
+                className="block mx-auto mt-2 font-bold underline"
+                style={{ color: accent }}
+              >
+                Browse all in Shop →
+              </button>
             </div>
           )}
         </div>
