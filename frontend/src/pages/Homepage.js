@@ -423,7 +423,7 @@ function Homepage() {
                   {/* Trust footer */}
                   <div className="mt-4 sm:mt-5 pt-4 border-t border-emerald-300/15 flex flex-wrap items-center gap-x-4 gap-y-2 text-[10px] sm:text-[11px] text-emerald-100/80">
                     <span className="flex items-center gap-1.5"><Truck size={11} className="text-amber-300" /> Free shipping</span>
-                    <span className="flex items-center gap-1.5"><Shield size={11} className="text-amber-300" /> 30-day return</span>
+                    <span className="flex items-center gap-1.5"><Shield size={11} className="text-amber-300" /> 7-day sealed return</span>
                     <span className="flex items-center gap-1.5"><Check size={11} className="text-amber-300" /> COD available</span>
                     <span className="flex items-center gap-1.5"><Sparkles size={11} className="text-amber-300" /> Free skin analysis</span>
                   </div>
@@ -574,7 +574,7 @@ function FaqSection({ accent, accentDark, faqs: customFaqs, title, eyebrow }) {
     { q: 'Is retinol safe for Indian skin? Will it cause irritation?', a: 'Our retinol is encapsulated in a slow-release matrix specifically tested on melanin-rich, tropical skin types. It releases over 8 hours which dramatically reduces flushing, peeling and post-inflammatory pigmentation common with conventional retinols.' },
     { q: 'Can I use the Vitamin C serum and retinol together?', a: 'Yes — but apply Vitamin C in the AM (it pairs beautifully with sunscreen) and retinol at PM. Stacking both at the same time can over-exfoliate sensitive skin.' },
     { q: 'Are the products dermatologically tested?', a: 'Every formula passes a 3-stage review with board-certified dermatologists, plus independent lab testing for safety, efficacy and shelf stability under Indian climate conditions.' },
-    { q: 'What if it doesn\'t work for me?', a: 'We offer a 30-day no-questions-asked money-back guarantee. If you don\'t see results, message us on WhatsApp and we\'ll process a full refund.' },
+    { q: 'What if it doesn\'t work for me?', a: 'We accept 7-day returns on unopened, factory-sealed items only. Once a bottle is opened we cannot accept it back for hygiene reasons — please tell us your concern on WhatsApp first and our team will recommend the right product before you break the seal.' },
     { q: 'How is shipping & delivery?', a: 'Free shipping on orders over ₹499. Most metros receive their order within 2–3 business days. We also offer Cash on Delivery and 24-hour dispatch.' },
   ];
   const faqs = (Array.isArray(customFaqs) && customFaqs.length > 0) ? customFaqs : defaults;

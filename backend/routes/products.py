@@ -180,6 +180,8 @@ async def get_all_products(
     limit: Optional[int] = Query(None, ge=1, le=100),
     search: Optional[str] = Query(None, description="Text search on name/description/brand/tags"),
     sort: Optional[str] = Query("sort_order", description="sort_order | price_asc | price_desc | newest | popular"),
+    x_admin_token: Optional[str] = Header(None, alias="X-Admin-Token"),
+    x_employee_token: Optional[str] = Header(None, alias="X-Employee-Token"),
 ):
     """Public: paginated + searchable product list, with TBL auto-flip.
 
@@ -187,7 +189,21 @@ async def get_all_products(
       { items: [...], total, page, limit, has_next }
     For back-compat we still return a plain array when NEITHER `page` nor `limit`
     are provided AND no `search` is used, so nothing breaks on existing callers.
+
+    Security: ``active_only=false`` returns inactive/draft products and is
+    therefore an admin-only mode. Anonymous callers that pass
+    ``active_only=false`` are silently coerced back to ``True`` so we never
+    leak unpublished SKUs.
     """
+    # If the caller is asking for inactive products, they MUST authenticate
+    # as admin or as an employee with the products permission. Otherwise we
+    # silently force active_only=True so anonymous traffic only sees the
+    # public catalog. Previously this endpoint leaked every draft product.
+    if not active_only:
+        try:
+            verify_auth(x_admin_token=x_admin_token, x_employee_token=x_employee_token, permission="products")
+        except HTTPException:
+            active_only = True
     # Build the query
     query = {"is_active": True} if active_only else {}
     if niche:

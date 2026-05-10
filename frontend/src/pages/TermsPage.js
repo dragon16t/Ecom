@@ -64,8 +64,11 @@ function TermsPage() {
 
             <h2 className="text-lg font-semibold text-gray-900 mt-6 mb-3">6. Returns and Refunds</h2>
             <p className="text-gray-600 mb-4">
-              We offer a 7-day return policy for unused products in original packaging. Refunds will be processed 
-              within 7-10 business days after receiving the returned product.
+              We offer a 7-day return window on <strong>unopened, factory-sealed</strong> products in original
+              packaging. For hygiene and safety reasons, we cannot accept returns or issue refunds on any product
+              whose seal has been broken or bottle opened — even if used only once. Damaged-on-arrival or wrong-item
+              shipments are always covered. Refunds (when eligible) are processed within 7-10 business days after we
+              receive the returned product. See our <a href="/refund-policy" className="text-green-700 underline font-medium">Refund &amp; Return Policy</a> for full details.
             </p>
 
             <h2 className="text-lg font-semibold text-gray-900 mt-6 mb-3">7. Skin Consultation</h2>

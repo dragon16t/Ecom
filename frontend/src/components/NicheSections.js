@@ -78,7 +78,7 @@ export function FaqSection({ accent = '#0f766e', faqs: customFaqs, title, eyebro
   const defaults = [
     { q: 'How quickly will I see results?', a: 'Most users notice softer skin and a brighter complexion within 7–10 days. Visible improvements typically appear at 4 weeks of consistent use.' },
     { q: 'Are the products dermatologically tested?', a: 'Every formula passes a 3-stage review with board-certified dermatologists.' },
-    { q: 'What if it doesn\'t work for me?', a: 'We offer a 30-day no-questions-asked money-back guarantee.' },
+    { q: 'What if it doesn\'t work for me?', a: 'We accept 7-day returns on unopened, factory-sealed items only. Opened bottles cannot be returned for hygiene reasons — please WhatsApp us before breaking the seal and we\'ll guide you to the right product.' },
     { q: 'How is shipping & delivery?', a: 'Free shipping on orders over ₹499. Most metros receive within 2–3 business days. COD available.' },
   ];
   const faqs = (Array.isArray(customFaqs) && customFaqs.length > 0) ? customFaqs : defaults;

@@ -209,8 +209,8 @@ export const ExpertEndorsement = memo(function ExpertEndorsement() {
 export const MoneyBackGuarantee = memo(function MoneyBackGuarantee() {
   return (
     <div className="mt-5 p-4 bg-green-50 border border-green-100 rounded-xl text-center">
-      <p className="text-green-700 font-semibold text-sm">💯 100% Money Back Guarantee</p>
-      <p className="text-green-600 text-xs mt-1">Not satisfied? Get full refund within 7 days</p>
+      <p className="text-green-700 font-semibold text-sm">💯 7-Day Sealed Return</p>
+      <p className="text-green-600 text-xs mt-1">Unopened, factory-sealed items only · Damaged or wrong-item shipments always covered</p>
     </div>
   );
 });

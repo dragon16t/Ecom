@@ -64,7 +64,7 @@ function AboutPage() {
               { icon: Award, title: 'Clinically Proven', desc: '87% reduction in fine lines in clinical studies' },
               { icon: Users, title: 'Men & Women', desc: 'Effective anti-aging for ages 25-55+' },
               { icon: Leaf, title: 'No Harsh Chemicals', desc: 'Paraben-free, sulfate-free, cruelty-free' },
-              { icon: CheckCircle, title: '30-Day Guarantee', desc: 'Not satisfied? Full refund, no questions asked' },
+              { icon: CheckCircle, title: '7-Day Sealed Return', desc: 'Unopened items only. Opened bottles cannot be returned for hygiene reasons.' },
               { icon: Star, title: '4.8/5 Rating', desc: '2,340+ verified 5-star reviews' },
             ].map((item, i) => (
               <div key={i} className="flex items-start gap-3 p-4 bg-gray-50 rounded-xl">

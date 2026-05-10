@@ -72,7 +72,7 @@ function buildFaqs(product) {
     { q: isCos ? 'How long does the colour last?' : 'How long before I see results?', a: isCos ? 'Up to 8–12 hours of comfortable wear depending on application and skin type.' : 'Most customers report visible improvement within 2–4 weeks of consistent daily use.' },
     { q: 'Is it suitable for sensitive skin?',                                         a: 'Yes. All Celesta Glow products are dermatologist-tested and pH-balanced for every skin type.' },
     { q: isCos ? 'Will it dry out my lips/skin?' : 'Can I use this with other skincare?', a: isCos ? 'No. Our cosmetics are formulated with skin-loving actives like Hyaluronic Acid and Vitamin E to keep skin nourished while wearing colour.' : 'Absolutely. Our products are designed to complement any existing routine.' },
-    { q: 'What is the return policy?',                                                 a: '30-day full money-back guarantee. No questions asked.' },
+    { q: 'What is the return policy?',                                                 a: '7-day return on unopened, factory-sealed items only. We cannot accept returns on opened or used products for hygiene reasons. Damaged-on-arrival or wrong-item shipments are always covered.' },
   ];
 }
 
@@ -320,7 +320,7 @@ function ProductDetailPage() {
 
             {/* Trust — Glass style */}
             <div className="mt-5 grid grid-cols-4 gap-2">
-              {[{ icon: Truck, t: 'Free Shipping', d: 'All India' }, { icon: Shield, t: 'Genuine', d: '100% Authentic' }, { icon: Award, t: 'Certified', d: 'Lab Tested' }, { icon: Clock, t: '30 Days', d: 'Easy Return' }].map((b, i) => (
+              {[{ icon: Truck, t: 'Free Shipping', d: 'All India' }, { icon: Shield, t: 'Genuine', d: '100% Authentic' }, { icon: Award, t: 'Certified', d: 'Lab Tested' }, { icon: Clock, t: '7-Day Return', d: 'Sealed items only' }].map((b, i) => (
                 <div key={i} className="text-center bg-gradient-to-b from-white to-stone-50 rounded-xl py-3 px-1 border border-stone-100 shadow-sm">
                   <b.icon size={18} className="mx-auto mb-1 text-green-600" />
                   <p className="text-xs font-bold text-gray-800 leading-tight">{b.t}</p>

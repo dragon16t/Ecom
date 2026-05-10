@@ -15,17 +15,17 @@ function RefundPolicyPage() {
             </div>
             <div>
               <h1 className="text-2xl font-bold text-gray-900">Refund & Return Policy</h1>
-              <p className="text-sm text-gray-500">Last updated: April 2026</p>
+              <p className="text-sm text-gray-500">Last updated: February 2026</p>
             </div>
           </div>
 
-          {/* 30-Day Guarantee Banner */}
-          <div className="bg-gradient-to-r from-green-50 to-green-50 border border-green-200 rounded-xl p-4 mb-6">
+          {/* Sealed-Only Returns Banner */}
+          <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-300 rounded-xl p-4 mb-6">
             <div className="flex items-center gap-3">
-              <CheckCircle className="w-8 h-8 text-green-600 flex-shrink-0" />
+              <AlertCircle className="w-8 h-8 text-amber-600 flex-shrink-0" />
               <div>
-                <p className="font-semibold text-green-800">30-Day Money Back Guarantee</p>
-                <p className="text-sm text-green-700">Not satisfied? Get a full refund, no questions asked.</p>
+                <p className="font-semibold text-amber-900">Sealed-Bottle Returns Only</p>
+                <p className="text-sm text-amber-800">For hygiene &amp; safety reasons, we cannot accept or refund any product whose <strong>seal has been broken or bottle opened</strong>. Damaged-on-arrival and wrong-item shipments are always covered.</p>
               </div>
             </div>
           </div>
@@ -33,27 +33,32 @@ function RefundPolicyPage() {
           <div className="prose prose-gray max-w-none">
             <h2 className="text-lg font-semibold text-gray-900 mt-6 mb-3">1. Our Promise</h2>
             <p className="text-gray-600 mb-4">
-              At Celesta Glow, customer satisfaction is our top priority. We offer a hassle-free 30-day return and refund policy on all our products. If you're not completely satisfied with your purchase, we'll make it right.
+              At Celesta Glow, we want every customer to be confident in their purchase — but because skincare and cosmetics are personal-care products, hygiene rules are non-negotiable. <strong>Once a bottle, tube or jar has been opened or its seal broken, we cannot accept it back, replace it, or refund it.</strong> Returns are accepted only on unopened, factory-sealed items inside a 7-day window from delivery, or on shipments that arrived damaged or wrong (always eligible).
             </p>
 
             <h2 className="text-lg font-semibold text-gray-900 mt-6 mb-3">2. Eligibility for Returns</h2>
-            <p className="text-gray-600 mb-2">You can request a return if:</p>
+            <p className="text-gray-600 mb-2">A return request will be approved <strong>only</strong> if all of the following are true:</p>
             <ul className="list-disc list-inside text-gray-600 mb-4 space-y-2">
-              <li>The product is within 30 days of delivery</li>
-              <li>The product is unused or minimally used (up to 25% used)</li>
-              <li>You received a damaged or defective product</li>
-              <li>You received the wrong product</li>
-              <li>The product caused an adverse skin reaction (with proof)</li>
+              <li>Request is raised within <strong>7 days of delivery</strong>.</li>
+              <li>The product is <strong>completely unused</strong> with the manufacturer seal/shrink-wrap intact.</li>
+              <li>Original packaging, outer carton, leaflets and any free gift are returned together.</li>
+              <li>You have the order ID and an unboxing video / clear photos of the unopened product.</li>
             </ul>
+            <p className="text-gray-600 mb-2">Damaged-on-arrival or wrong-item deliveries are <strong>always</strong> eligible — see Section 6.</p>
 
-            <h2 className="text-lg font-semibold text-gray-900 mt-6 mb-3">3. Non-Returnable Items</h2>
-            <p className="text-gray-600 mb-2">The following are not eligible for return:</p>
+            <h2 className="text-lg font-semibold text-gray-900 mt-6 mb-3">3. Non-Returnable / Non-Refundable</h2>
+            <p className="text-gray-600 mb-2">For health, hygiene and safety reasons, we cannot accept returns or issue refunds on:</p>
             <ul className="list-disc list-inside text-gray-600 mb-4 space-y-2">
-              <li>Products used more than 25%</li>
-              <li>Products without original packaging</li>
-              <li>Returns requested after 30 days of delivery</li>
-              <li>Free gifts or promotional items</li>
+              <li><strong>Any product that has been opened, used, sampled, swatched or had its seal broken</strong> — even if used only once.</li>
+              <li>Products with missing original packaging, outer carton or leaflets.</li>
+              <li>Returns requested after the 7-day window from delivery.</li>
+              <li>Free gifts, samples, complimentary items and promotional add-ons.</li>
+              <li>Items damaged due to mishandling by the customer after delivery.</li>
+              <li>Personal-care kits, sets or combos where any single item inside has been opened.</li>
             </ul>
+            <p className="text-gray-600 mb-4">
+              <strong>If a parcel is opened during reverse-pickup inspection and our team finds the seal tampered with, the return will be rejected and the product shipped back to you at no extra cost — no refund will be issued.</strong>
+            </p>
 
             <h2 className="text-lg font-semibold text-gray-900 mt-6 mb-3">4. How to Request a Return</h2>
             <div className="bg-gray-50 rounded-xl p-4 mb-4">
@@ -95,9 +100,9 @@ function RefundPolicyPage() {
               </div>
             </div>
 
-            <h2 className="text-lg font-semibold text-gray-900 mt-6 mb-3">6. Damaged or Defective Products</h2>
+            <h2 className="text-lg font-semibold text-gray-900 mt-6 mb-3">6. Damaged, Defective or Wrong Products</h2>
             <p className="text-gray-600 mb-4">
-              If you receive a damaged or defective product, please contact us within 48 hours of delivery with photos of the product and packaging. We will arrange a free replacement or full refund immediately.
+              Received a damaged carton, leaking bottle or the wrong item? Please contact us within <strong>48 hours of delivery</strong> with (1) the order ID, (2) clear photos of the outer parcel and the product, and (3) a short unboxing video if possible. We will arrange a free replacement or a full refund — these cases are <strong>always</strong> covered, regardless of whether the inner seal was broken during inspection.
             </p>
 
             <h2 className="text-lg font-semibold text-gray-900 mt-6 mb-3">7. Cancellation Policy</h2>

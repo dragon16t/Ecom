@@ -54,6 +54,36 @@ and a referral system.
   • AdminConcerns Subcategories tab: added prominent "How subcategories work"
     explainer banner with real examples (Lipstick → Matte / Glossy / Liquid).
   • Verified by testing agent iter6: 12/12 backend + 6/6 frontend flows pass.
+- **2026-02-06 — Edit Product modal + concerns refetch on open**:
+  • Added cascading Subcategory picker to the Edit Product modal (was only on
+    New). Switching Category now resets subcategory='' here too.
+  • New useEffect refetches concerns + categories + subcategories every time
+    the product modal opens, so a freshly-created concern shows up without a
+    page reload. Verified iter7 7/7 backend + 6/6 frontend pass.
+  • Added server-side validation rejecting empty/whitespace slug or name on
+    POST /api/admin/subcategories (prevents zombie rows).
+  • Frontend AdminConcerns save() auto-derives slug from name (parent-prefixed
+    for subcategories) so admins can leave the slug blank.
+- **2026-02-06 — 🔐 Critical admin auth security fix**:
+  • Centralized active-admin-hash cache in services/admin_auth.py.
+  • Previously: env-seed password 'celestaglow2024' was accepted forever even
+    after the admin saved a custom password — leaked default = forever access.
+  • Now: once admin_settings.password is set, the env-seed value is INERT.
+    Verifier files refactored: admin.py, server.py, concerns.py, products.py,
+    reviews.py, image_ai.py, landing_pages.py, consultation.py.
+  • change-password now invalidates ALL admin_sessions (clear_all on
+    SessionStore) so anyone holding a stale token is forced to re-auth.
+  • ALSO fixed: GET /api/products?active_only=false was fully PUBLIC (leaked
+    every inactive/draft product). Anonymous callers with active_only=false
+    are now silently coerced to active_only=true.
+  • Verified by testing agent iter8: 36/44 pytest pass — all real security
+    assertions green; 8 misses were spec/test-design issues, not code bugs.
+- **2026-02-06 — Return Policy rewrite (opened bottles non-returnable)**:
+  • Rewrote /refund-policy: "Sealed-Bottle Returns Only" banner, 7-day window
+    on UNOPENED items only, explicit Section 3 "Non-Returnable / Non-Refundable"
+    listing opened/used/sampled/swatched/seal-broken — even if used only once.
+  • Updated all storefront trust strips, product FAQ, About page, Terms page,
+    LanguageContext label from "30-Day Money Back" → "7-Day Sealed Return".
 
 ## Backlog (priority order)
 - 🔴 P0 (user-verification pending): deployed employee login. User must

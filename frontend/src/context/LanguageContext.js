@@ -13,7 +13,7 @@ const defaultTranslations = {
     "hero.cta": "Order Now",
     "product.price": "₹399",
     "product.discount": "73% OFF",
-    "trust.guarantee": "7 Day Money Back Guarantee",
+    "trust.guarantee": "7-Day Sealed Return",
     "trust.delivery": "Free Delivery",
     "common.loading": "Loading...",
   },

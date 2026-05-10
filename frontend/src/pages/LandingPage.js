@@ -356,7 +356,7 @@ function LandingPage() {
           </button>
           
           <p className="text-sm text-green-200 mt-4">
-            ✓ Free Shipping • ✓ COD Available • ✓ 30-Day Guarantee
+            ✓ Free Shipping • ✓ COD Available • ✓ 7-Day Sealed Return
           </p>
         </div>
       </section>

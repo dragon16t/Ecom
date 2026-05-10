@@ -215,12 +215,12 @@ function ShopPage() {
                 )}
               </h1>
               <p className="text-sm sm:text-base text-gray-500 mt-3 max-w-2xl leading-relaxed">
-                Clinically-formulated for Indian skin · Free shipping · Cash on Delivery · 30-day return on every order.
+                Clinically-formulated for Indian skin · Free shipping · Cash on Delivery · 7-day return on sealed items.
               </p>
             </div>
             <div className="flex items-center gap-3 text-xs">
               <div className="flex items-center gap-1.5 text-green-800 bg-white/70 backdrop-blur px-3 py-1.5 rounded-full border border-green-100"><Truck size={14} className="text-green-600" /> Free Ship</div>
-              <div className="flex items-center gap-1.5 text-green-800 bg-white/70 backdrop-blur px-3 py-1.5 rounded-full border border-green-100"><Shield size={14} className="text-green-600" /> 30-Day Return</div>
+              <div className="flex items-center gap-1.5 text-green-800 bg-white/70 backdrop-blur px-3 py-1.5 rounded-full border border-green-100"><Shield size={14} className="text-green-600" /> 7-Day Sealed Return</div>
               <div className="flex items-center gap-1.5 text-green-800 bg-white/70 backdrop-blur px-3 py-1.5 rounded-full border border-green-100"><Check size={14} className="text-green-600" /> COD</div>
             </div>
           </div>
@@ -342,7 +342,7 @@ function ShopPage() {
 
                     <div className="mt-4 flex items-center justify-center gap-4 text-[11px] text-green-100/70">
                       <span className="flex items-center gap-1"><Truck size={11} /> Free shipping</span>
-                      <span className="flex items-center gap-1"><Shield size={11} /> 30-day return</span>
+                      <span className="flex items-center gap-1"><Shield size={11} /> 7-day sealed return</span>
                       <span className="flex items-center gap-1"><Check size={11} /> COD avail.</span>
                     </div>
                   </div>
@@ -450,7 +450,7 @@ function ShopPage() {
               </div>
               <div className="flex items-center gap-2 text-[11px] font-bold flex-wrap">
                 <span className="bg-green-50 text-green-800 px-3 py-1.5 rounded-full ring-1 ring-green-100 flex items-center gap-1.5"><Truck size={12} /> Free shipping</span>
-                <span className="bg-amber-50 text-amber-800 px-3 py-1.5 rounded-full ring-1 ring-amber-100 flex items-center gap-1.5"><Shield size={12} /> 30-Day return</span>
+                <span className="bg-amber-50 text-amber-800 px-3 py-1.5 rounded-full ring-1 ring-amber-100 flex items-center gap-1.5"><Shield size={12} /> 7-Day sealed return</span>
               </div>
             </div>
 

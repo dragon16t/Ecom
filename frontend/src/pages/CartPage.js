@@ -373,7 +373,7 @@ function CartPage() {
             {/* Trust Bar */}
             <div className="bg-gradient-to-r from-green-50 to-teal-50 rounded-2xl p-4 border border-green-100">
               <div className="grid grid-cols-3 gap-3">
-                {[{ icon: Lock, t: '256-bit Secure', d: 'SSL Encrypted' }, { icon: Truck, t: 'Free Shipping', d: 'All India Delivery' }, { icon: Clock, t: '30-Day Return', d: 'Money Back Guarantee' }].map((b, i) => (
+                {[{ icon: Lock, t: '256-bit Secure', d: 'SSL Encrypted' }, { icon: Truck, t: 'Free Shipping', d: 'All India Delivery' }, { icon: Clock, t: '7-Day Return', d: 'Sealed items only' }].map((b, i) => (
                   <div key={i} className="text-center">
                     <div className="w-9 h-9 mx-auto mb-1.5 bg-white rounded-xl flex items-center justify-center shadow-sm"><b.icon size={16} className="text-green-600" /></div>
                     <p className="text-xs font-bold text-gray-800">{b.t}</p>

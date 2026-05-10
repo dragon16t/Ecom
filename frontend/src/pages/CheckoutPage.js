@@ -200,7 +200,7 @@ function CheckoutPage() {
           <span className="flex items-center gap-1.5"><Lock size={13} /> Secure Checkout</span>
           <span className="flex items-center gap-1.5"><Truck size={13} /> Free Shipping</span>
           <span className="flex items-center gap-1.5"><Star size={13} /> 4.8 Rating</span>
-          <span className="flex items-center gap-1.5 hidden sm:flex"><Shield size={13} /> 30-Day Guarantee</span>
+          <span className="flex items-center gap-1.5 hidden sm:flex"><Shield size={13} /> 7-Day Sealed Return</span>
         </div>
       </div>
 
