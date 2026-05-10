@@ -40,9 +40,11 @@ def set_db(db):
 def _verify_admin_token(x_admin_token: Optional[str]):
     if not x_admin_token:
         raise HTTPException(status_code=401, detail="Admin token required")
-    if x_admin_token == ADMIN_PASSWORD:
-        return True
     if x_admin_token in _admin_sessions:
+        return True
+    import hashlib as _h
+    from services.admin_auth import get_cached_active_admin_hash
+    if _h.sha256(x_admin_token.encode()).hexdigest() == get_cached_active_admin_hash():
         return True
     raise HTTPException(status_code=403, detail="Invalid admin token")
 

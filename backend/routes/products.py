@@ -58,20 +58,15 @@ async def _refresh_admin_pw_cache():
 
 def verify_auth(x_admin_token=None, x_employee_token=None, permission=None):
     if x_admin_token:
-        # Accept active session tokens
+        # Accept active session tokens (always, regardless of password change).
         if x_admin_token in admin_sessions:
             return True
-        # Resilient master-password fallback (survives backend restarts).
-        # ADMIN_MASTER_TOKEN env (or default 'celestaglow2024') is always accepted.
-        master = os.environ.get("ADMIN_MASTER_TOKEN", "celestaglow2024")
-        if x_admin_token == master:
+        # Plain-password fallback — must match the *active* admin hash.
+        # Once a custom password is saved, the env-seed password is rejected.
+        from services.admin_auth import get_cached_active_admin_hash
+        token_hash = hashlib.sha256(x_admin_token.encode()).hexdigest()
+        if token_hash == get_cached_active_admin_hash():
             return True
-        # Check against DB-stored admin password (set via /admin/change-password)
-        cached_hash = _admin_pw_cache.get("hash")
-        if cached_hash:
-            token_hash = hashlib.sha256(x_admin_token.encode()).hexdigest()
-            if token_hash == cached_hash:
-                return True
     if x_employee_token and x_employee_token in employee_sessions:
         session = employee_sessions[x_employee_token]
         if permission and not session.get("permissions", {}).get(permission):

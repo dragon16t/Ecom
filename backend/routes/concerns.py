@@ -32,10 +32,11 @@ def verify_admin(x_admin_token):
     # Accept active session tokens
     if x_admin_token in admin_sessions:
         return
-    # Resilient master-password fallback (survives backend restarts).
-    import os as _os
-    master = _os.environ.get("ADMIN_MASTER_TOKEN") or _os.environ.get("ADMIN_PASSWORD") or "celestaglow2024"
-    if x_admin_token == master:
+    # Plain-password fallback — must match the *active* admin hash.
+    # Env-seed password is rejected once a custom one is saved.
+    import hashlib as _h
+    from services.admin_auth import get_cached_active_admin_hash
+    if _h.sha256(x_admin_token.encode()).hexdigest() == get_cached_active_admin_hash():
         return
     raise HTTPException(status_code=401, detail="Unauthorized")
 

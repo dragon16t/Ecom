@@ -82,6 +82,17 @@ class SessionStore:
     def __len__(self):
         return len(self._cache)
 
+    async def clear_all(self) -> int:
+        """Delete every session from cache + DB. Returns count cleared.
+        Used after admin password change to force re-authentication."""
+        n = len(self._cache)
+        self._cache.clear()
+        try:
+            await self._collection.delete_many({})
+        except Exception as e:
+            logger.warning(f"[{self._collection_name}] clear_all failed: {e}")
+        return n
+
     # ---------- async helpers ----------
     async def _persist(self, token: str, value: Dict[str, Any]) -> None:
         try:

@@ -275,10 +275,15 @@ async def send_order_confirmation_email(order: Order, referral_data: dict = None
 async def admin_email_stats(x_admin_token: str = Header(None, alias="X-Admin-Token")):
     """How many emails were sent today (IST), broken out by channel (Gmail vs SendGrid).
     Also tells you which channel the NEXT email will use."""
-    # Cheap auth: session token OR master password. Full check uses verify_admin_token
-    # which lives below in the file — we inline a minimal version to avoid fwd-ref.
-    master = os.environ.get("ADMIN_MASTER_TOKEN") or os.environ.get("ADMIN_PASSWORD") or "celestaglow2024"
-    if not x_admin_token or (x_admin_token != master and x_admin_token not in admin_sessions):
+    # Cheap auth: session token OR active admin password (env-seed inert
+    # once a custom password is saved).
+    import hashlib as _hashlib
+    from services.admin_auth import get_cached_active_admin_hash
+    if not x_admin_token:
+        raise HTTPException(status_code=401, detail="Invalid admin token")
+    if x_admin_token in admin_sessions:
+        pass  # OK
+    elif _hashlib.sha256(x_admin_token.encode()).hexdigest() != get_cached_active_admin_hash():
         raise HTTPException(status_code=401, detail="Invalid admin token")
     from services import email_service as _es
     return await _es.get_daily_stats()
@@ -1192,47 +1197,79 @@ async def claim_visitor_discount(lead: VisitorLeadCreate):
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'celestaglow2024')
 
 def verify_admin_token(x_admin_token: str = Header(None), admin_session: str = Cookie(None)):
-    """Verify admin token - accepts header token, cookie, or plain password"""
+    """Verify admin token - accepts header token, cookie, or plain password.
+
+    Security: once a custom admin password is stored in ``admin_settings``,
+    the env-seed password (``ADMIN_PASSWORD``) is no longer accepted.
+    Bootstrap mode (no custom password yet) keeps the env-seed working so
+    a fresh install can still log in.
+    """
+    from services.admin_auth import get_cached_active_admin_hash
+
     # Get the token from header or cookie
     token_to_check = x_admin_token or admin_session
-    
+
     # Ensure we have a string, not a Cookie object
     if token_to_check is not None and not isinstance(token_to_check, str):
         token_to_check = str(token_to_check) if token_to_check else None
-    
+
     if not token_to_check:
         raise HTTPException(status_code=401, detail="Admin token required")
-    
-    # Accept plain password for simplicity (backward compatibility)
-    if token_to_check == ADMIN_PASSWORD:
-        return True
-    
-    # Check if it's a valid session token
+
+    # 1. Active session token (always allowed regardless of password change).
     if token_to_check in admin_sessions:
         session = admin_sessions[token_to_check]
-        # Check if session hasn't expired
         expires_at = session["expires_at"]
-        # Handle both string (new sessions) and datetime (hydrated from MongoDB)
         if isinstance(expires_at, str):
             expires_at = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
         elif isinstance(expires_at, datetime):
-            # Ensure timezone-aware
             if expires_at.tzinfo is None:
                 expires_at = expires_at.replace(tzinfo=timezone.utc)
-        
+
         if datetime.now(timezone.utc) < expires_at:
             return True
         else:
-            # Remove expired session
             del admin_sessions[token_to_check]
             raise HTTPException(status_code=401, detail="Session expired, please login again")
-    
-    # Also check if it matches the token (for backward compatibility)
-    import hashlib
-    ADMIN_PASSWORD_HASH = hashlib.sha256(ADMIN_PASSWORD.encode()).hexdigest()
-    if hashlib.sha256(token_to_check.encode()).hexdigest() != ADMIN_PASSWORD_HASH:
-        raise HTTPException(status_code=403, detail="Invalid admin token")
-    return True
+
+    # 2. Plain-text password — must match the *active* admin hash.
+    import hashlib as _hashlib
+    if _hashlib.sha256(token_to_check.encode()).hexdigest() == get_cached_active_admin_hash():
+        return True
+
+    raise HTTPException(status_code=403, detail="Invalid admin token")
+
+
+async def verify_admin_token_async(x_admin_token: str = Header(None), admin_session: str = Cookie(None)):
+    """Async version of verify_admin_token. Reads directly from the DB if the
+    in-memory cache is cold."""
+    from services.admin_auth import get_active_admin_hash
+
+    token_to_check = x_admin_token or admin_session
+    if token_to_check is not None and not isinstance(token_to_check, str):
+        token_to_check = str(token_to_check) if token_to_check else None
+    if not token_to_check:
+        raise HTTPException(status_code=401, detail="Admin token required")
+
+    if token_to_check in admin_sessions:
+        session = admin_sessions[token_to_check]
+        expires_at = session["expires_at"]
+        if isinstance(expires_at, str):
+            expires_at = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+        elif isinstance(expires_at, datetime):
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) < expires_at:
+            return True
+        else:
+            del admin_sessions[token_to_check]
+            raise HTTPException(status_code=401, detail="Session expired, please login again")
+
+    import hashlib as _hashlib
+    active_hash = await get_active_admin_hash(db)
+    if _hashlib.sha256(token_to_check.encode()).hexdigest() == active_hash:
+        return True
+    raise HTTPException(status_code=403, detail="Invalid admin token")
 
 
 class AdminLoginRequest(BaseModel):
@@ -1280,21 +1317,12 @@ consultation_routes.set_admin_sessions(admin_sessions)
 async def admin_login(request: AdminLoginRequest, response: Response):
     """Admin login endpoint - sets httpOnly cookie for security.
 
-    Accepts either the original `ADMIN_PASSWORD` env value or a custom password
-    that the admin previously saved via /admin/change-password. Falling back to
-    the env value lets admins recover access if they forget the custom one.
+    Accepts ONLY the *active* admin password — i.e. the one stored in
+    ``admin_settings`` if the admin has saved a custom one, otherwise the
+    env-seed value. Once a custom password exists the env-seed is inert.
     """
-    import hashlib as _hashlib
-    valid = (request.password == ADMIN_PASSWORD)
-    if not valid:
-        try:
-            stored = await db.admin_settings.find_one({"type": "password"})
-            if stored:
-                pw_hash = _hashlib.sha256(request.password.encode()).hexdigest()
-                if pw_hash == stored.get("hash"):
-                    valid = True
-        except Exception:
-            pass
+    from services.admin_auth import is_admin_password
+    valid = await is_admin_password(request.password, db)
     if valid:
         # Generate a session token
         session_token = generate_admin_session_token()
@@ -3052,6 +3080,15 @@ async def startup_seed():
         await product_routes._refresh_admin_pw_cache()
     except Exception as e:
         logging.error(f"Failed to refresh admin pw cache: {e}")
+    # Hydrate the central active-admin-hash cache used by EVERY admin verifier.
+    # After this, the env-seed password is ONLY accepted if no custom password
+    # has been saved yet — closing the security hole where the default password
+    # kept working forever after a password change.
+    try:
+        from services.admin_auth import refresh_active_admin_hash
+        await refresh_active_admin_hash(db)
+    except Exception as e:
+        logging.error(f"Failed to hydrate active admin hash: {e}")
     # Bootstrap Cloudinary credentials from env at every startup.
     # Self-healing: if the admin_settings doc already exists but has empty fields
     # (e.g. an earlier deploy wrote it before env vars were set), we patch the

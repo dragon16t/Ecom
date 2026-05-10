@@ -35,8 +35,9 @@ def _verify_admin(token: Optional[str]):
         raise HTTPException(status_code=401, detail="Admin token required")
     if token in admin_sessions:
         return True
-    master = os.environ.get("ADMIN_MASTER_TOKEN", "celestaglow2024")
-    if token == master:
+    import hashlib as _h
+    from services.admin_auth import get_cached_active_admin_hash
+    if _h.sha256(token.encode()).hexdigest() == get_cached_active_admin_hash():
         return True
     raise HTTPException(status_code=403, detail="Invalid admin token")
 

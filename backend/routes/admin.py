@@ -10,6 +10,12 @@ import re
 import os
 import hashlib
 
+from services.admin_auth import (
+    get_active_admin_hash,
+    is_admin_password,
+    has_custom_admin_password,
+)
+
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
@@ -74,22 +80,19 @@ class LocationUpdate(BaseModel):
 
 
 async def verify_admin_async(x_admin_token: str):
-    """Async admin token verification that checks DB for updated password"""
+    """Async admin token verification.
+
+    Security: once a custom password is stored in ``admin_settings``, the
+    env/seed password is no longer accepted (see services/admin_auth.py).
+    """
     if not x_admin_token:
         raise HTTPException(status_code=401, detail="Admin token required")
-    
+
     token_hash = hashlib.sha256(x_admin_token.encode()).hexdigest()
-    
-    # Check for stored password first
-    stored_password = await db.admin_settings.find_one({"type": "password"})
-    if stored_password:
-        if token_hash == stored_password.get("hash"):
-            return True
-    
-    # Fallback to default password
-    if token_hash == _admin_pw_hash():
+    active_hash = await get_active_admin_hash(db)
+    if token_hash == active_hash:
         return True
-    
+
     raise HTTPException(status_code=403, detail="Invalid admin token")
 
 
@@ -102,14 +105,19 @@ def set_admin_sessions(sessions_dict):
     admin_sessions = sessions_dict
 
 async def verify_admin(x_admin_token: str = Header(None)):
-    """Admin token verification - checks session tokens, stored password (DB), and default password.
-    Async so we can look up the latest stored password after admin changes it via /admin/change-password.
+    """Admin token verification.
+
+    Accepts (1) an active session token, or (2) the *currently active* admin
+    password. The active password is the one stored in ``admin_settings`` if
+    present; otherwise the env-seed value. Once a custom password has been
+    saved, the env-seed value is no longer accepted — closing the security
+    hole where the default password kept working after a password change.
     """
     from datetime import datetime, timezone
-    
+
     if not x_admin_token:
         raise HTTPException(status_code=401, detail="Admin token required")
-    
+
     # First check if it's a valid session token
     if x_admin_token in admin_sessions:
         session = admin_sessions[x_admin_token]
@@ -121,29 +129,18 @@ async def verify_admin(x_admin_token: str = Header(None)):
             # Ensure timezone-aware
             if expires_at.tzinfo is None:
                 expires_at = expires_at.replace(tzinfo=timezone.utc)
-        
+
         if datetime.now(timezone.utc) < expires_at:
             return True
         else:
             # Remove expired session
             del admin_sessions[x_admin_token]
-    
-    # Check if it's the plain password (hash and compare)
+
+    # Otherwise the token must hash to the *active* admin hash (DB if set, else env seed).
     token_hash = hashlib.sha256(x_admin_token.encode()).hexdigest()
-    
-    # Check stored password in DB (admin may have changed the default)
-    if db is not None:
-        try:
-            stored_password = await db.admin_settings.find_one({"type": "password"})
-            if stored_password and token_hash == stored_password.get("hash"):
-                return True
-        except Exception:
-            pass
-    
-    # Fallback to default password
-    if token_hash == _admin_pw_hash():
+    if token_hash == await get_active_admin_hash(db):
         return True
-    
+
     raise HTTPException(status_code=403, detail="Invalid admin token")
 
 
@@ -166,19 +163,12 @@ def set_db(database):
 
 @router.post("/login")
 async def admin_login(credentials: AdminLogin):
-    """Admin login - returns token if password matches"""
-    # Check against stored password or default
-    stored_password = await db.admin_settings.find_one({"type": "password"})
-    
-    if stored_password:
-        password_hash = hashlib.sha256(credentials.password.encode()).hexdigest()
-        if password_hash == stored_password.get("hash"):
-            return {"success": True, "token": credentials.password}
-    else:
-        # Use default password
-        if hashlib.sha256(credentials.password.encode()).hexdigest() == _admin_pw_hash():
-            return {"success": True, "token": credentials.password}
-    
+    """Admin login - returns token if password matches the *active* admin password.
+
+    Active = stored in ``admin_settings`` if set, otherwise the env-seed value.
+    """
+    if await is_admin_password(credentials.password, db):
+        return {"success": True, "token": credentials.password}
     raise HTTPException(status_code=401, detail="Invalid password")
 
 
@@ -205,8 +195,7 @@ async def change_admin_password(password_data: AdminPasswordChange, x_admin_toke
         except Exception:
             pass
 
-    stored_password = await db.admin_settings.find_one({"type": "password"})
-    stored_hash = (stored_password or {}).get("hash") or _admin_pw_hash()
+    stored_hash = await get_active_admin_hash(db)
     token_hash = hashlib.sha256(x_admin_token.encode()).hexdigest()
 
     if not is_session and token_hash != stored_hash:
@@ -227,13 +216,30 @@ async def change_admin_password(password_data: AdminPasswordChange, x_admin_toke
         {"$set": {"hash": new_hash, "updated_at": datetime.now(timezone.utc).isoformat()}},
         upsert=True
     )
+    # Invalidate ALL existing admin sessions so anyone holding the old password
+    # token (especially the env-seed default) is forced to re-authenticate.
+    try:
+        if hasattr(admin_sessions, "clear_all"):
+            await admin_sessions.clear_all()
+        else:
+            for k in list(admin_sessions.keys()):
+                del admin_sessions[k]
+    except Exception:
+        pass
+    # Update the in-memory active-hash cache so EVERY verifier in this pod
+    # immediately rejects the old/env password. No redeploy required.
+    try:
+        from services.admin_auth import set_active_admin_hash
+        set_active_admin_hash(new_hash)
+    except Exception:
+        pass
     # Refresh the admin password cache used by verify_auth in products.py routes
     try:
         from routes import products as _products
         await _products._refresh_admin_pw_cache()
     except Exception:
         pass
-    
+
     return {"success": True, "message": "Password changed successfully"}
 
 

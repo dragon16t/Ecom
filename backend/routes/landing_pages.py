@@ -40,7 +40,8 @@ def verify_admin_or_employee(
     """Verify admin token or employee token with landing_pages permission"""
     from datetime import datetime, timezone
     import hashlib
-    
+    from services.admin_auth import get_cached_active_admin_hash
+
     # Check admin token first
     if x_admin_token:
         # Check if it's a valid session token
@@ -51,17 +52,12 @@ def verify_admin_or_employee(
                 return {"type": "admin"}
             else:
                 del admin_sessions[x_admin_token]
-        
-        # Check if it's the plain password
-        if x_admin_token == ADMIN_PASSWORD:
-            return {"type": "admin"}
-        
-        # Check if it's the hashed password
-        ADMIN_PASSWORD_HASH = hashlib.sha256(ADMIN_PASSWORD.encode()).hexdigest()
+
+        # Check if it's the *active* admin password (env-seed inert after change)
         token_hash = hashlib.sha256(x_admin_token.encode()).hexdigest()
-        if token_hash == ADMIN_PASSWORD_HASH:
+        if token_hash == get_cached_active_admin_hash():
             return {"type": "admin"}
-    
+
     # Check employee token
     if x_employee_token:
         if x_employee_token in employee_sessions:
@@ -70,17 +66,22 @@ def verify_admin_or_employee(
                 return {"type": "employee", "permissions": session["permissions"]}
             else:
                 raise HTTPException(status_code=403, detail="No permission to view landing pages")
-    
+
     raise HTTPException(status_code=403, detail="Admin or employee token required")
 
 def verify_admin(x_admin_token: str = Header(None, alias="X-Admin-Token")):
-    """Verify admin token - checks session tokens and plain password"""
+    """Verify admin token - checks session tokens and the *active* admin password.
+
+    Once a custom admin password is saved, the env-seed value is no longer
+    accepted (security fix).
+    """
     from datetime import datetime, timezone
     import hashlib
-    
+    from services.admin_auth import get_cached_active_admin_hash
+
     if not x_admin_token:
         raise HTTPException(status_code=403, detail="Admin token required")
-    
+
     # First check if it's a valid session token
     if x_admin_token in admin_sessions:
         session = admin_sessions[x_admin_token]
@@ -90,17 +91,12 @@ def verify_admin(x_admin_token: str = Header(None, alias="X-Admin-Token")):
         else:
             # Remove expired session
             del admin_sessions[x_admin_token]
-    
-    # Check if it's the plain password
-    if x_admin_token == ADMIN_PASSWORD:
-        return True
-    
-    # Check if it's the hashed password
-    ADMIN_PASSWORD_HASH = hashlib.sha256(ADMIN_PASSWORD.encode()).hexdigest()
+
+    # Check if it matches the active admin hash
     token_hash = hashlib.sha256(x_admin_token.encode()).hexdigest()
-    if token_hash == ADMIN_PASSWORD_HASH:
+    if token_hash == get_cached_active_admin_hash():
         return True
-    
+
     raise HTTPException(status_code=403, detail="Invalid admin token")
 
 # ==================

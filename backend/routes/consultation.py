@@ -410,15 +410,14 @@ def set_admin_sessions(sessions_dict):
     admin_sessions = sessions_dict
 
 def verify_admin_token(x_admin_token: str = Header(None)):
-    """Verify admin token - checks session tokens and plain password"""
+    """Verify admin token - checks session tokens and the *active* admin password."""
     import hashlib
     from datetime import datetime, timezone
-    
-    ADMIN_PASSWORD_HASH = hashlib.sha256(_admin_password().encode()).hexdigest()
-    
+    from services.admin_auth import get_cached_active_admin_hash
+
     if not x_admin_token:
         raise HTTPException(status_code=401, detail="Admin token required")
-    
+
     # First check if it's a valid session token
     if x_admin_token in admin_sessions:
         session = admin_sessions[x_admin_token]
@@ -428,15 +427,11 @@ def verify_admin_token(x_admin_token: str = Header(None)):
         else:
             # Remove expired session
             del admin_sessions[x_admin_token]
-    
-    # Check if it's the plain password
-    if x_admin_token == _admin_password():
+
+    # Plain password — must match the *active* admin hash.
+    if hashlib.sha256(x_admin_token.encode()).hexdigest() == get_cached_active_admin_hash():
         return True
-    
-    # Check if it's the hashed password
-    if hashlib.sha256(x_admin_token.encode()).hexdigest() == ADMIN_PASSWORD_HASH:
-        return True
-    
+
     raise HTTPException(status_code=403, detail="Invalid admin token")
 
 
