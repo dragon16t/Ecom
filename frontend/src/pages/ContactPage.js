@@ -3,6 +3,7 @@ import BackButton from '../components/BackButton';
 import { Link } from 'react-router-dom';
 import { ChevronLeft, Phone, Mail, MapPin, MessageCircle, Clock, Send, CheckCircle } from 'lucide-react';
 import axios from 'axios';
+import SEOHead, { breadcrumbJsonLd } from '../components/SEOHead';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const WHATSAPP_NUMBER = '919446125745';
@@ -38,6 +39,12 @@ function ContactPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
+      <SEOHead
+        title="Contact Celesta Glow | WhatsApp +91-94461-25745 | Customer Support India"
+        description="Contact Celesta Glow customer support — WhatsApp +91-94461-25745, email support@celestaglow.com. Office in Bengaluru. Mon-Sat 10 AM-7 PM IST."
+        canonicalPath="/contact"
+        jsonLd={breadcrumbJsonLd([{ name: 'Home', url: '/' }, { name: 'Contact', url: '/contact' }])}
+      />
       <div className="max-w-7xl mx-auto px-3 sm:px-6 pt-3 sm:pt-4"><BackButton /></div>
       <div className="max-w-4xl mx-auto px-4 py-8">
         {/* Page Title */}

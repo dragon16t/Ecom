@@ -3,27 +3,52 @@
 
 User-agent: *
 Allow: /
-
-# Sitemap location
-Sitemap: https://celestaglow.com/sitemap.xml
-
-# Block admin pages from indexing
 Disallow: /admin
 Disallow: /admin/
-
-# Block API endpoints
+Disallow: /employee
+Disallow: /employee/
+Disallow: /cart
+Disallow: /cart/
+Disallow: /checkout
+Disallow: /checkout/
+Disallow: /order-success/
+Disallow: /track-order
 Disallow: /api/
 
-# Block order success pages (contain order IDs)
-Disallow: /order-success/
+# Allow well-known crawlers fully (also matches *, but explicit helps debugging)
+User-agent: Googlebot
+Allow: /
+Disallow: /admin/
+Disallow: /employee/
+Disallow: /cart/
+Disallow: /checkout/
 
-# Allow all other pages
-Allow: /about
-Allow: /contact
-Allow: /blog
-Allow: /product/
-Allow: /consultation
-Allow: /terms
-Allow: /privacy
-Allow: /refund-policy
-Allow: /shipping-policy
+User-agent: Bingbot
+Allow: /
+Disallow: /admin/
+Disallow: /employee/
+Disallow: /cart/
+Disallow: /checkout/
+
+User-agent: GPTBot
+Allow: /
+Disallow: /admin/
+Disallow: /employee/
+Disallow: /cart/
+Disallow: /checkout/
+
+User-agent: ClaudeBot
+Allow: /
+Disallow: /admin/
+Disallow: /employee/
+Disallow: /cart/
+Disallow: /checkout/
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+# Dynamic, DB-backed sitemap — auto-updates whenever a new product/blog/category is published.
+Sitemap: https://celestaglow.com/api/sitemap.xml

@@ -9,6 +9,7 @@ import AddToBagButton from '../components/AddToBagButton';
 import { shareProduct } from '../utils/shareProduct';
 import { cachedGet } from '../utils/apiCache';
 import { getSocialProof } from '../utils/socialProof';
+import SEOHead, { breadcrumbJsonLd } from '../components/SEOHead';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -190,8 +191,28 @@ function ShopPage() {
     );
   }
 
+  // ---- SEO: choose niche-aware title/description ----
+  const _niche = nicheParam || null;
+  const _meta = NICHE_META[_niche] || null;
+  const seoTitle = _meta
+    ? `${_meta.label} Products | Shop Celesta Glow India`
+    : 'Shop All Products | Celesta Glow India';
+  const seoDesc = _meta
+    ? `Shop Celesta Glow ${_meta.label.toLowerCase()} products — dermatologist-approved formulas for Indian skin. Free shipping across India. 7-day sealed-bottle return.`
+    : 'Shop the full Celesta Glow catalog — anti-aging, skincare and cosmetics for Indian skin. Free shipping. 7-day sealed-bottle return.';
+  const seoCanonical = _niche ? `/shop?niche=${_niche}` : '/shop';
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-stone-50 via-white to-stone-50" data-testid="shop-page">
+      <SEOHead
+        title={seoTitle}
+        description={seoDesc}
+        canonicalPath={seoCanonical}
+        jsonLd={breadcrumbJsonLd([
+          { name: 'Home', url: '/' },
+          { name: _meta ? _meta.label : 'Shop', url: seoCanonical },
+        ])}
+      />
       {/* HERO HEADER */}
       <section className="relative overflow-hidden border-b border-green-100/60">
         <div className="absolute inset-0 bg-gradient-to-br from-green-50/60 via-white to-amber-50/40" />

@@ -2,10 +2,17 @@ import React from 'react';
 import BackButton from '../components/BackButton';
 import { Link } from 'react-router-dom';
 import { ChevronLeft, Shield } from 'lucide-react';
+import SEOHead, { breadcrumbJsonLd } from '../components/SEOHead';
 
 function PrivacyPage() {
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
+      <SEOHead
+        title="Privacy Policy | Celesta Glow"
+        description="How Celesta Glow collects, uses and protects your personal data. SSL-encrypted payments via Razorpay, cookie disclosures and your data rights."
+        canonicalPath="/privacy"
+        jsonLd={breadcrumbJsonLd([{ name: 'Home', url: '/' }, { name: 'Privacy Policy', url: '/privacy' }])}
+      />
       <div className="max-w-7xl mx-auto px-3 sm:px-6 pt-3 sm:pt-4"><BackButton /></div>
       <div className="max-w-3xl mx-auto px-4 py-8">
         <div className="bg-white rounded-2xl p-6 md:p-8 shadow-sm">

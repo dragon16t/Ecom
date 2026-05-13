@@ -2,10 +2,17 @@ import React from 'react';
 import BackButton from '../components/BackButton';
 import { Link } from 'react-router-dom';
 import { ChevronLeft, Truck, Package, MapPin, Clock, CheckCircle, AlertCircle } from 'lucide-react';
+import SEOHead, { breadcrumbJsonLd } from '../components/SEOHead';
 
 function ShippingPolicyPage() {
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
+      <SEOHead
+        title="Shipping Policy | Free Delivery Across India | Celesta Glow"
+        description="Celesta Glow ships free across India via Delhivery (19,000+ pin codes). Metro 2-3 days, other cities 3-5 days. Both prepaid and COD options."
+        canonicalPath="/shipping-policy"
+        jsonLd={breadcrumbJsonLd([{ name: 'Home', url: '/' }, { name: 'Shipping Policy', url: '/shipping-policy' }])}
+      />
       <div className="max-w-7xl mx-auto px-3 sm:px-6 pt-3 sm:pt-4"><BackButton /></div>
       <div className="max-w-3xl mx-auto px-4 py-8">
         <div className="bg-white rounded-2xl p-6 md:p-8 shadow-sm">

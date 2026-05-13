@@ -84,6 +84,30 @@ and a referral system.
     listing opened/used/sampled/swatched/seal-broken — even if used only once.
   • Updated all storefront trust strips, product FAQ, About page, Terms page,
     LanguageContext label from "30-Day Money Back" → "7-Day Sealed Return".
+- **2026-02-06 — 🚀 SEO + AEO foundation laid (no Next.js migration needed)**:
+  • New reusable <SEOHead> React component (react-helmet) with builders for
+    productJsonLd / breadcrumbJsonLd / faqJsonLd.
+  • Wired SEOHead into Homepage, ShopPage, ProductDetailPage,
+    ConcernCategoryPage (concern + category modes), About, Refund, Terms,
+    Shipping, Privacy, Contact. Each page now emits its own canonical, OG
+    tags, Twitter card, hreflang en-IN and per-page JSON-LD.
+  • Product pages auto-generate Product + Offer + AggregateRating +
+    MerchantReturnPolicy + ShippingDetails + BreadcrumbList + FAQ schema from
+    live DB data — every new SKU added in admin instantly has full schema.
+  • Trimmed homepage title to 51 chars; switched index.html JSON-LD to
+    Organization + WebSite (SearchAction) + FAQPage; replaced "You need to
+    enable JavaScript" noscript with brand-rich plain-text content (gives
+    legacy/AI crawlers something to read).
+  • New backend module routes/seo.py:
+    - GET /api/sitemap.xml — dynamic DB-backed sitemap (81 URLs today;
+      auto-grows with every new product / blog / category / subcategory).
+    - GET /api/seo/product-feed.json — AI-crawler-friendly JSON feed of all
+      active products (28 today).
+  • robots.txt rewritten with explicit allowlists for Googlebot, Bingbot,
+    GPTBot, ClaudeBot, PerplexityBot, Google-Extended and sitemap reference.
+  • Static /sitemap.xml is now a sitemap-index pointing at the dynamic
+    /api/sitemap.xml — so even without a redeploy, crawlers see fresh URLs.
+  • Domain redirect prelauch → celestaglow handled by user manually later.
 
 ## Backlog (priority order)
 - 🔴 P0 (user-verification pending): deployed employee login. User must

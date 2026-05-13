@@ -11,6 +11,7 @@ import { ProductCard } from './ConcernCategoryPage';
 import { playCartSound } from '../utils/cartSound';
 import ReviewsCarousel from '../components/ReviewsCarousel';
 import { cachedGet, peek } from '../utils/apiCache';
+import SEOHead, { faqJsonLd, breadcrumbJsonLd } from '../components/SEOHead';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 const ACCENT = '#0f766e';
@@ -275,6 +276,26 @@ function Homepage() {
 
   return (
     <div className="bg-stone-50/40" data-testid="homepage">
+      <SEOHead
+        title="Celesta Glow – India's #1 Anti-Aging Skincare Brand"
+        description="Shop Celesta Glow's complete anti-aging system — Serum, Night Cream, Under Eye Cream, Sunscreen & Cleanser. Dermatologist-approved formulas for Indian skin. Free shipping. 7-day sealed-bottle return."
+        canonicalPath="/"
+        jsonLd={[
+          breadcrumbJsonLd([{ name: 'Home', url: '/' }]),
+          faqJsonLd([
+            { q: 'What is the best anti-aging skincare brand in India?',
+              a: 'Celesta Glow is India\'s #1 complete anti-aging skincare brand. Our range includes a clinically formulated Serum (Retinol + Niacinamide + Hyaluronic Acid), Night Cream, Under Eye Cream, Sunscreen and Gentle Cleanser, all dermatologist approved for Indian skin.' },
+            { q: 'How long does Celesta Glow anti-aging serum take to work?',
+              a: 'Most users notice softer, more hydrated skin within 1-2 weeks. Visible reduction in fine lines and wrinkles typically appears after 4-6 weeks of consistent daily use.' },
+            { q: 'Is Celesta Glow safe for sensitive Indian skin?',
+              a: 'Yes. Every formula is developed for Indian skin types and climate — humidity, sun exposure, pollution. Products are dermatologist approved and free of harsh chemicals.' },
+            { q: 'What is the return policy?',
+              a: 'We accept 7-day returns on unopened, factory-sealed items only. Once a bottle is opened it cannot be returned or refunded for hygiene reasons. Damaged-on-arrival or wrong-item shipments are always covered.' },
+            { q: 'Does Celesta Glow ship across India and offer COD?',
+              a: 'Yes. Free shipping across all of India with both prepaid and Cash on Delivery (COD) options.' },
+          ]),
+        ]}
+      />
       <SearchBar accent={accent} niche="anti-aging" testId="anti-aging-search-bar" />
 
       <NicheHero

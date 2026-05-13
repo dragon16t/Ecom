@@ -2,10 +2,29 @@ import React from 'react';
 import BackButton from '../components/BackButton';
 import { Link } from 'react-router-dom';
 import { ChevronLeft, RefreshCw, CheckCircle, Clock, AlertCircle, HelpCircle } from 'lucide-react';
+import SEOHead, { breadcrumbJsonLd, faqJsonLd } from '../components/SEOHead';
 
 function RefundPolicyPage() {
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
+      <SEOHead
+        title="Refund & Return Policy | Celesta Glow"
+        description="Celesta Glow accepts 7-day returns on unopened, factory-sealed items only. Opened bottles cannot be returned or refunded for hygiene reasons. Damaged-on-arrival shipments are always covered."
+        canonicalPath="/refund-policy"
+        jsonLd={[
+          breadcrumbJsonLd([{ name: 'Home', url: '/' }, { name: 'Refund & Return Policy', url: '/refund-policy' }]),
+          faqJsonLd([
+            { q: 'Can I return an opened bottle of Celesta Glow?',
+              a: 'No. For hygiene and safety reasons, once a bottle, tube or jar has been opened or its seal broken, we cannot accept it back, replace it or refund it — even if used only once. Damaged-on-arrival or wrong-item shipments are always covered.' },
+            { q: 'How long do I have to return a Celesta Glow product?',
+              a: 'You have 7 days from delivery to raise a return request on unopened, factory-sealed items.' },
+            { q: 'How will my refund be issued?',
+              a: 'For prepaid orders, refund is sent to your original payment method within 7-10 business days. For COD orders, refund is sent via bank transfer or UPI within 7-10 business days.' },
+            { q: 'What if my product arrives damaged?',
+              a: 'Contact us within 48 hours of delivery with order ID, photos of the outer parcel and product, and an unboxing video if possible. We arrange a free replacement or full refund — damaged-on-arrival cases are always covered.' },
+          ]),
+        ]}
+      />
       <div className="max-w-7xl mx-auto px-3 sm:px-6 pt-3 sm:pt-4"><BackButton /></div>
       <div className="max-w-3xl mx-auto px-4 py-8">
         <div className="bg-white rounded-2xl p-6 md:p-8 shadow-sm">

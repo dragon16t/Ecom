@@ -2995,6 +2995,11 @@ app.include_router(concerns_routes.router, prefix="/api")
 app.include_router(image_ai_routes.router, prefix="/api")
 app.include_router(reviews_routes.router, prefix="/api")
 
+# SEO — dynamic sitemap + product feed (DB-backed; new SKUs auto-show up)
+from routes import seo as _seo_routes  # noqa: E402
+_seo_routes.set_db(db)
+app.include_router(_seo_routes.router, prefix="/api")
+
 # Live visitor tracking — anonymous presence pings ("who's online right now")
 from routes import visitor_tracking as _visitor_tracking  # noqa: E402
 _visitor_tracking.init_visitor_tracking(db, verify_admin_token)

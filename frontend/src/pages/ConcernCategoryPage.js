@@ -11,6 +11,7 @@ import { getProductBrand } from '../utils/brand';
 import { prefetchHandlers } from '../utils/routePrefetch';
 import { shareProduct } from '../utils/shareProduct';
 import { cachedGet } from '../utils/apiCache';
+import SEOHead, { breadcrumbJsonLd } from '../components/SEOHead';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -183,8 +184,26 @@ export default function ConcernCategoryPage({ mode = 'concern' }) {
   const accentFrom = head.accent_from || '#dcfce7';
   const accentText = head.accent_text || '#14532d';
 
+  // ---- SEO ----
+  const seoModeLabel = mode === 'concern' ? 'Skin Concern' : 'Category';
+  const seoTitle = `${head.name} ${seoModeLabel} | Shop Celesta Glow India`;
+  const seoDesc = (head.tagline || head.description || `${head.name} products from Celesta Glow — dermatologist-approved formulas for Indian skin. Free shipping. 7-day sealed-bottle return.`).slice(0, 200);
+  const seoPath = mode === 'concern' ? `/concern/${slug}` : `/category/${slug}`;
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-stone-50 via-white to-stone-50" data-testid={`${mode}-page`}>
+      <SEOHead
+        title={seoTitle}
+        description={seoDesc}
+        canonicalPath={seoPath}
+        ogImage={head.hero_image || head.image}
+        jsonLd={breadcrumbJsonLd([
+          { name: 'Home', url: '/' },
+          { name: head?.niche === 'cosmetics' ? 'Cosmetics' : 'Skincare',
+            url: head?.niche === 'cosmetics' ? '/cosmetics' : '/skincare' },
+          { name: head.name, url: seoPath },
+        ])}
+      />
       {/* SLIM HEADER — same compact look for both concern and category modes */}
       <section className="bg-white border-b border-stone-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-5">

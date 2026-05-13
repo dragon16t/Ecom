@@ -7,6 +7,7 @@ import { useTracking } from '../providers/TrackingProvider';
 import ReviewsCarousel from '../components/ReviewsCarousel';
 import { cachedGet } from '../utils/apiCache';
 import { getSocialProof } from '../utils/socialProof';
+import SEOHead, { productJsonLd, breadcrumbJsonLd, faqJsonLd, SITE } from '../components/SEOHead';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -168,8 +169,47 @@ function ProductDetailPage() {
 
   const INGREDIENT_ICONS = [Leaf, Droplets, Sun];
 
+  // ---- SEO: per-product schema + meta, derived from live product data ----
+  const seoTitle =
+    `${product.name}` +
+    (product.size ? ` (${product.size})` : '') +
+    ' | Buy Online in India';
+  const seoDesc =
+    (product.tagline && product.description)
+      ? `${product.tagline}. ${(product.description || '').slice(0, 140)}…`
+      : (product.description || `${product.name} – clinically formulated by Celesta Glow. Free shipping across India. 7-day sealed-bottle return.`).slice(0, 200);
+  const seoImage = imgs[0] || undefined;
+  const inStock = !product.is_to_be_launched && (product.stock_qty ?? 1) > 0;
+  const breadcrumbs = breadcrumbJsonLd([
+    { name: 'Home', url: '/' },
+    { name: product.niche === 'cosmetics' ? 'Cosmetics' : product.niche === 'skincare' ? 'Skincare' : 'Anti-Aging',
+      url: `/${product.niche === 'cosmetics' ? 'cosmetics' : product.niche === 'skincare' ? 'skincare' : 'anti-aging'}` },
+    { name: product.name, url: `/product/${slug}` },
+  ]);
+  const productSchema = productJsonLd({
+    name: product.name,
+    slug,
+    description: product.description || product.tagline || product.name,
+    image: imgs.length ? imgs : seoImage,
+    price: product.prepaid_price,
+    mrp: product.mrp,
+    inStock,
+    rating: product.rating || 4.7,
+    reviewCount: product.reviews_count || 1240,
+    brand: product.brand || 'Celesta Glow',
+  });
+  const faqSchema = faqs && faqs.length ? faqJsonLd(faqs.slice(0, 6)) : null;
+  const seoLd = [productSchema, breadcrumbs, faqSchema].filter(Boolean);
+
   return (
     <div className="min-h-screen bg-white" data-testid="product-detail-page">
+      <SEOHead
+        title={seoTitle}
+        description={seoDesc}
+        canonicalPath={`/product/${slug}`}
+        ogImage={seoImage}
+        jsonLd={seoLd}
+      />
       {/* Urgency Timer Bar */}
       <div className="bg-gradient-to-r from-rose-600 to-red-600 text-white py-2 px-4">
         <div className="flex items-center justify-center gap-2 text-xs">

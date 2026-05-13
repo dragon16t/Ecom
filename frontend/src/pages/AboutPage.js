@@ -2,10 +2,17 @@ import React from 'react';
 import BackButton from '../components/BackButton';
 import { Link } from 'react-router-dom';
 import { ChevronLeft, Shield, Award, Users, Leaf, Heart, CheckCircle, Star, ChevronRight } from 'lucide-react';
+import SEOHead, { breadcrumbJsonLd } from '../components/SEOHead';
 
 function AboutPage() {
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
+      <SEOHead
+        title="About Celesta Glow | India's Trusted Anti-Aging Skincare Brand"
+        description="Celesta Glow is India's #1 complete anti-aging skincare brand by Veegal Enterprises LLP. Dermatologist-approved formulas for Indian skin. Trusted by 50,000+ Indians."
+        canonicalPath="/about"
+        jsonLd={breadcrumbJsonLd([{ name: 'Home', url: '/' }, { name: 'About', url: '/about' }])}
+      />
       <div className="max-w-7xl mx-auto px-3 sm:px-6 pt-3 sm:pt-4"><BackButton /></div>
       <div className="max-w-4xl mx-auto px-4 py-8">
         {/* Hero Section */}
