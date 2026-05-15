@@ -648,7 +648,14 @@ async def update_order_status(order_id: str, status_update: OrderStatusUpdate):
         try:
             from services.delhivery_service import delhivery_service
             if delhivery_service:
-                # Prepare order data for Delhivery
+                # Prepare order data for Delhivery.
+                # IMPORTANT: For COD orders the customer pays the entire
+                # ``order.amount`` on delivery — no Razorpay advance is taken
+                # at checkout. Delhivery must therefore collect the FULL
+                # ``amount`` field. Earlier this code subtracted ₹49 (a
+                # phantom "COD advance"), which made the collectable show
+                # up ~₹50 less than what the customer actually owes.
+                is_cod = "COD" in (order.get("payment_method") or "")
                 order_for_delhivery = {
                     "order_id": order.get("order_id"),
                     "name": order.get("name"),
@@ -658,8 +665,8 @@ async def update_order_status(order_id: str, status_update: OrderStatusUpdate):
                     "pincode": order.get("pincode"),
                     "city": order.get("city", ""),
                     "state": order.get("state", ""),
-                    "payment_method": "cod" if "COD" in order.get("payment_method", "") else "prepaid",
-                    "cod_balance": order.get("amount", 0) - 49 if "COD" in order.get("payment_method", "") else 0,
+                    "payment_method": "cod" if is_cod else "prepaid",
+                    "cod_balance": order.get("amount", 0) if is_cod else 0,
                     "total_amount": order.get("amount", 0)
                 }
                 delhivery_result = await delhivery_service.create_shipment(order_for_delhivery)
@@ -2909,7 +2916,13 @@ async def admin_create_shipment(
             "awb_number": order.get("awb_number")
         }
 
-    # Normalise order payload for Delhivery
+    # Normalise order payload for Delhivery.
+    # IMPORTANT: For COD the customer pays the entire ``order.amount`` on
+    # delivery — no Razorpay advance is collected at checkout. Delhivery
+    # must therefore collect the FULL ``amount`` field (do not subtract
+    # any phantom "COD advance" here — that bug previously made the
+    # collectable show up ~₹50 short on Delhivery).
+    is_cod = "COD" in (order.get("payment_method") or "")
     order_for_delhivery = {
         "order_id": order.get("order_id"),
         "name": order.get("name"),
@@ -2919,8 +2932,8 @@ async def admin_create_shipment(
         "pincode": order.get("pincode"),
         "city": order.get("city") or order.get("area", ""),
         "state": order.get("state", ""),
-        "payment_method": "cod" if "COD" in (order.get("payment_method") or "") else "prepaid",
-        "cod_balance": (order.get("amount", 0) - 49) if "COD" in (order.get("payment_method") or "") else 0,
+        "payment_method": "cod" if is_cod else "prepaid",
+        "cod_balance": order.get("amount", 0) if is_cod else 0,
         "total_amount": order.get("amount", 0),
     }
 
