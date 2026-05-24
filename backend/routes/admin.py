@@ -440,7 +440,162 @@ async def get_analytics_overview(admin: bool = Depends(verify_admin)):
 
 
 @router.get("/orders")
-async def get_all_orders(admin: bool = Depends(verify_admin), limit: int = 100):
-    """Get all orders for admin"""
-    orders = await db.orders.find({}, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
+async def get_all_orders(
+    admin: bool = Depends(verify_admin),
+    limit: int = 200,
+    date_from: Optional[str] = None,  # ISO date YYYY-MM-DD
+    date_to: Optional[str] = None,
+    status: Optional[str] = None,
+    payment_method: Optional[str] = None,
+):
+    """Get all orders for admin with optional date/status/payment filters."""
+    query = {}
+    if date_from or date_to:
+        date_q = {}
+        if date_from:
+            date_q["$gte"] = f"{date_from}T00:00:00"
+        if date_to:
+            date_q["$lte"] = f"{date_to}T23:59:59.999"
+        query["created_at"] = date_q
+    if status and status != "all":
+        query["status"] = status
+    if payment_method and payment_method != "all":
+        query["payment_method"] = payment_method
+    orders = await db.orders.find(query, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
     return orders
+
+
+@router.get("/orders/export")
+async def export_orders(
+    admin: bool = Depends(verify_admin),
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    status: Optional[str] = None,
+    payment_method: Optional[str] = None,
+    fmt: str = "csv",  # csv | xlsx
+):
+    """Export orders as CSV or XLSX with full customer + product + price detail."""
+    from fastapi.responses import StreamingResponse
+    import io
+    import csv as _csv
+
+    query = {}
+    if date_from or date_to:
+        date_q = {}
+        if date_from:
+            date_q["$gte"] = f"{date_from}T00:00:00"
+        if date_to:
+            date_q["$lte"] = f"{date_to}T23:59:59.999"
+        query["created_at"] = date_q
+    if status and status != "all":
+        query["status"] = status
+    if payment_method and payment_method != "all":
+        query["payment_method"] = payment_method
+
+    orders = await db.orders.find(query, {"_id": 0}).sort("created_at", -1).limit(10000).to_list(10000)
+
+    headers = [
+        "Order ID", "Date", "Status", "Customer Name", "Phone", "Email",
+        "House/Building", "Area/Street", "City/State", "Pincode",
+        "Products", "Item Count", "Payment Method", "Subtotal (MRP)",
+        "Coupon", "Coupon Discount", "Total Paid", "AWB Number", "Provider", "Referral Used",
+    ]
+
+    def _row(o):
+        items = o.get("items") or []
+        # Each item may have shade_name/shade_id/quantity/price
+        prod_str = " | ".join(
+            f"{(it.get('short_name') or it.get('name') or it.get('slug') or '?')}"
+            + (f" ({it.get('shade_name')})" if it.get('shade_name') else "")
+            + f" x{it.get('quantity', 1)} @{it.get('price', 0)}"
+            for it in items
+        ) or "—"
+        item_count = sum(int(it.get('quantity') or 1) for it in items) if items else 1
+        mrp_total = sum(float(it.get('mrp', it.get('price', 0)) or 0) * int(it.get('quantity') or 1) for it in items)
+        return [
+            o.get("order_id", ""),
+            (o.get("created_at") or "")[:19].replace("T", " "),
+            o.get("status", ""),
+            o.get("name", ""),
+            o.get("phone", ""),
+            o.get("email", ""),
+            o.get("house_number", ""),
+            o.get("area", ""),
+            o.get("state", ""),
+            o.get("pincode", ""),
+            prod_str,
+            item_count,
+            o.get("payment_method", ""),
+            f"{mrp_total:.2f}",
+            o.get("coupon_code", ""),
+            f"{float(o.get('coupon_discount') or 0):.2f}",
+            f"{float(o.get('amount') or 0):.2f}",
+            o.get("awb_number", ""),
+            o.get("shipping_provider", ""),
+            o.get("referral_code_used", ""),
+        ]
+
+    fname = f"celesta-orders-{(date_from or 'all')}_to_{(date_to or 'today')}"
+
+    if fmt.lower() == "xlsx":
+        try:
+            from openpyxl import Workbook
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Orders"
+            ws.append(headers)
+            for o in orders:
+                ws.append(_row(o))
+            buf = io.BytesIO()
+            wb.save(buf)
+            buf.seek(0)
+            return StreamingResponse(
+                buf,
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={"Content-Disposition": f'attachment; filename="{fname}.xlsx"'},
+            )
+        except ImportError:
+            pass  # fall through to CSV if openpyxl not installed
+
+    buf = io.StringIO()
+    writer = _csv.writer(buf)
+    writer.writerow(headers)
+    for o in orders:
+        writer.writerow(_row(o))
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{fname}.csv"'},
+    )
+
+
+@router.get("/orders/daily-summary")
+async def orders_daily_summary(admin: bool = Depends(verify_admin), days: int = 30):
+    """Return per-day order stats (count, revenue, COD%) for the dashboard."""
+    from datetime import timedelta as _td
+    today = datetime.now(timezone.utc).date()
+    out = []
+    for i in range(days):
+        d = today - _td(days=i)
+        d_start = f"{d.isoformat()}T00:00:00"
+        d_end = f"{d.isoformat()}T23:59:59.999"
+        cursor = db.orders.find(
+            {"created_at": {"$gte": d_start, "$lte": d_end}},
+            {"_id": 0, "amount": 1, "payment_method": 1, "status": 1, "items": 1},
+        )
+        orders = await cursor.to_list(5000)
+        count = len(orders)
+        revenue = sum(float(o.get("amount") or 0) for o in orders)
+        cod = sum(1 for o in orders if (o.get("payment_method") or "").upper() == "COD")
+        item_count = sum(sum(int(it.get('quantity') or 1) for it in (o.get('items') or [])) or 1 for o in orders)
+        out.append({
+            "date": d.isoformat(),
+            "orders": count,
+            "revenue": round(revenue, 2),
+            "cod_orders": cod,
+            "cod_pct": round((cod / count * 100) if count else 0, 1),
+            "items_sold": item_count,
+        })
+    out.reverse()
+    return {"days": out, "total_orders": sum(d["orders"] for d in out), "total_revenue": round(sum(d["revenue"] for d in out), 2)}

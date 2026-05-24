@@ -56,6 +56,7 @@ const AdminCustomers = lazy(() => import('./pages/admin/AdminCustomers'));
 const AdminProducts = lazy(() => import('./pages/admin/AdminProducts'));
 const AdminConcerns = lazy(() => import('./pages/admin/AdminConcerns'));
 const AdminNiches = lazy(() => import('./pages/admin/AdminNiches'));
+const AdminCategoriesHub = lazy(() => import('./pages/admin/AdminCategoriesHub'));
 const AdminRetention = lazy(() => import('./pages/admin/AdminRetention'));
 const AdminReviews = lazy(() => import('./pages/admin/AdminReviews'));
 const AdminSettings = lazy(() => import('./pages/admin/AdminSettings'));
@@ -129,6 +130,7 @@ function App() {
         <Route path="/admin/concerns" element={<AdminLayout><AdminConcerns /></AdminLayout>} />
         <Route path="/admin/categories" element={<AdminLayout><AdminConcerns /></AdminLayout>} />
         <Route path="/admin/niches" element={<AdminLayout><AdminNiches /></AdminLayout>} />
+        <Route path="/admin/categories-hub" element={<AdminLayout><AdminCategoriesHub /></AdminLayout>} />
         <Route path="/admin/retention" element={<AdminLayout><AdminRetention /></AdminLayout>} />
         <Route path="/admin/reviews" element={<AdminLayout><AdminReviews /></AdminLayout>} />
         <Route path="/admin/settings" element={<AdminLayout><AdminSettings /></AdminLayout>} />

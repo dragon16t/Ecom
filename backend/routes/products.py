@@ -122,6 +122,9 @@ class ProductUpdate(BaseModel):
     #   cosmetics → { shade, finish, spf, skin_tone, coverage, ... }
     #   hair → { hair_type, hair_length, fragrance, ... }
     specs: Optional[Dict[str, Any]] = None
+    # Cosmetics shade variants — each shade has independent stock & optional image.
+    # Empty/None means the product is sold as a single SKU (no shade picker).
+    shades: Optional[List[Dict[str, Any]]] = None  # [{id,name,hex,image,sku,stock_qty}]
 
 class ProductCreate(BaseModel):
     slug: str
@@ -164,6 +167,8 @@ class ProductCreate(BaseModel):
     brand: str = ""
     # Per-niche specs (free-form dict)
     specs: Dict[str, Any] = {}
+    # Cosmetics shade variants — optional list of {id,name,hex,image,sku,stock_qty}
+    shades: List[Dict[str, Any]] = []
 
 
 @router.get("/products")
@@ -421,6 +426,24 @@ async def create_product(
     product = data.dict()
     product["created_at"] = datetime.now(timezone.utc).isoformat()
     product["updated_at"] = datetime.now(timezone.utc).isoformat()
+    # If admin didn't pick a sort_order (or kept the default 99), auto-place this
+    # product at the TOP of its niche so it's visible immediately on home/listing
+    # pages without manual reordering. Existing products at sort_order=1 will
+    # naturally tie-break by created_at desc inside `newest` sort.
+    if not data.sort_order or data.sort_order >= 99:
+        try:
+            min_existing = await db.products.find_one(
+                {"niche": data.niche or "skincare"},
+                sort=[("sort_order", 1)],
+                projection={"sort_order": 1, "_id": 0},
+            )
+            min_so = (min_existing or {}).get("sort_order")
+            if isinstance(min_so, (int, float)):
+                product["sort_order"] = max(1, int(min_so) - 1) if min_so > 1 else 1
+            else:
+                product["sort_order"] = 1
+        except Exception:
+            product["sort_order"] = 1
     # Auto-seed a realistic review count + rating so new cards don't feel empty.
     product["reviews_count"] = random.randint(1020, 4875)
     product["rating"] = round(random.uniform(4.5, 4.9), 1)
@@ -831,6 +854,7 @@ class CartItem(BaseModel):
     product_slug: Optional[str] = None
     combo_id: Optional[str] = None
     quantity: int = 1
+    shade_id: Optional[str] = None  # cosmetics shade variant selection
 
 class CartValidateRequest(BaseModel):
     items: List[CartItem]
@@ -844,6 +868,7 @@ async def validate_cart(data: CartValidateRequest):
     validated_items = []
     subtotal = 0
     mrp_total = 0
+    stock_warnings = []  # list of {slug, message, capped_to}
     
     is_cod = (data.payment_method or "").lower() == "cod"
     cod_premium = 50 if is_cod else 0  # COD costs ₹50 more (achieved by reducing savings)
@@ -856,20 +881,47 @@ async def validate_cart(data: CartValidateRequest):
             # Defense in depth: drop TBL products from the cart so they cannot reach checkout.
             if product.get("is_to_be_launched"):
                 continue
+            # ---- Shade resolution (for cosmetics with shade variants) ----
+            shades = product.get("shades") or []
+            chosen_shade = None
+            if shades:
+                # If product has shades but no shade_id passed, drop with warning
+                if not item.shade_id:
+                    stock_warnings.append({"slug": product["slug"], "message": "Please pick a shade", "code": "shade_required"})
+                    continue
+                chosen_shade = next((s for s in shades if str(s.get("id")) == str(item.shade_id)), None)
+                if not chosen_shade:
+                    stock_warnings.append({"slug": product["slug"], "message": "Selected shade no longer available", "code": "shade_missing"})
+                    continue
+            # ---- Stock enforcement ----
+            available = int(chosen_shade["stock_qty"]) if chosen_shade and chosen_shade.get("stock_qty") is not None else int(product.get("stock_qty") or 0)
+            qty = item.quantity
+            if available <= 0:
+                stock_warnings.append({"slug": product["slug"], "message": "Out of stock", "code": "out_of_stock"})
+                continue
+            if qty > available:
+                stock_warnings.append({"slug": product["slug"], "message": f"Only {available} left — quantity reduced", "code": "qty_capped", "capped_to": available})
+                qty = available
             # Always use prepaid price as base — COD premium is applied at cart-level (not per-item)
             price = product["prepaid_price"]
-            line_total = price * item.quantity
-            mrp_line = product["mrp"] * item.quantity
+            line_total = price * qty
+            mrp_line = product["mrp"] * qty
+            shade_img = (chosen_shade or {}).get("image") if chosen_shade else None
+            base_img = product["images"][0] if product.get("images") else ""
             validated_items.append({
                 "type": "product",
                 "slug": product["slug"],
                 "name": product["name"],
                 "short_name": product["short_name"],
-                "image": product["images"][0] if product.get("images") else "",
+                "image": shade_img or base_img,
                 "mrp": product["mrp"],
                 "price": price,
-                "quantity": item.quantity,
-                "line_total": line_total
+                "quantity": qty,
+                "line_total": line_total,
+                "shade_id": chosen_shade.get("id") if chosen_shade else None,
+                "shade_name": chosen_shade.get("name") if chosen_shade else None,
+                "shade_hex": chosen_shade.get("hex") if chosen_shade else None,
+                "stock_left": available,
             })
             subtotal += line_total
             mrp_total += mrp_line
@@ -951,7 +1003,8 @@ async def validate_cart(data: CartValidateRequest):
         "total": final_total,
         "savings": total_savings,
         "item_count": total_items,
-        "prepaid_savings_hint": cod_premium  # ₹ saved by switching to prepaid
+        "prepaid_savings_hint": cod_premium,  # ₹ saved by switching to prepaid
+        "stock_warnings": stock_warnings,
     }
 
 
@@ -986,6 +1039,19 @@ class SiteSettingsUpdate(BaseModel):
     # Shape: { "anti-aging": {hero: {...}, bestsellers: {...}, cta_section: {...}, banner_carousel: [...], ...},
     #          "skincare": {...}, "cosmetics": {...} }
     niche_settings: Optional[Dict[str, Dict]] = None
+    # Premium /categories hub (Shop by Category) — admin-editable hero, niche cards, ribbon banner, ingredient strip.
+    # Shape: {
+    #   hero: { eyebrow, title_line1, title_line2, subtitle, image_desktop, image_mobile, accent, search_placeholder },
+    #   niche_cards: {
+    #     anti_aging: { enabled, eyebrow, title, subtitle, image, cta_label, cta_link, accent },
+    #     skincare:   {...same...},
+    #     cosmetics:  {...same...}
+    #   },
+    #   ribbon: { enabled, text, cta_label, cta_link, bg_from, bg_to },
+    #   ingredient_strip: { enabled, title, subtitle, items: [{name, image, hex}, ...] },
+    #   editors_picks: { enabled, eyebrow, title, slugs: [...product_slug...] }
+    # }
+    categories_hub: Optional[Dict] = None
 
 
 @router.get("/site-settings")

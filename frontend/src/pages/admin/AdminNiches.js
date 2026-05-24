@@ -136,6 +136,9 @@ export default function AdminNiches() {
   const patchHero = (k, v) => setCur({ ...cur, hero: { ...(cur.hero || {}), [k]: v } });
   const patchBs = (k, v) => setCur({ ...cur, bestsellers: { ...(cur.bestsellers || {}), [k]: v } });
   const patchCta = (k, v) => setCur({ ...cur, cta_section: { ...(cur.cta_section || {}), [k]: v } });
+  const patchShowcase = (k, v) => setCur({ ...cur, [k]: v });
+  const patchShowcaseBanner = (k, v) => setCur({ ...cur, category_showcase_banner: { ...(cur.category_showcase_banner || {}), [k]: v } });
+  const patchSale = (k, v) => setCur({ ...cur, sale_badge: { ...(cur.sale_badge || {}), [k]: v } });
 
   const save = async () => {
     setSaving(true);
@@ -152,9 +155,11 @@ export default function AdminNiches() {
 
   const tabs = [
     { id: 'hero', label: 'Hero Banner', icon: ImageIcon },
+    { id: 'sale-badge', label: 'Sale Badge', icon: Flame },
     { id: 'card-image', label: 'Niche Card (3-up)', icon: ImageIcon },
     { id: 'carousel', label: 'Banner Carousel', icon: Layers },
     { id: 'bestsellers', label: 'Bestsellers Grid', icon: Flame },
+    { id: 'showcase', label: 'Shop by Category', icon: Sparkles },
     { id: 'cta', label: 'CTA Section', icon: MessageSquare },
     { id: 'reviews', label: 'Reviews', icon: MessageSquare },
     { id: 'faq', label: 'FAQ', icon: MessageSquare },
@@ -286,6 +291,265 @@ export default function AdminNiches() {
               </div>
             )}
 
+            {activeTab === 'sale-badge' && (
+              <div className="space-y-4" data-testid={`sale-badge-tab-${activeNiche}`}>
+                <div className="bg-rose-50 ring-1 ring-rose-200 rounded-xl p-3 text-xs text-rose-900">
+                  <strong>Sale Badge — Multiple Offers</strong>. Add as many offers as you like — they'll auto-rotate as a carousel with a left-swipe animation (pauses on hover, dots + arrows for manual nav).
+                </div>
+
+                {/* Top-level controls */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 items-end">
+                  <Toggle
+                    value={!!cur.sale_badge?.enabled}
+                    onChange={v => patchSale('enabled', v)}
+                    label={cur.sale_badge?.enabled ? 'VISIBLE on home' : 'HIDDEN'}
+                    testId={`sale-badge-toggle-${activeNiche}`}
+                  />
+                  <Toggle
+                    value={cur.sale_badge?.autoplay !== false}
+                    onChange={v => patchSale('autoplay', v)}
+                    label={cur.sale_badge?.autoplay !== false ? 'Auto-swipe ON' : 'Auto-swipe OFF'}
+                    testId={`sale-badge-autoplay-${activeNiche}`}
+                  />
+                  <Field label="Placement">
+                    <select
+                      value={cur.sale_badge?.placement || 'inline'}
+                      onChange={e => patchSale('placement', e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg text-sm bg-white"
+                      data-testid={`sale-badge-placement-${activeNiche}`}
+                    >
+                      <option value="inline">Inline ribbon (above hero)</option>
+                      <option value="floating">Floating pill (bottom-right)</option>
+                    </select>
+                  </Field>
+                  <Field label="Swipe interval (sec)">
+                    <input
+                      type="number"
+                      min="2"
+                      max="30"
+                      value={Math.round(((cur.sale_badge?.interval_ms || 5000)) / 1000)}
+                      onChange={e => patchSale('interval_ms', Math.max(2, Math.min(30, Number(e.target.value))) * 1000)}
+                      className="w-full px-3 py-2 border rounded-lg text-sm"
+                      data-testid={`sale-badge-interval-${activeNiche}`}
+                    />
+                  </Field>
+                </div>
+
+                {/* Offers list */}
+                <div className="flex items-center justify-between pt-4 border-t border-stone-200">
+                  <div>
+                    <p className="text-sm font-black text-stone-900">Offers</p>
+                    <p className="text-[11px] text-stone-500">{(cur.sale_badge?.offers || []).length} {(cur.sale_badge?.offers || []).length === 1 ? 'offer' : 'offers'} — appear one after another</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const offers = Array.isArray(cur.sale_badge?.offers) ? [...cur.sale_badge.offers] : [];
+                      offers.push({
+                        text: 'New offer',
+                        sub_text: 'LIMITED TIME',
+                        code: '',
+                        cta_label: 'Shop now',
+                        cta_link: '/shop',
+                        bg_from: '#dc2626',
+                        bg_to: '#7c2d12',
+                        text_color: '#ffffff',
+                        icon: 'sparkles',
+                      });
+                      patchSale('offers', offers);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-lg"
+                    data-testid={`sale-badge-add-${activeNiche}`}
+                  >
+                    + Add offer
+                  </button>
+                </div>
+
+                {(cur.sale_badge?.offers || []).length === 0 && (
+                  <div className="bg-stone-50 ring-1 ring-stone-200 rounded-xl p-6 text-center">
+                    <p className="text-sm text-stone-600 mb-2">No offers yet.</p>
+                    <p className="text-[11px] text-stone-500">Click "+ Add offer" above to create your first promotional banner. You can add multiple offers and they'll rotate automatically.</p>
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  {(cur.sale_badge?.offers || []).map((o, idx) => (
+                    <div key={idx} className="rounded-2xl ring-1 ring-stone-200 bg-stone-50 overflow-hidden" data-testid={`sale-badge-offer-${activeNiche}-${idx}`}>
+                      {/* Live preview strip */}
+                      <div
+                        className="px-4 py-2.5 flex items-center justify-between gap-3"
+                        style={{ background: `linear-gradient(120deg, ${o.bg_from || '#dc2626'}, ${o.bg_to || '#7c2d12'})`, color: o.text_color || '#fff' }}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[9px] font-black tracking-[0.28em] uppercase opacity-85 truncate">{o.sub_text || 'LIMITED TIME'}</p>
+                          <p className="text-sm font-black truncate">
+                            {o.text || 'Special Offer'}
+                            {o.code && <span className="ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-mono bg-white/95" style={{ color: o.bg_from }}>{o.code}</span>}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            disabled={idx === 0}
+                            onClick={() => {
+                              const offers = [...cur.sale_badge.offers];
+                              [offers[idx - 1], offers[idx]] = [offers[idx], offers[idx - 1]];
+                              patchSale('offers', offers);
+                            }}
+                            className="w-7 h-7 rounded-full bg-white/15 hover:bg-white/30 disabled:opacity-30 disabled:cursor-not-allowed text-white flex items-center justify-center"
+                            title="Move up"
+                            data-testid={`sale-badge-up-${activeNiche}-${idx}`}
+                          >↑</button>
+                          <button
+                            type="button"
+                            disabled={idx === (cur.sale_badge.offers.length - 1)}
+                            onClick={() => {
+                              const offers = [...cur.sale_badge.offers];
+                              [offers[idx], offers[idx + 1]] = [offers[idx + 1], offers[idx]];
+                              patchSale('offers', offers);
+                            }}
+                            className="w-7 h-7 rounded-full bg-white/15 hover:bg-white/30 disabled:opacity-30 disabled:cursor-not-allowed text-white flex items-center justify-center"
+                            title="Move down"
+                            data-testid={`sale-badge-down-${activeNiche}-${idx}`}
+                          >↓</button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!window.confirm('Remove this offer?')) return;
+                              patchSale('offers', cur.sale_badge.offers.filter((_, i) => i !== idx));
+                            }}
+                            className="w-7 h-7 rounded-full bg-white/15 hover:bg-rose-500/70 text-white flex items-center justify-center"
+                            title="Delete"
+                            data-testid={`sale-badge-remove-${activeNiche}-${idx}`}
+                          >×</button>
+                        </div>
+                      </div>
+
+                      {/* Editor */}
+                      <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <Field label={`Offer #${idx + 1} — Main text`}>
+                          <input
+                            value={o.text || ''}
+                            onChange={e => {
+                              const offers = [...cur.sale_badge.offers];
+                              offers[idx] = { ...offers[idx], text: e.target.value };
+                              patchSale('offers', offers);
+                            }}
+                            placeholder="Flat 20% OFF on first order"
+                            className="w-full px-3 py-2 border rounded-lg text-sm"
+                            data-testid={`sale-badge-text-${activeNiche}-${idx}`}
+                          />
+                        </Field>
+                        <Field label="Eyebrow / sub-text">
+                          <input
+                            value={o.sub_text || ''}
+                            onChange={e => {
+                              const offers = [...cur.sale_badge.offers];
+                              offers[idx] = { ...offers[idx], sub_text: e.target.value };
+                              patchSale('offers', offers);
+                            }}
+                            placeholder="LIMITED TIME"
+                            className="w-full px-3 py-2 border rounded-lg text-sm"
+                          />
+                        </Field>
+                        <Field label="Coupon code (optional)">
+                          <input
+                            value={o.code || ''}
+                            onChange={e => {
+                              const offers = [...cur.sale_badge.offers];
+                              offers[idx] = { ...offers[idx], code: e.target.value.toUpperCase() };
+                              patchSale('offers', offers);
+                            }}
+                            placeholder="GLOW20"
+                            className="w-full px-3 py-2 border rounded-lg text-sm font-mono uppercase"
+                          />
+                        </Field>
+                        <Field label="Icon">
+                          <select
+                            value={o.icon || 'sparkles'}
+                            onChange={e => {
+                              const offers = [...cur.sale_badge.offers];
+                              offers[idx] = { ...offers[idx], icon: e.target.value };
+                              patchSale('offers', offers);
+                            }}
+                            className="w-full px-3 py-2 border rounded-lg text-sm bg-white"
+                          >
+                            <option value="sparkles">Sparkles ✨</option>
+                            <option value="flame">Flame 🔥</option>
+                            <option value="tag">Tag 🏷️</option>
+                          </select>
+                        </Field>
+                        <Field label="CTA label">
+                          <input
+                            value={o.cta_label || ''}
+                            onChange={e => {
+                              const offers = [...cur.sale_badge.offers];
+                              offers[idx] = { ...offers[idx], cta_label: e.target.value };
+                              patchSale('offers', offers);
+                            }}
+                            placeholder="Shop now"
+                            className="w-full px-3 py-2 border rounded-lg text-sm"
+                          />
+                        </Field>
+                        <Field label="CTA link">
+                          <input
+                            value={o.cta_link || ''}
+                            onChange={e => {
+                              const offers = [...cur.sale_badge.offers];
+                              offers[idx] = { ...offers[idx], cta_link: e.target.value };
+                              patchSale('offers', offers);
+                            }}
+                            placeholder="/shop"
+                            className="w-full px-3 py-2 border rounded-lg text-sm"
+                          />
+                        </Field>
+                        <Field label="Gradient — from">
+                          <input
+                            type="color"
+                            value={o.bg_from || '#dc2626'}
+                            onChange={e => {
+                              const offers = [...cur.sale_badge.offers];
+                              offers[idx] = { ...offers[idx], bg_from: e.target.value };
+                              patchSale('offers', offers);
+                            }}
+                            className="w-full h-10 border rounded-lg"
+                          />
+                        </Field>
+                        <Field label="Gradient — to">
+                          <input
+                            type="color"
+                            value={o.bg_to || '#7c2d12'}
+                            onChange={e => {
+                              const offers = [...cur.sale_badge.offers];
+                              offers[idx] = { ...offers[idx], bg_to: e.target.value };
+                              patchSale('offers', offers);
+                            }}
+                            className="w-full h-10 border rounded-lg"
+                          />
+                        </Field>
+                        <Field label="Text colour">
+                          <input
+                            type="color"
+                            value={o.text_color || '#ffffff'}
+                            onChange={e => {
+                              const offers = [...cur.sale_badge.offers];
+                              offers[idx] = { ...offers[idx], text_color: e.target.value };
+                              patchSale('offers', offers);
+                            }}
+                            className="w-full h-10 border rounded-lg"
+                          />
+                        </Field>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <p className="text-[11px] text-stone-500 pt-2 border-t border-stone-100">
+                  💡 The carousel auto-pauses when visitors hover. Floating pill placement is dismissible per niche (remembered in browser).
+                </p>
+              </div>
+            )}
+
             {activeTab === 'card-image' && (
               <div className="space-y-4" data-testid={`card-image-tab-${activeNiche}`}>
                 <div className="bg-amber-50 ring-1 ring-amber-200 rounded-xl p-3 text-xs text-amber-900">
@@ -350,6 +614,92 @@ export default function AdminNiches() {
                       {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
                   </Field>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'showcase' && (
+              <div className="space-y-4" data-testid={`showcase-tab-${activeNiche}`}>
+                <Toggle
+                  value={cur.show_category_showcase !== false}
+                  onChange={v => patchShowcase('show_category_showcase', v)}
+                  label={cur.show_category_showcase !== false ? 'Section ENABLED' : 'Section HIDDEN'}
+                  testId={`showcase-toggle-${activeNiche}`}
+                />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Field label="Section eyebrow (pill text)" hint="Shown as a small uppercase pill above the headline">
+                    <input value={cur.category_showcase_title || ''} onChange={e => patchShowcase('category_showcase_title', e.target.value)} placeholder="Shop by Category" className="w-full px-3 py-2 border rounded-lg text-sm" data-testid={`showcase-title-${activeNiche}`} />
+                  </Field>
+                  <Field label="Big headline (subtitle)" hint="The italic-highlight word below comes from this">
+                    <input value={cur.category_showcase_subtitle || ''} onChange={e => patchShowcase('category_showcase_subtitle', e.target.value)} placeholder="Find what you're looking for" className="w-full px-3 py-2 border rounded-lg text-sm" />
+                  </Field>
+                  <Field label="Highlight word" hint="This word will appear in italic-accent color in the headline">
+                    <input value={cur.category_showcase_highlight || ''} onChange={e => patchShowcase('category_showcase_highlight', e.target.value)} placeholder="looking for" className="w-full px-3 py-2 border rounded-lg text-sm" />
+                  </Field>
+                  <Field label="Header decorative image (URL)" hint="Shown to the right of the headline on desktop. Leave empty to hide.">
+                    <input
+                      value={cur.category_showcase_header_image || ''}
+                      onChange={e => patchShowcase('category_showcase_header_image', e.target.value)}
+                      placeholder="https://… (paste URL or use upload)"
+                      className="w-full px-3 py-2 border rounded-lg text-sm"
+                      data-testid={`showcase-header-image-${activeNiche}`}
+                    />
+                  </Field>
+                  <Field label="Upload header image" hint="JPG/PNG, ≥ 1200px wide ideal">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={async (e) => {
+                        const f = e.target.files?.[0];
+                        if (!f) return;
+                        try {
+                          const fd = new FormData();
+                          fd.append('file', f);
+                          const r = await axios.post(`${API}/api/admin/upload-image`, fd, {
+                            headers: { 'X-Admin-Token': adminToken, 'Content-Type': 'multipart/form-data' },
+                          });
+                          patchShowcase('category_showcase_header_image', r.data.url);
+                        } catch (err) {
+                          alert(err.response?.data?.detail || 'Upload failed');
+                        }
+                      }}
+                      className="w-full px-3 py-2 border rounded-lg text-sm"
+                      data-testid={`showcase-header-upload-${activeNiche}`}
+                    />
+                  </Field>
+                  {cur.category_showcase_header_image && (
+                    <div className="sm:col-span-2">
+                      <p className="text-[11px] font-bold tracking-wider uppercase text-stone-500 mb-1.5">Preview</p>
+                      <img src={cur.category_showcase_header_image} alt="" className="max-h-44 rounded-xl ring-1 ring-stone-200" />
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-4 pt-4 border-t border-stone-200">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <p className="text-sm font-bold text-stone-800">Highlight Banner (above the grid)</p>
+                      <p className="text-[11px] text-stone-500">Optional limited-time gradient banner shown above the category cards.</p>
+                    </div>
+                    <Toggle
+                      value={!!cur.category_showcase_banner?.enabled}
+                      onChange={v => patchShowcaseBanner('enabled', v)}
+                      label={cur.category_showcase_banner?.enabled ? 'Banner ENABLED' : 'Banner HIDDEN'}
+                      testId={`showcase-banner-toggle-${activeNiche}`}
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <Field label="Eyebrow"><input value={cur.category_showcase_banner?.eyebrow || ''} onChange={e => patchShowcaseBanner('eyebrow', e.target.value)} placeholder="LIMITED DROP" className="w-full px-3 py-2 border rounded-lg text-sm" /></Field>
+                    <Field label="Main text"><input value={cur.category_showcase_banner?.text || ''} onChange={e => patchShowcaseBanner('text', e.target.value)} placeholder="Free shipping over ₹999" className="w-full px-3 py-2 border rounded-lg text-sm" /></Field>
+                    <Field label="CTA label"><input value={cur.category_showcase_banner?.cta_label || ''} onChange={e => patchShowcaseBanner('cta_label', e.target.value)} placeholder="Shop now" className="w-full px-3 py-2 border rounded-lg text-sm" /></Field>
+                    <Field label="CTA link"><input value={cur.category_showcase_banner?.cta_link || ''} onChange={e => patchShowcaseBanner('cta_link', e.target.value)} placeholder="/shop" className="w-full px-3 py-2 border rounded-lg text-sm" /></Field>
+                    <Field label="Gradient — from"><input type="color" value={cur.category_showcase_banner?.bg_from || '#0e7490'} onChange={e => patchShowcaseBanner('bg_from', e.target.value)} className="w-full h-10 border rounded-lg" /></Field>
+                    <Field label="Gradient — to"><input type="color" value={cur.category_showcase_banner?.bg_to || '#0f172a'} onChange={e => patchShowcaseBanner('bg_to', e.target.value)} className="w-full h-10 border rounded-lg" /></Field>
+                  </div>
+                </div>
+
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-800">
+                  <strong>Tip:</strong> Make each category card pop by uploading a beautiful header image per category in <a href="/admin/concerns" className="underline font-bold">Categories & Concerns</a>. The image + product thumbnails are what make this section feel premium.
                 </div>
               </div>
             )}
@@ -598,6 +948,22 @@ export default function AdminNiches() {
                       onChange={v => setCur({ ...cur, show_category_showcase: v })}
                       label={`Shop-by-Category preview cards (${cur.show_category_showcase !== false ? 'shown' : 'hidden'})`}
                       testId={`vis-category-showcase-${activeNiche}`}
+                    />
+                  )}
+                  {activeNiche === 'skincare' && (
+                    <Toggle
+                      value={cur.show_hero_actives === true}
+                      onChange={v => setCur({ ...cur, show_hero_actives: v })}
+                      label={`Hero Actives (Retinol / Vit C) section (${cur.show_hero_actives === true ? 'shown' : 'hidden'})`}
+                      testId={`vis-hero-actives-${activeNiche}`}
+                    />
+                  )}
+                  {activeNiche === 'cosmetics' && (
+                    <Toggle
+                      value={cur.show_trending_looks === true}
+                      onChange={v => setCur({ ...cur, show_trending_looks: v })}
+                      label={`Inspiration / Trending Looks section (${cur.show_trending_looks === true ? 'shown' : 'hidden'})`}
+                      testId={`vis-trending-looks-${activeNiche}`}
                     />
                   )}
                 </div>

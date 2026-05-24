@@ -27,15 +27,37 @@ const NICHE_META = {
 };
 
 function ShopPage() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const nicheParam = searchParams.get('niche'); // null | 'anti-aging' | 'skincare' | 'cosmetics'
   const nicheMeta = nicheParam ? NICHE_META[nicheParam] : null;
+
+  // URL-state filters (SH-1, SH-4, SH-5, SH-6, SH-7 fix)
+  const filter = searchParams.get('filter') || 'all';
+  const sortBy = searchParams.get('sort') || 'default';
+  const skinType = searchParams.get('skin_type') || '';
+  const ingredient = searchParams.get('ingredient') || '';
+  const look = searchParams.get('look') || '';
+  const minPrice = Number(searchParams.get('min_price') || 0);
+  const maxPrice = Number(searchParams.get('max_price') || 0);
+  const minRating = Number(searchParams.get('min_rating') || 0);
+
+  const setParam = (k, v) => {
+    const next = new URLSearchParams(searchParams);
+    if (v && v !== 'all' && v !== 'default' && v !== '0' && v !== 0) next.set(k, String(v));
+    else next.delete(k);
+    setSearchParams(next, { replace: true });
+  };
+  const setFilter = (v) => setParam('filter', v);
+  const clearAllFilters = () => {
+    const next = new URLSearchParams();
+    if (nicheParam) next.set('niche', nicheParam);
+    setSearchParams(next, { replace: true });
+  };
 
   const [products, setProducts] = useState([]);
   const [combos, setCombos] = useState([]);
   const [settings, setSettings] = useState({});
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('all');
   // --- Pagination + server-side search state ---
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -132,12 +154,40 @@ function ShopPage() {
   const otherCombos = combos.filter(c => c.combo_id !== (nicheMeta?.kitId || 'complete-anti-aging-kit'));
 
   const visibleProducts = useMemo(() => {
-    if (filter === 'all') return products;
-    if (filter === 'bestsellers') return products.filter(p => p.badge === 'Bestseller');
-    if (filter === 'new') return products.filter(p => p.badge === 'New Launch');
-    if (filter === 'tbl') return products.filter(p => p.is_to_be_launched);
-    return products;
-  }, [products, filter]);
+    let list = products.slice();
+    if (filter === 'bestsellers') list = list.filter(p => p.badge === 'Bestseller');
+    else if (filter === 'new') list = list.filter(p => p.badge === 'New Launch');
+    else if (filter === 'tbl') list = list.filter(p => p.is_to_be_launched);
+    if (skinType) list = list.filter(p => (p.skin_type || '').toLowerCase().includes(skinType.toLowerCase()));
+    if (ingredient) {
+      const needle = ingredient.toLowerCase().replace(/-/g, ' ');
+      list = list.filter(p => (p.key_ingredients || '').toLowerCase().includes(needle) || (p.ingredients_full || '').toLowerCase().includes(needle));
+    }
+    if (look) list = list.filter(p => (p.concerns || []).some(c => String(c).toLowerCase().includes(look.toLowerCase())));
+    if (minPrice > 0) list = list.filter(p => (p.prepaid_price || 0) >= minPrice);
+    if (maxPrice > 0) list = list.filter(p => (p.prepaid_price || 0) <= maxPrice);
+    if (minRating > 0) list = list.filter(p => (p.rating || 0) >= minRating);
+
+    if (sortBy === 'price_asc') list.sort((a, b) => (a.prepaid_price || 0) - (b.prepaid_price || 0));
+    else if (sortBy === 'price_desc') list.sort((a, b) => (b.prepaid_price || 0) - (a.prepaid_price || 0));
+    else if (sortBy === 'rating') list.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+    else if (sortBy === 'newest') list.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+    else if (sortBy === 'popular') list.sort((a, b) => (b.reviews_count || 0) - (a.reviews_count || 0));
+    return list;
+  }, [products, filter, sortBy, skinType, ingredient, look, minPrice, maxPrice, minRating]);
+
+  const activeFilters = useMemo(() => {
+    const out = [];
+    if (filter !== 'all') out.push({ key: 'filter', label: filter, raw: filter });
+    if (sortBy !== 'default') out.push({ key: 'sort', label: `sort: ${sortBy.replace('_', ' ')}`, raw: sortBy });
+    if (skinType) out.push({ key: 'skin_type', label: skinType, raw: skinType });
+    if (ingredient) out.push({ key: 'ingredient', label: ingredient, raw: ingredient });
+    if (look) out.push({ key: 'look', label: `look: ${look}`, raw: look });
+    if (minPrice) out.push({ key: 'min_price', label: `min ₹${minPrice}`, raw: String(minPrice) });
+    if (maxPrice) out.push({ key: 'max_price', label: `max ₹${maxPrice}`, raw: String(maxPrice) });
+    if (minRating) out.push({ key: 'min_rating', label: `${minRating}★ & up`, raw: String(minRating) });
+    return out;
+  }, [filter, sortBy, skinType, ingredient, look, minPrice, maxPrice, minRating]);
 
   // Per-product social proof: deterministic by (slug, current minute) so it
   // doesn't flicker on filter changes / re-renders, but ticks naturally over
@@ -374,7 +424,7 @@ function ShopPage() {
         )}
 
         {/* SECTION HEADER + FILTERS */}
-        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-3">
           <div>
             <p className="text-[11px] font-bold text-green-700 uppercase tracking-[0.25em] mb-1">Our Range</p>
             <h2 className="font-heading text-2xl sm:text-3xl font-black text-gray-900">Individual Products</h2>
@@ -396,6 +446,44 @@ function ShopPage() {
               </button>
             ))}
           </div>
+        </div>
+
+        {/* SORT DROPDOWN + ACTIVE FILTER CHIPS (SH-4, SH-5 fix) */}
+        <div className="flex flex-wrap items-center gap-2 mb-3" data-testid="shop-active-filters">
+          {activeFilters.map(af => (
+            <button
+              key={af.key + af.raw}
+              onClick={() => setParam(af.key, '')}
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-green-50 text-green-800 text-[11px] font-bold ring-1 ring-green-200 hover:bg-green-100 capitalize"
+              data-testid={`active-filter-${af.key}`}
+            >
+              {af.label}
+              <span className="text-green-600 leading-none text-base">×</span>
+            </button>
+          ))}
+          {activeFilters.length > 0 && (
+            <button
+              onClick={clearAllFilters}
+              className="text-[11px] font-bold text-red-600 underline hover:text-red-700"
+              data-testid="clear-all-filters"
+            >
+              Clear all
+            </button>
+          )}
+          <div className="flex-1" />
+          <select
+            value={sortBy}
+            onChange={(e) => setParam('sort', e.target.value)}
+            className="bg-white ring-1 ring-stone-200 rounded-full px-3 py-1.5 text-xs font-semibold text-stone-700 focus:ring-2 focus:ring-green-500"
+            data-testid="shop-sort"
+          >
+            <option value="default">Sort: Recommended</option>
+            <option value="popular">Most popular</option>
+            <option value="rating">Top rated</option>
+            <option value="price_asc">Price: low to high</option>
+            <option value="price_desc">Price: high to low</option>
+            <option value="newest">Newest</option>
+          </select>
         </div>
 
         {/* PRODUCT SEARCH BAR — server-side, paginated */}

@@ -9,6 +9,28 @@ import { useAdminAuth } from '../../utils/adminAuth';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
+/** Heuristic customer segmentation — purely client-side. */
+function customerSegment(c) {
+  const total = c.total_spent || 0;
+  const orders = c.orders?.length || 0;
+  const lastTs = c.last_contact ? new Date(c.last_contact).getTime() : 0;
+  const daysSince = lastTs ? Math.floor((Date.now() - lastTs) / 86400000) : 9999;
+
+  if (total >= 5000 || orders >= 5) {
+    return { label: 'VIP', cls: 'bg-purple-100 text-purple-700 ml-1', title: '₹5k+ spent or 5+ orders' };
+  }
+  if (orders >= 2 && daysSince <= 60) {
+    return { label: 'Loyal', cls: 'bg-blue-100 text-blue-700 ml-1', title: '2+ orders in last 60 days' };
+  }
+  if (c.has_purchased && daysSince > 90 && daysSince <= 180) {
+    return { label: 'At-Risk', cls: 'bg-amber-100 text-amber-700 ml-1', title: '90–180 days since last contact' };
+  }
+  if (c.has_purchased && daysSince > 180) {
+    return { label: 'Dormant', cls: 'bg-rose-100 text-rose-700 ml-1', title: '180+ days inactive' };
+  }
+  return null;
+}
+
 function AdminCustomers() {
   const navigate = useNavigate();
   const { adminToken, isLoading: authLoading, isAuthenticated } = useAdminAuth(navigate);
@@ -238,6 +260,20 @@ function AdminCustomers() {
                           Lead
                         </span>
                       )}
+                      {/* Segment badge: VIP / Loyal / At-Risk / Dormant */}
+                      {(() => {
+                        const seg = customerSegment(customer);
+                        if (!seg) return null;
+                        return (
+                          <span
+                            className={`mt-1 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${seg.cls}`}
+                            data-testid={`segment-${customer.phone}`}
+                            title={seg.title}
+                          >
+                            {seg.label}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="px-4 py-3">
                       <span className="font-semibold text-gray-900">{customer.orders?.length || 0}</span>

@@ -10,6 +10,8 @@ import {
 } from 'lucide-react';
 import { useOrderNotifications } from '../../utils/orderNotifications';
 import { getAdminToken, clearAdminToken } from '../../utils/adminAuth';
+import DailyOrdersPanel from '../../components/admin/DailyOrdersPanel';
+import DashboardSummaryPanel from '../../components/admin/DashboardSummaryPanel';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -264,6 +266,9 @@ function AdminDashboard() {
           <Link to="/admin/niches" className="flex items-center gap-3 px-4 py-3 text-emerald-600 hover:bg-emerald-50 rounded-xl" data-testid="nav-niches">
             <Settings size={20} /> Niche Customization
           </Link>
+          <Link to="/admin/categories-hub" className="flex items-center gap-3 px-4 py-3 text-rose-600 hover:bg-rose-50 rounded-xl" data-testid="nav-categories-hub">
+            <Sparkles size={20} /> Shop by Category Hub
+          </Link>
           <Link to="/admin/retention" className="flex items-center gap-3 px-4 py-3 text-cyan-600 hover:bg-cyan-50 rounded-xl" data-testid="nav-retention">
             <Phone size={20} /> Retention
           </Link>
@@ -405,6 +410,12 @@ function AdminDashboard() {
               </div>
             </div>
           )}
+
+          {/* Daily Orders / Revenue panel — top of dashboard */}
+          <DailyOrdersPanel />
+
+          {/* NEW: 4-KPI top row + action items + 30d chart + activity feed */}
+          <DashboardSummaryPanel />
 
           {/* Tab Navigation */}
           <div className="flex gap-2 mb-6 overflow-x-auto pb-2">

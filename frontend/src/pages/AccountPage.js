@@ -5,13 +5,186 @@ import axios from 'axios';
 import {
   User, Mail, LogOut, Package, ChevronRight, ChevronDown, Loader2,
   ShieldCheck, CheckCircle2, Truck, KeyRound, ArrowLeft, ExternalLink,
-  MapPin, Clock, Box,
+  MapPin, Clock, Box, Heart, Home,
 } from 'lucide-react';
 import ReferralWidget from '../components/ReferralWidget';
+import { getWishlist, removeFromWishlist } from '../utils/wishlist';
+import { addToCart } from './Homepage';
+import { cachedGet } from '../utils/apiCache';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 const TOKEN_KEY = 'cg_auth_token';
 const USER_KEY = 'cg_auth_user';
+
+/**
+ * ProfileTab — editable name + phone + multiple shipping addresses.
+ */
+function ProfileTab({ user, setUser, handleSignout }) {
+  const token = (typeof window !== 'undefined') ? localStorage.getItem(TOKEN_KEY) : null;
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(user.name || '');
+  const [phone, setPhone] = useState(user.phone || '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [addresses, setAddresses] = useState(user.addresses || []);
+  const [showAddrForm, setShowAddrForm] = useState(false);
+  const [newAddr, setNewAddr] = useState({ label: 'Home', name: user.name || '', phone: user.phone || '', house_number: '', area: '', pincode: '', state: '', is_default: false });
+
+  const auth = { headers: { Authorization: `Bearer ${token}` } };
+
+  const saveProfile = async () => {
+    setError(''); setSaving(true);
+    try {
+      const r = await axios.patch(`${API}/api/customer/me`, { name, phone }, auth);
+      setUser(r.data.user);
+      try { localStorage.setItem(USER_KEY, JSON.stringify(r.data.user)); } catch {}
+      setEditing(false);
+    } catch (e) {
+      setError(e.response?.data?.detail || 'Failed to update profile');
+    } finally { setSaving(false); }
+  };
+
+  const addAddress = async (e) => {
+    e?.preventDefault();
+    setError('');
+    if (!newAddr.name || !newAddr.phone || !newAddr.pincode || !newAddr.house_number) {
+      setError('Please fill all required fields');
+      return;
+    }
+    try {
+      const r = await axios.post(`${API}/api/customer/addresses`, newAddr, auth);
+      setAddresses((prev) => [...prev, r.data.address]);
+      setShowAddrForm(false);
+      setNewAddr({ label: 'Home', name: user.name || '', phone: user.phone || '', house_number: '', area: '', pincode: '', state: '', is_default: false });
+    } catch (e) {
+      setError(e.response?.data?.detail || 'Failed to add address');
+    }
+  };
+
+  const deleteAddress = async (id) => {
+    if (!window.confirm('Delete this address?')) return;
+    try {
+      await axios.delete(`${API}/api/customer/addresses/${id}`, auth);
+      setAddresses((prev) => prev.filter(a => a.id !== id));
+    } catch (e) {
+      setError(e.response?.data?.detail || 'Failed to delete');
+    }
+  };
+
+  return (
+    <div className="max-w-2xl mx-auto px-4 sm:px-6 mt-4 relative space-y-4" data-testid="account-profile-tab">
+      {/* Profile basics */}
+      <div className="bg-white rounded-3xl ring-1 ring-stone-200 shadow-sm p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-heading text-base font-black text-stone-900 flex items-center gap-2">
+            <User size={16} className="text-emerald-700" /> Profile
+          </h2>
+          {!editing && (
+            <button onClick={() => setEditing(true)} className="text-xs font-bold text-emerald-700 hover:text-emerald-900" data-testid="profile-edit-btn">Edit</button>
+          )}
+        </div>
+        {!editing ? (
+          <div className="space-y-3 text-sm">
+            <div className="flex items-start gap-3 p-3 bg-stone-50 rounded-xl">
+              <Mail size={16} className="text-stone-400 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-stone-400 mb-0.5">Email</p>
+                <p className="font-semibold text-stone-900 truncate">{user.email}</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-3 p-3 bg-stone-50 rounded-xl">
+              <User size={16} className="text-stone-400 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-stone-400 mb-0.5">Name</p>
+                <p className="font-semibold text-stone-900">{user.name || <span className="text-stone-400">Not set</span>}</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-3 p-3 bg-stone-50 rounded-xl">
+              <Box size={16} className="text-stone-400 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-stone-400 mb-0.5">Phone</p>
+                <p className="font-semibold text-stone-900">{user.phone ? `+91 ${user.phone}` : <span className="text-stone-400">Not set</span>}</p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3 text-sm">
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-wide text-stone-500 mb-1">Name</label>
+              <input value={name} onChange={(e) => setName(e.target.value)} className="w-full px-3 py-2.5 rounded-xl ring-1 ring-stone-200 focus:ring-2 focus:ring-emerald-500 outline-none" data-testid="profile-name-input" />
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-wide text-stone-500 mb-1">Phone (10 digits)</label>
+              <input value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))} maxLength={10} className="w-full px-3 py-2.5 rounded-xl ring-1 ring-stone-200 focus:ring-2 focus:ring-emerald-500 outline-none" data-testid="profile-phone-input" />
+            </div>
+            {error && <p className="text-xs text-red-600">{error}</p>}
+            <div className="flex gap-2">
+              <button onClick={saveProfile} disabled={saving} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-sm disabled:opacity-60" data-testid="profile-save-btn">{saving ? 'Saving…' : 'Save'}</button>
+              <button onClick={() => { setEditing(false); setError(''); setName(user.name || ''); setPhone(user.phone || ''); }} className="flex-1 bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold py-2.5 rounded-xl text-sm">Cancel</button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Saved addresses */}
+      <div className="bg-white rounded-3xl ring-1 ring-stone-200 shadow-sm p-5" data-testid="account-addresses">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-heading text-base font-black text-stone-900 flex items-center gap-2">
+            <MapPin size={16} className="text-emerald-700" /> Saved addresses
+          </h2>
+          <button onClick={() => setShowAddrForm(!showAddrForm)} className="text-xs font-bold text-emerald-700 hover:text-emerald-900" data-testid="address-add-btn">{showAddrForm ? 'Cancel' : '+ Add new'}</button>
+        </div>
+        {showAddrForm && (
+          <form onSubmit={addAddress} className="space-y-2.5 mb-4 p-3 bg-stone-50 rounded-2xl" data-testid="address-form">
+            <div className="grid grid-cols-2 gap-2">
+              <input placeholder="Label (Home/Office)" value={newAddr.label} onChange={(e) => setNewAddr({...newAddr, label: e.target.value})} className="px-3 py-2 rounded-lg ring-1 ring-stone-200 text-sm" />
+              <input placeholder="Recipient name" value={newAddr.name} onChange={(e) => setNewAddr({...newAddr, name: e.target.value})} className="px-3 py-2 rounded-lg ring-1 ring-stone-200 text-sm" required />
+            </div>
+            <input placeholder="Phone (10 digits)" value={newAddr.phone} maxLength={10} onChange={(e) => setNewAddr({...newAddr, phone: e.target.value.replace(/\D/g, '').slice(0,10)})} className="w-full px-3 py-2 rounded-lg ring-1 ring-stone-200 text-sm" required />
+            <input placeholder="House / Building no." value={newAddr.house_number} onChange={(e) => setNewAddr({...newAddr, house_number: e.target.value})} className="w-full px-3 py-2 rounded-lg ring-1 ring-stone-200 text-sm" required />
+            <input placeholder="Area / Street" value={newAddr.area} onChange={(e) => setNewAddr({...newAddr, area: e.target.value})} className="w-full px-3 py-2 rounded-lg ring-1 ring-stone-200 text-sm" />
+            <div className="grid grid-cols-2 gap-2">
+              <input placeholder="Pincode" value={newAddr.pincode} maxLength={6} onChange={(e) => setNewAddr({...newAddr, pincode: e.target.value.replace(/\D/g, '').slice(0,6)})} className="px-3 py-2 rounded-lg ring-1 ring-stone-200 text-sm" required />
+              <input placeholder="State" value={newAddr.state} onChange={(e) => setNewAddr({...newAddr, state: e.target.value})} className="px-3 py-2 rounded-lg ring-1 ring-stone-200 text-sm" />
+            </div>
+            <label className="flex items-center gap-2 text-xs text-stone-600">
+              <input type="checkbox" checked={newAddr.is_default} onChange={(e) => setNewAddr({...newAddr, is_default: e.target.checked})} /> Set as default
+            </label>
+            {error && <p className="text-xs text-red-600">{error}</p>}
+            <button type="submit" className="w-full bg-emerald-600 text-white font-bold py-2 rounded-lg text-sm" data-testid="address-save-btn">Save address</button>
+          </form>
+        )}
+        {addresses.length === 0 ? (
+          <p className="text-xs text-stone-400 text-center py-4">No saved addresses yet. Add one for faster checkout.</p>
+        ) : (
+          <div className="space-y-2">
+            {addresses.map((a) => (
+              <div key={a.id} className="p-3 bg-stone-50 rounded-xl flex items-start justify-between gap-3" data-testid={`address-${a.id}`}>
+                <div className="flex-1 text-sm">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="font-bold text-stone-900">{a.label || 'Address'}</span>
+                    {a.is_default && <span className="text-[10px] bg-emerald-600 text-white px-1.5 py-0.5 rounded-full font-bold uppercase">Default</span>}
+                  </div>
+                  <p className="text-stone-700">{a.name} · +91 {a.phone}</p>
+                  <p className="text-stone-500 text-xs mt-0.5">{a.house_number}, {a.area}, {a.state} - {a.pincode}</p>
+                </div>
+                <button onClick={() => deleteAddress(a.id)} className="text-xs font-bold text-red-600 hover:text-red-800" data-testid={`address-delete-${a.id}`}>Delete</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <button
+        onClick={handleSignout}
+        className="w-full bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold py-2.5 rounded-xl text-sm flex items-center justify-center gap-2"
+        data-testid="profile-signout-btn"
+      >
+        <LogOut size={14} /> Sign out
+      </button>
+    </div>
+  );
+}
 
 /**
  * Email-OTP Account page:
@@ -22,6 +195,9 @@ const USER_KEY = 'cg_auth_user';
 export default function AccountPage() {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
+  const [activeTab, setActiveTab] = useState('orders'); // orders | wishlist | profile
+  const [wishlistItems, setWishlistItems] = useState([]);
+  const [wishlistLoading, setWishlistLoading] = useState(false);
 
   // OTP flow state
   const [step, setStep] = useState('email'); // 'email' | 'otp'
@@ -49,6 +225,32 @@ export default function AccountPage() {
       }
     } catch { /* ignore */ }
   }, []);
+
+  /* Load wishlist products (resolves slugs → full product data) */
+  const loadWishlist = useCallback(async () => {
+    const slugs = getWishlist();
+    if (!slugs.length) { setWishlistItems([]); return; }
+    setWishlistLoading(true);
+    try {
+      const res = await cachedGet(`${API}/api/products`);
+      const all = Array.isArray(res.data) ? res.data : (res.data?.items || []);
+      const items = slugs
+        .map((slug) => all.find((p) => p.slug === slug))
+        .filter(Boolean);
+      setWishlistItems(items);
+    } catch {
+      setWishlistItems([]);
+    } finally {
+      setWishlistLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'wishlist' && user) loadWishlist();
+    const onUpd = () => loadWishlist();
+    window.addEventListener('wishlistUpdated', onUpd);
+    return () => window.removeEventListener('wishlistUpdated', onUpd);
+  }, [activeTab, user, loadWishlist]);
 
   /* Fetch orders once logged in */
   const fetchOrders = useCallback(async (authToken) => {
@@ -306,7 +508,105 @@ export default function AccountPage() {
         <ReferralWidget user={user} />
       </div>
 
-      {/* Orders */}
+      {/* Tabs */}
+      <div className="max-w-2xl mx-auto px-4 sm:px-6 mt-4 relative">
+        <div className="bg-white rounded-2xl ring-1 ring-stone-200 shadow-sm p-1 flex gap-1">
+          {[
+            { id: 'orders', label: 'Orders', icon: Package },
+            { id: 'wishlist', label: 'Wishlist', icon: Heart },
+            { id: 'profile', label: 'Profile', icon: User },
+          ].map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setActiveTab(t.id)}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === t.id ? 'bg-emerald-700 text-white shadow-sm' : 'text-stone-600 hover:bg-stone-50'}`}
+              data-testid={`account-tab-${t.id}`}
+            >
+              <t.icon size={14} /> {t.label}
+              {t.id === 'wishlist' && wishlistItems.length > 0 && (
+                <span className="ml-1 bg-white/20 text-[10px] px-1.5 rounded-full">{wishlistItems.length}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Wishlist Tab */}
+      {activeTab === 'wishlist' && (
+        <div className="max-w-2xl mx-auto px-4 sm:px-6 mt-4 relative" data-testid="account-wishlist-tab">
+          <div className="bg-white rounded-3xl ring-1 ring-stone-200 shadow-sm overflow-hidden">
+            <div className="px-5 py-4 border-b border-stone-100 flex items-center gap-2">
+              <Heart size={16} className="text-rose-500" />
+              <h2 className="font-heading text-base font-black text-stone-900">My Wishlist</h2>
+              {wishlistItems.length > 0 && (
+                <span className="ml-auto text-xs font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full">{wishlistItems.length}</span>
+              )}
+            </div>
+            {wishlistLoading ? (
+              <div className="px-5 py-8 text-center text-sm text-stone-500 flex items-center justify-center gap-2">
+                <Loader2 size={16} className="animate-spin" /> Loading wishlist…
+              </div>
+            ) : wishlistItems.length === 0 ? (
+              <div className="px-5 py-10 text-center" data-testid="account-no-wishlist">
+                <div className="w-14 h-14 rounded-2xl bg-rose-50 mx-auto flex items-center justify-center mb-3">
+                  <Heart size={22} className="text-rose-300" />
+                </div>
+                <p className="text-sm font-bold text-stone-900 mb-1">No wishlist items yet</p>
+                <p className="text-xs text-stone-500 mb-4">Tap the heart on any product to save it for later.</p>
+                <Link to="/shop" className="inline-flex items-center gap-1.5 bg-rose-500 text-white px-4 py-2 rounded-full text-xs font-bold hover:bg-rose-600 transition-colors">
+                  Discover products <ChevronRight size={13} />
+                </Link>
+              </div>
+            ) : (
+              <ul className="divide-y divide-stone-100">
+                {wishlistItems.map((p) => (
+                  <li key={p.slug} className="px-5 py-3 flex items-center gap-3" data-testid={`wishlist-row-${p.slug}`}>
+                    <Link to={`/product/${p.slug}`} className="w-14 h-14 rounded-xl bg-stone-50 ring-1 ring-stone-200 overflow-hidden flex-shrink-0">
+                      {p.images?.[0] && <img src={p.images[0]} alt={p.short_name || p.name} className="w-full h-full object-cover" />}
+                    </Link>
+                    <div className="flex-1 min-w-0">
+                      <Link to={`/product/${p.slug}`} className="block font-semibold text-stone-900 text-sm truncate hover:text-rose-600">{p.short_name || p.name}</Link>
+                      <p className="text-xs text-stone-500 mt-0.5">
+                        <span className="font-bold text-stone-900">₹{p.prepaid_price}</span>
+                        {p.mrp > p.prepaid_price && <span className="ml-1.5 line-through">₹{p.mrp}</span>}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        // If product has shades, redirect to PDP so user can pick a shade.
+                        const hasShades = Array.isArray(p.shades) && p.shades.length > 0;
+                        if (hasShades) {
+                          window.location.href = `/product/${p.slug}`;
+                          return;
+                        }
+                        addToCart(p.slug, 1);
+                      }}
+                      className="text-[11px] bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-3 py-1.5 rounded-full"
+                      data-testid={`wishlist-add-${p.slug}`}
+                    >{Array.isArray(p.shades) && p.shades.length > 0 ? 'Pick Shade' : 'Add to Bag'}</button>
+                    <button
+                      onClick={() => { removeFromWishlist(p.slug); }}
+                      aria-label="Remove from wishlist"
+                      className="text-rose-400 hover:text-rose-600 p-1"
+                      data-testid={`wishlist-remove-${p.slug}`}
+                    >
+                      <Heart size={16} className="fill-rose-500 text-rose-500" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Profile Tab */}
+      {activeTab === 'profile' && (
+        <ProfileTab user={user} setUser={setUser} handleSignout={handleSignout} />
+      )}
+
+      {/* Orders (default tab) */}
+      {activeTab === 'orders' && (
       <div className="max-w-2xl mx-auto px-4 sm:px-6 mt-4 relative">
         <div className="bg-white rounded-3xl ring-1 ring-stone-200 shadow-sm overflow-hidden" data-testid="account-orders-card">
           <div className="px-5 py-4 border-b border-stone-100 flex items-center gap-2">
@@ -375,9 +675,57 @@ export default function AccountPage() {
                     {/* Items summary (always visible) */}
                     {Array.isArray(o.items) && o.items.length > 0 && (
                       <p className="mt-2 ml-14 text-[11px] text-stone-500 truncate">
-                        {o.items.map((it) => `${it.name || it.slug}${it.quantity > 1 ? ` ×${it.quantity}` : ''}`).join(' · ')}
+                        {o.items.map((it) => {
+                          const shadeLabel = it.shade_name || it.shade_label || (it.shade_id ? ` · ${it.shade_id}` : '');
+                          return `${it.name || it.slug}${shadeLabel ? ` (${shadeLabel.replace(/^\s*·\s*/, '')})` : ''}${it.quantity > 1 ? ` ×${it.quantity}` : ''}`;
+                        }).join(' · ')}
                       </p>
                     )}
+
+                    {/* Reorder + Invoice quick actions */}
+                    <div className="mt-2 ml-14 flex items-center gap-3">
+                      {Array.isArray(o.items) && o.items.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            // Reorder: push all line items into the cart and route to /cart
+                            try {
+                              const raw = localStorage.getItem('cg_cart') || '{"items":[]}';
+                              const cart = JSON.parse(raw);
+                              for (const it of o.items) {
+                                const slug = it.slug || it.product_slug;
+                                if (!slug) continue;
+                                const existing = (cart.items || []).find(c => (c.product_slug || c.slug) === slug && (c.shade_id || null) === (it.shade_id || null));
+                                if (existing) existing.quantity = (existing.quantity || 1) + (it.quantity || 1);
+                                else (cart.items = cart.items || []).push({ product_slug: slug, quantity: it.quantity || 1, shade_id: it.shade_id });
+                              }
+                              localStorage.setItem('cg_cart', JSON.stringify(cart));
+                              window.dispatchEvent(new Event('cartUpdated'));
+                              window.location.href = '/cart';
+                            } catch (e) { console.error(e); }
+                          }}
+                          className="text-[11px] font-bold text-emerald-700 hover:text-emerald-900"
+                          data-testid={`account-reorder-${o.order_id}`}
+                        >
+                          Reorder
+                        </button>
+                      )}
+                      <a
+                        href={`${API}/api/admin/orders/${o.order_id}/invoice`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[11px] font-bold text-stone-500 hover:text-stone-700"
+                        data-testid={`account-invoice-${o.order_id}`}
+                        onClick={(e) => {
+                          // The invoice endpoint requires admin token; for customers, open the printable
+                          // route on the success page instead.
+                          e.preventDefault();
+                          window.open(`/order-success/${o.order_id}?print=1`, '_blank');
+                        }}
+                      >
+                        Invoice
+                      </a>
+                    </div>
 
                     {/* Inline tracking details (expanded) */}
                     {expanded && (
@@ -487,6 +835,7 @@ export default function AccountPage() {
           </Link>
         </div>
       </div>
+      )}
     </div>
   );
 }

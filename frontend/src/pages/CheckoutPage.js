@@ -38,6 +38,42 @@ function CheckoutPage() {
   const [formData, setFormData] = useState({ name: '', phone: '', email: '', house_number: '', area: '', city: '', pincode: '', state: '' });
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
+  const [savedAddresses, setSavedAddresses] = useState([]);
+  const [selectedAddressId, setSelectedAddressId] = useState('');
+
+  // Load saved addresses if customer is logged in
+  useEffect(() => {
+    const token = (typeof window !== 'undefined') ? localStorage.getItem('cg_auth_token') : null;
+    if (!token) return;
+    axios.get(`${API}/api/customer/addresses`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => {
+        const list = r.data?.addresses || [];
+        setSavedAddresses(list);
+        // Auto-fill from default address if formData is empty
+        const def = list.find(a => a.is_default) || list[0];
+        if (def && !formData.name) {
+          setSelectedAddressId(def.id);
+          setFormData({
+            name: def.name || '', phone: def.phone || '', email: formData.email || '',
+            house_number: def.house_number || '', area: def.area || '',
+            city: def.city || '', pincode: def.pincode || '', state: def.state || '',
+          });
+        }
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const applyAddress = (id) => {
+    const a = savedAddresses.find(x => x.id === id);
+    if (!a) return;
+    setSelectedAddressId(id);
+    setFormData({
+      name: a.name || '', phone: a.phone || '', email: formData.email || '',
+      house_number: a.house_number || '', area: a.area || '',
+      city: a.city || '', pincode: a.pincode || '', state: a.state || '',
+    });
+  };
 
   useEffect(() => {
     trackAction('view_checkout', { step: 'checkout_started' });
@@ -218,6 +254,36 @@ function CheckoutPage() {
           <div className="lg:col-span-3 space-y-4">
             <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
               <h2 className="font-bold text-gray-900 text-sm mb-4 flex items-center gap-2"><MapPin size={16} className="text-green-600" /> Delivery Address</h2>
+
+              {/* Saved addresses selector (logged-in customers) */}
+              {savedAddresses.length > 0 && (
+                <div className="mb-4 -mt-2" data-testid="checkout-saved-addresses">
+                  <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Use a saved address</label>
+                  <div className="flex flex-wrap gap-2">
+                    {savedAddresses.map((a) => (
+                      <button
+                        key={a.id}
+                        type="button"
+                        onClick={() => applyAddress(a.id)}
+                        className={`px-3 py-2 rounded-xl text-xs font-bold transition-all ${selectedAddressId === a.id ? 'bg-green-600 text-white ring-2 ring-green-300' : 'bg-stone-50 text-stone-700 ring-1 ring-stone-200 hover:bg-stone-100'}`}
+                        data-testid={`checkout-saved-addr-${a.id}`}
+                      >
+                        {a.label || 'Address'} · {a.pincode}
+                        {a.is_default && <span className="ml-1 opacity-70">★</span>}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedAddressId(''); setFormData({ name: '', phone: '', email: formData.email, house_number: '', area: '', city: '', pincode: '', state: '' }); }}
+                      className="px-3 py-2 rounded-xl text-xs font-bold bg-white ring-1 ring-stone-200 text-stone-500 hover:bg-stone-50"
+                      data-testid="checkout-addr-new"
+                    >
+                      + New
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Field label="Full Name" field="name" placeholder="Your full name" value={formData.name} error={errors.name} onChange={handleFieldChange} />
                 <Field label="Phone" field="phone" type="tel" inputMode="tel" placeholder="10-digit number" value={formData.phone} error={errors.phone} onChange={handleFieldChange} />
@@ -228,6 +294,17 @@ function CheckoutPage() {
                 <Field label="City" field="city" placeholder="City / Locality" value={formData.city} error={errors.city} onChange={handleFieldChange} />
                 <Field label="State" field="state" placeholder="State" span value={formData.state} error={errors.state} onChange={handleFieldChange} />
               </div>
+
+              {/* Inline ETA after pincode */}
+              {formData.pincode && /^\d{6}$/.test(formData.pincode) && formData.city && (
+                <div className="mt-3 bg-green-50 border border-green-200 rounded-xl p-3 flex items-center gap-2.5" data-testid="checkout-eta-pill">
+                  <Truck size={15} className="text-green-700 flex-shrink-0" />
+                  <p className="text-xs text-green-900">
+                    Delivers to <strong>{formData.city}{formData.state ? `, ${formData.state}` : ''}</strong> in{' '}
+                    <strong className="text-green-700">{paymentMethod === 'prepaid' ? '1–3 business days' : '4–6 business days'}</strong>
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Payment Method */}

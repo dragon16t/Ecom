@@ -14,21 +14,70 @@ function AdminOrders() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterPayment, setFilterPayment] = useState('all');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [updatingStatus, setUpdatingStatus] = useState(null);
   const [editingEmail, setEditingEmail] = useState(false);
   const [newEmail, setNewEmail] = useState('');
+  const [exporting, setExporting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [orderNotes, setOrderNotes] = useState([]);
+  const [orderAudit, setOrderAudit] = useState([]);
+  const [newNote, setNewNote] = useState('');
+  const [notesLoading, setNotesLoading] = useState(false);
   const navigate = useNavigate();
   const adminToken = getAdminToken();
+
+  // Load notes + audit when order detail opens
+  useEffect(() => {
+    if (!selectedOrder) { setOrderNotes([]); setOrderAudit([]); return; }
+    const oid = selectedOrder.order_id;
+    setNotesLoading(true);
+    Promise.all([
+      axios.get(`${API}/admin/orders/${oid}/notes`, { headers: { 'X-Admin-Token': adminToken } }).then(r => r.data?.notes || []).catch(() => []),
+      axios.get(`${API}/admin/orders/${oid}/audit-log`, { headers: { 'X-Admin-Token': adminToken } }).then(r => r.data?.events || []).catch(() => []),
+    ]).then(([n, a]) => { setOrderNotes(n); setOrderAudit(a); setNotesLoading(false); });
+  }, [selectedOrder, adminToken]);
+
+  const addOrderNote = async () => {
+    if (!newNote.trim() || !selectedOrder) return;
+    try {
+      const r = await axios.post(`${API}/admin/orders/${selectedOrder.order_id}/notes`,
+        { note: newNote.trim(), author: 'admin' },
+        { headers: { 'X-Admin-Token': adminToken } }
+      );
+      setOrderNotes((prev) => [...prev, r.data.note]);
+      setNewNote('');
+    } catch (e) { alert('Failed to add note'); }
+  };
+
+  const openInvoice = (orderId) => {
+    // Backend invoice route requires X-Admin-Token header — fetch + display in a new window.
+    fetch(`${API}/admin/orders/${orderId}/invoice`, { headers: { 'X-Admin-Token': adminToken } })
+      .then(r => r.text())
+      .then(html => {
+        const w = window.open('', '_blank');
+        if (w) { w.document.write(html); w.document.close(); }
+      })
+      .catch(() => alert('Failed to open invoice'));
+  };
 
   useEffect(() => {
     if (!adminToken) return;
     fetchOrders();
-  }, [adminToken]);
+  }, [adminToken, dateFrom, dateTo, filterStatus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchOrders = async () => {
+    setLoading(true);
     try {
-      const res = await axios.get(`${API}/admin/orders`, {
+      const params = new URLSearchParams();
+      if (dateFrom) params.set('date_from', dateFrom);
+      if (dateTo) params.set('date_to', dateTo);
+      if (filterStatus && filterStatus !== 'all') params.set('status', filterStatus);
+      params.set('limit', '500');
+      const res = await axios.get(`${API}/admin/orders?${params.toString()}`, {
         headers: { 'X-Admin-Token': adminToken }
       });
       setOrders(res.data);
@@ -40,6 +89,78 @@ function AdminOrders() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Quick date presets
+  const setDatePreset = (preset) => {
+    const today = new Date();
+    const fmt = (d) => d.toISOString().slice(0, 10);
+    if (preset === 'today') {
+      setDateFrom(fmt(today));
+      setDateTo(fmt(today));
+    } else if (preset === 'yesterday') {
+      const y = new Date(today); y.setDate(y.getDate() - 1);
+      setDateFrom(fmt(y)); setDateTo(fmt(y));
+    } else if (preset === 'week') {
+      const w = new Date(today); w.setDate(w.getDate() - 6);
+      setDateFrom(fmt(w)); setDateTo(fmt(today));
+    } else if (preset === 'month') {
+      const m = new Date(today); m.setDate(m.getDate() - 29);
+      setDateFrom(fmt(m)); setDateTo(fmt(today));
+    } else if (preset === 'clear') {
+      setDateFrom(''); setDateTo('');
+    }
+  };
+
+  const exportOrders = async (fmt = 'csv') => {
+    setExporting(true);
+    try {
+      const params = new URLSearchParams();
+      if (dateFrom) params.set('date_from', dateFrom);
+      if (dateTo) params.set('date_to', dateTo);
+      if (filterStatus && filterStatus !== 'all') params.set('status', filterStatus);
+      if (filterPayment && filterPayment !== 'all') params.set('payment_method', filterPayment);
+      params.set('fmt', fmt);
+      const url = `${API}/admin/orders/export?${params.toString()}`;
+      const res = await axios.get(url, {
+        headers: { 'X-Admin-Token': adminToken },
+        responseType: 'blob',
+      });
+      const blob = new Blob([res.data], { type: fmt === 'xlsx' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'text/csv' });
+      const dl = document.createElement('a');
+      dl.href = URL.createObjectURL(blob);
+      const stamp = new Date().toISOString().slice(0, 10);
+      dl.download = `celesta-orders-${dateFrom || 'all'}_to_${dateTo || stamp}.${fmt}`;
+      document.body.appendChild(dl);
+      dl.click();
+      dl.remove();
+    } catch (err) {
+      alert('Export failed: ' + (err.response?.data?.detail || err.message));
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const toggleSelect = (orderId) => {
+    setSelectedIds((prev) => prev.includes(orderId) ? prev.filter(i => i !== orderId) : [...prev, orderId]);
+  };
+  const selectAll = () => setSelectedIds(filteredOrders.map(o => o.order_id));
+  const clearSelection = () => setSelectedIds([]);
+  const bulkUpdateStatus = async (newStatus) => {
+    if (!selectedIds.length) return alert('Select orders first');
+    if (!window.confirm(`Mark ${selectedIds.length} orders as "${newStatus}"?`)) return;
+    setUpdatingStatus('bulk');
+    let ok = 0; let fail = 0;
+    for (const id of selectedIds) {
+      try {
+        await axios.put(`${API}/orders/${id}/status`, { status: newStatus }, { headers: { 'X-Admin-Token': adminToken } });
+        ok++;
+      } catch { fail++; }
+    }
+    setUpdatingStatus(null);
+    clearSelection();
+    fetchOrders();
+    alert(`Updated ${ok} orders${fail ? `, failed ${fail}` : ''}`);
   };
 
   const createShipment = async (orderId) => {
@@ -190,6 +311,65 @@ function AdminOrders() {
           </div>
         </div>
 
+        {/* Date range + Export toolbar */}
+        <div className="bg-white rounded-xl border border-gray-100 p-3 mb-4">
+          <div className="flex flex-wrap items-end gap-2">
+            <div>
+              <label className="text-[10px] font-bold text-gray-500 uppercase block mb-1">From</label>
+              <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm" data-testid="orders-date-from" />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-gray-500 uppercase block mb-1">To</label>
+              <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm" data-testid="orders-date-to" />
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              <button onClick={() => setDatePreset('today')} className="text-xs font-semibold px-2.5 py-1.5 bg-green-50 hover:bg-green-100 text-green-700 rounded-md" data-testid="preset-today">Today</button>
+              <button onClick={() => setDatePreset('yesterday')} className="text-xs font-semibold px-2.5 py-1.5 bg-stone-50 hover:bg-stone-100 text-gray-700 rounded-md">Yesterday</button>
+              <button onClick={() => setDatePreset('week')} className="text-xs font-semibold px-2.5 py-1.5 bg-stone-50 hover:bg-stone-100 text-gray-700 rounded-md">Last 7d</button>
+              <button onClick={() => setDatePreset('month')} className="text-xs font-semibold px-2.5 py-1.5 bg-stone-50 hover:bg-stone-100 text-gray-700 rounded-md">Last 30d</button>
+              <button onClick={() => setDatePreset('clear')} className="text-xs font-semibold px-2.5 py-1.5 bg-stone-50 hover:bg-stone-100 text-gray-500 rounded-md">All time</button>
+            </div>
+            <div className="flex-1" />
+            <div className="flex gap-2">
+              <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm" data-testid="status-filter">
+                <option value="all">All status</option>
+                <option value="confirmed">Confirmed</option>
+                <option value="processing">Processing</option>
+                <option value="shipped">Shipped</option>
+                <option value="delivered">Delivered</option>
+                <option value="cancelled">Cancelled</option>
+                <option value="returned">Returned</option>
+              </select>
+              <button
+                onClick={() => exportOrders('csv')}
+                disabled={exporting}
+                className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-stone-300 text-white text-sm font-bold px-3 py-1.5 rounded-lg"
+                data-testid="export-csv-btn"
+              >
+                <Download size={14} /> {exporting ? 'Exporting…' : 'CSV'}
+              </button>
+              <button
+                onClick={() => exportOrders('xlsx')}
+                disabled={exporting}
+                className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-stone-300 text-white text-sm font-bold px-3 py-1.5 rounded-lg"
+                data-testid="export-xlsx-btn"
+              >
+                <Download size={14} /> XLSX
+              </button>
+            </div>
+          </div>
+          {selectedIds.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-stone-100 flex items-center gap-2 flex-wrap" data-testid="bulk-actions-bar">
+              <span className="text-xs font-bold text-gray-700">{selectedIds.length} selected</span>
+              <button onClick={() => bulkUpdateStatus('processing')} className="text-xs font-semibold px-2.5 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-md">Mark Processing</button>
+              <button onClick={() => bulkUpdateStatus('shipped')} className="text-xs font-semibold px-2.5 py-1.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-md">Mark Shipped</button>
+              <button onClick={() => bulkUpdateStatus('delivered')} className="text-xs font-semibold px-2.5 py-1.5 bg-green-50 text-green-700 hover:bg-green-100 rounded-md">Mark Delivered</button>
+              <button onClick={() => bulkUpdateStatus('cancelled')} className="text-xs font-semibold px-2.5 py-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-md">Cancel</button>
+              <button onClick={clearSelection} className="text-xs font-semibold px-2.5 py-1.5 text-gray-500 hover:underline">Clear</button>
+            </div>
+          )}
+        </div>
+
         {/* Search & Filter */}
         <div className="flex flex-col sm:flex-row gap-3 mb-6">
           <div className="relative flex-1">
@@ -246,13 +426,33 @@ function AdminOrders() {
           </div>
         ) : (
           <div className="space-y-4">
+            {/* Select-all toolbar */}
+            <div className="bg-white rounded-xl border border-gray-100 px-4 py-2 flex items-center gap-3 text-xs">
+              <input
+                type="checkbox"
+                checked={selectedIds.length === filteredOrders.length && filteredOrders.length > 0}
+                onChange={() => selectedIds.length === filteredOrders.length ? clearSelection() : selectAll()}
+                className="w-4 h-4 rounded border-gray-300"
+                data-testid="select-all"
+              />
+              <span className="text-gray-600">Select all on page ({filteredOrders.length})</span>
+            </div>
             {filteredOrders.map((order) => (
               <div 
                 key={order.order_id} 
-                className="bg-white rounded-2xl p-5 border border-gray-100 hover:shadow-md transition-shadow cursor-pointer"
-                onClick={() => setSelectedOrder(order)}
+                className="bg-white rounded-2xl p-5 border border-gray-100 hover:shadow-md transition-shadow"
                 data-testid={`order-item-${order.order_id}`}
               >
+                <div className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.includes(order.order_id)}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={() => toggleSelect(order.order_id)}
+                    className="w-4 h-4 rounded border-gray-300 mt-1.5"
+                    data-testid={`select-${order.order_id}`}
+                  />
+                  <div className="flex-1 cursor-pointer" onClick={() => setSelectedOrder(order)}>
                 <div className="flex items-start justify-between mb-3">
                   <div>
                     <div className="flex items-center gap-2 mb-1">
@@ -309,6 +509,8 @@ function AdminOrders() {
                         {updatingStatus === order.order_id ? '...' : 'Send'}
                       </button>
                     )}
+                  </div>
+                </div>
                   </div>
                 </div>
               </div>
@@ -445,6 +647,13 @@ function AdminOrders() {
               <div className="p-4 bg-gradient-to-r from-blue-50 to-green-50 rounded-xl">
                 <p className="text-gray-700 font-medium mb-3">Update Status:</p>
                 <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => openInvoice(selectedOrder.order_id)}
+                    className="flex items-center gap-2 px-4 py-2 bg-stone-700 text-white rounded-lg font-medium hover:bg-stone-800 transition-colors"
+                    data-testid="admin-print-invoice-btn"
+                  >
+                    🧾 Print Invoice
+                  </button>
                   {selectedOrder.status !== 'shipped' && selectedOrder.status !== 'delivered' && (
                     <button
                       onClick={() => updateOrderStatus(selectedOrder.order_id, 'shipped')}
@@ -487,7 +696,63 @@ function AdminOrders() {
                   </p>
                 )}
               </div>
-              
+
+              {/* Internal Notes (admin-only, audit-tracked) */}
+              <div className="p-4 bg-amber-50/60 ring-1 ring-amber-100 rounded-xl" data-testid="admin-notes-block">
+                <p className="text-gray-800 font-semibold text-sm mb-2 flex items-center gap-2">📝 Internal Notes <span className="text-[10px] font-normal text-stone-500">(visible to staff only)</span></p>
+                {notesLoading ? (
+                  <p className="text-xs text-stone-400">Loading…</p>
+                ) : orderNotes.length === 0 ? (
+                  <p className="text-xs text-stone-400 italic mb-3">No notes yet.</p>
+                ) : (
+                  <ul className="space-y-2 mb-3" data-testid="admin-notes-list">
+                    {orderNotes.map((n, idx) => (
+                      <li key={idx} className="bg-white rounded-lg p-2.5 text-xs text-stone-700 ring-1 ring-stone-100" data-testid={`admin-note-${idx}`}>
+                        <p>{n.note}</p>
+                        <p className="text-[10px] text-stone-400 mt-1">{n.author || 'admin'} · {n.created_at ? new Date(n.created_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}</p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <div className="flex gap-2">
+                  <input
+                    type="text" value={newNote}
+                    onChange={(e) => setNewNote(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && (addOrderNote(), e.preventDefault())}
+                    placeholder="Add an internal note (RTO reason, WhatsApp follow-up, etc.)"
+                    className="flex-1 px-3 py-2 text-xs rounded-lg ring-1 ring-stone-200 focus:ring-2 focus:ring-amber-500 outline-none"
+                    data-testid="admin-note-input"
+                  />
+                  <button onClick={addOrderNote} disabled={!newNote.trim()} className="px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 disabled:bg-stone-300 text-white text-xs font-bold" data-testid="admin-note-add-btn">
+                    Add
+                  </button>
+                </div>
+              </div>
+
+              {/* Audit Log (admin events history) */}
+              <details className="p-4 bg-stone-50 rounded-xl" data-testid="admin-audit-block">
+                <summary className="text-gray-800 font-semibold text-sm cursor-pointer flex items-center gap-2 select-none">
+                  📜 Audit Log <span className="text-[10px] font-normal text-stone-500">({orderAudit.length} event{orderAudit.length !== 1 ? 's' : ''})</span>
+                </summary>
+                {orderAudit.length === 0 ? (
+                  <p className="text-xs text-stone-400 italic mt-2">No events recorded.</p>
+                ) : (
+                  <ol className="mt-2 space-y-1.5 max-h-48 overflow-y-auto pr-2" data-testid="admin-audit-list">
+                    {orderAudit.map((ev, idx) => (
+                      <li key={idx} className="text-[11px] text-stone-600 flex items-start gap-2 border-b border-stone-100 pb-1.5 last:border-b-0">
+                        <span className="font-bold text-stone-500 whitespace-nowrap">{ev.created_at ? new Date(ev.created_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}</span>
+                        <span>
+                          <span className="font-bold text-stone-700">{ev.event}</span>
+                          {ev.old_status && <span> · {ev.old_status} → {ev.new_status}</span>}
+                          {ev.note && <span> · "{ev.note.slice(0, 60)}{ev.note.length > 60 ? '…' : ''}"</span>}
+                          {ev.author && <span className="text-stone-400"> by {ev.author}</span>}
+                        </span>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </details>
+
               <div className="p-4 bg-gray-50 rounded-xl">
                 <p className="text-gray-600 mb-2">Customer</p>
                 <p className="font-semibold">{selectedOrder.name}</p>

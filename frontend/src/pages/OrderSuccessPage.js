@@ -110,6 +110,47 @@ function OrderSuccessPage() {
 
   const referralLink = order?.referral_link || `https://celestaglow.com?ref=${order?.referral_code || ''}`;
 
+  // Niche-aware continue shopping — preserves the niche the customer came from.
+  const continueShoppingTarget = (() => {
+    if (!Array.isArray(order?.items)) return '/';
+    const niches = new Set(order.items.map(it => it.niche).filter(Boolean));
+    if (niches.size === 1) {
+      const n = [...niches][0];
+      if (n === 'skincare') return '/skincare';
+      if (n === 'cosmetics') return '/cosmetics';
+    }
+    return '/';
+  })();
+
+  const downloadInvoice = () => {
+    if (!order) return;
+    const w = window.open('', '_blank');
+    if (!w) return;
+    const itemsHtml = (order.items || []).map(it =>
+      `<tr><td>${it.name || it.slug || 'Product'} × ${it.quantity || 1}</td><td style="text-align:right">₹${((it.price || 0) * (it.quantity || 1))}</td></tr>`
+    ).join('');
+    w.document.write(`<html><head><title>Invoice ${order.order_id}</title>
+      <style>
+        body{font-family:Arial,sans-serif;max-width:720px;margin:40px auto;padding:0 20px;color:#111;}
+        h1{color:#047857;margin-bottom:4px;}
+        .meta{color:#6b7280;font-size:13px;margin-bottom:30px;}
+        table{width:100%;border-collapse:collapse;margin:20px 0;}
+        th,td{padding:10px;border-bottom:1px solid #e5e7eb;text-align:left;font-size:14px;}
+        .total{font-weight:bold;font-size:16px;color:#047857;}
+        .footer{margin-top:40px;font-size:12px;color:#6b7280;text-align:center;}
+      </style></head><body>
+      <h1>Celesta Glow</h1>
+      <div class="meta">Tax Invoice · Order ${order.order_id} · ${new Date(order.created_at || Date.now()).toLocaleDateString('en-IN')}</div>
+      <div><strong>Bill to:</strong><br/>${order.name}<br/>+91 ${order.phone}<br/>${order.house_number}, ${order.area}<br/>${order.state} - ${order.pincode}</div>
+      <table><thead><tr><th>Item</th><th style="text-align:right">Amount</th></tr></thead>
+      <tbody>${itemsHtml || `<tr><td>Celesta Glow Products</td><td style="text-align:right">₹${order.amount}</td></tr>`}
+      <tr><td class="total">Total</td><td class="total" style="text-align:right">₹${order.amount}</td></tr>
+      <tr><td>Payment</td><td style="text-align:right">${order.payment_method}</td></tr></tbody></table>
+      <div class="footer">Thank you for choosing Celesta Glow · support@celestaglow.com · +91 9446125745</div>
+      <script>window.print();</script></body></html>`);
+    w.document.close();
+  };
+
   const copyReferralLink = () => {
     navigator.clipboard.writeText(referralLink);
     setCopied(true);
@@ -347,6 +388,26 @@ function OrderSuccessPage() {
         </p>
       </div>
 
+      {/* Primary CTAs — Track Order + Download Invoice */}
+      <div className="grid grid-cols-2 gap-3 mb-3">
+        <button
+          onClick={() => navigate(`/track-order?orderId=${order.order_id}`)}
+          className="flex items-center justify-center gap-2 bg-emerald-600 text-white font-semibold py-3.5 rounded-full hover:bg-emerald-700 transition-colors"
+          data-testid="track-order-btn"
+        >
+          <Truck size={18} />
+          Track Order
+        </button>
+        <button
+          onClick={downloadInvoice}
+          className="flex items-center justify-center gap-2 bg-white text-emerald-700 ring-1 ring-emerald-200 font-semibold py-3.5 rounded-full hover:bg-emerald-50 transition-colors"
+          data-testid="download-invoice-btn"
+        >
+          <Package size={18} />
+          Invoice
+        </button>
+      </div>
+
       {/* WhatsApp Support */}
       <button
         onClick={contactWhatsApp}
@@ -357,10 +418,10 @@ function OrderSuccessPage() {
         Contact Us on WhatsApp
       </button>
 
-      {/* Continue Shopping Button */}
+      {/* Continue Shopping Button — niche-aware, brand green */}
       <button
-        onClick={() => navigate('/')}
-        className="w-full bg-gray-900 text-white font-semibold py-4 rounded-full"
+        onClick={() => navigate(continueShoppingTarget)}
+        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-4 rounded-full transition-colors"
         data-testid="continue-shopping-button"
       >
         Continue Shopping

@@ -179,13 +179,20 @@ def _build_random_review(tag: Optional[str] = None) -> dict:
 
 @router.get("/reviews")
 async def list_reviews(limit: int = Query(40, ge=1, le=200)):
-    """Return active reviews for the public carousel (homepage / product / cart)."""
-    docs = await db.reviews.find({}, {"_id": 0}).sort("created_at", -1).to_list(limit)
+    """Return APPROVED reviews for the public carousel (homepage / product / cart).
+    Reviews without an explicit status are treated as approved (backward compat)."""
+    docs = await db.reviews.find(
+        {"$or": [{"status": "approved"}, {"status": {"$exists": False}}]},
+        {"_id": 0}
+    ).sort([("featured", -1), ("created_at", -1)]).to_list(limit)
     if not docs:
         # On a fresh database, lazily seed 30 randomized reviews so the carousel never looks empty.
-        seeded = [_build_random_review() for _ in range(30)]
+        seeded = [{**_build_random_review(), "status": "approved"} for _ in range(30)]
         await db.reviews.insert_many(seeded)
-        docs = await db.reviews.find({}, {"_id": 0}).sort("created_at", -1).to_list(limit)
+        docs = await db.reviews.find(
+            {"$or": [{"status": "approved"}, {"status": {"$exists": False}}]},
+            {"_id": 0}
+        ).sort([("featured", -1), ("created_at", -1)]).to_list(limit)
     return docs
 
 
@@ -205,6 +212,9 @@ async def admin_create_review(data: ReviewCreate, x_admin_token: str = Header(No
     doc["id"] = secrets.token_hex(8)
     doc["verified"] = True
     doc["created_at"] = datetime.now(timezone.utc).isoformat()
+    doc["status"] = "approved"  # admin-created reviews bypass moderation
+    doc["featured"] = False
+    doc["reply"] = ""
     await db.reviews.insert_one(doc)
     doc.pop("_id", None)
     return doc
@@ -218,7 +228,7 @@ class ReviewGenerate(BaseModel):
 @router.post("/admin/reviews/generate")
 async def admin_generate_reviews(payload: ReviewGenerate, x_admin_token: str = Header(None, alias="X-Admin-Token")):
     _verify_admin(x_admin_token)
-    docs = [_build_random_review(payload.tag) for _ in range(payload.count)]
+    docs = [{**_build_random_review(payload.tag), "status": "approved"} for _ in range(payload.count)]
     await db.reviews.insert_many(docs)
     return {"success": True, "inserted": len(docs)}
 
@@ -236,3 +246,105 @@ async def admin_clear_reviews(x_admin_token: str = Header(None, alias="X-Admin-T
     _verify_admin(x_admin_token)
     res = await db.reviews.delete_many({})
     return {"success": True, "deleted": res.deleted_count}
+
+
+class ReviewModerate(BaseModel):
+    status: Optional[str] = None  # "pending" | "approved" | "rejected"
+    featured: Optional[bool] = None  # pin to top of carousel when True
+    reply: Optional[str] = None  # admin reply shown under the review
+
+
+@router.patch("/admin/reviews/{review_id}")
+async def admin_moderate_review(review_id: str, data: ReviewModerate, x_admin_token: str = Header(None, alias="X-Admin-Token")):
+    """Moderate a single review — change status, toggle featured, set admin reply."""
+    _verify_admin(x_admin_token)
+    update = {k: v for k, v in data.model_dump().items() if v is not None}
+    if not update:
+        return {"success": True, "modified": 0}
+    if "status" in update and update["status"] not in ("pending", "approved", "rejected"):
+        raise HTTPException(status_code=400, detail="Invalid status")
+    update["moderated_at"] = datetime.now(timezone.utc).isoformat()
+    res = await db.reviews.update_one({"id": review_id}, {"$set": update})
+    return {"success": True, "modified": res.modified_count}
+
+
+@router.post("/admin/reviews/bulk-status")
+async def admin_bulk_status(payload: dict, x_admin_token: str = Header(None, alias="X-Admin-Token")):
+    """Bulk approve/reject by id list. Payload: {ids: [...], status: 'approved'|'rejected'|'pending'}"""
+    _verify_admin(x_admin_token)
+    ids = payload.get("ids") or []
+    status = payload.get("status")
+    if status not in ("pending", "approved", "rejected"):
+        raise HTTPException(status_code=400, detail="Invalid status")
+    if not ids:
+        return {"success": True, "modified": 0}
+    res = await db.reviews.update_many({"id": {"$in": ids}}, {"$set": {"status": status, "moderated_at": datetime.now(timezone.utc).isoformat()}})
+    return {"success": True, "modified": res.modified_count}
+
+
+@router.post("/admin/reviews/{review_id}/ai-moderate")
+async def admin_ai_moderate(review_id: str, x_admin_token: str = Header(None, alias="X-Admin-Token")):
+    """AI-powered review moderation. Uses Emergent LLM (gpt-4o-mini) to flag spam, profanity, fake reviews.
+    Returns a recommendation (approve|reject|flag) + reason. Does NOT auto-apply; admin reviews the suggestion.
+    """
+    _verify_admin(x_admin_token)
+    r = await db.reviews.find_one({"id": review_id})
+    if not r:
+        raise HTTPException(status_code=404, detail="Review not found")
+
+    body = r.get("body") or r.get("text") or ""
+    name = r.get("name", "")
+    rating = r.get("rating", 0)
+
+    # Heuristic fallback (works without LLM)
+    profanity_words = ["fuck", "shit", "damn", "bitch", "ass", "fake", "scam", "fraud"]
+    is_profane = any(w in body.lower() for w in profanity_words)
+    is_short = len(body.strip()) < 15
+    is_caps_spam = body.isupper() and len(body) > 20
+    has_url = "http://" in body or "https://" in body or ".com" in body
+
+    api_key = os.environ.get("EMERGENT_LLM_KEY")
+    if api_key:
+        try:
+            from emergentintegrations.llm.chat import LlmChat, UserMessage
+            prompt = (
+                f"Customer review for a cosmetics product:\n"
+                f"Name: {name}\nRating: {rating}/5\nReview: \"{body}\"\n\n"
+                f"Classify as: APPROVE (genuine, helpful), REJECT (spam, profanity, fake), or FLAG (suspicious, needs human review).\n"
+                f"Respond in JSON ONLY: {{\"decision\":\"approve|reject|flag\",\"reason\":\"one sentence\",\"sentiment\":\"positive|negative|neutral\"}}"
+            )
+            import uuid as _uuid
+            chat = LlmChat(
+                api_key=api_key,
+                session_id=f"rev-mod-{_uuid.uuid4().hex[:8]}",
+                system_message="You are a cosmetics product review moderator. Output strict JSON only.",
+            ).with_model("openai", "gpt-4o-mini")
+            resp = await chat.send_message(UserMessage(text=prompt))
+            import re as _re, json as _json
+            m = _re.search(r"\{.*\}", resp, _re.DOTALL)
+            if m:
+                parsed = _json.loads(m.group(0))
+                return {
+                    "review_id": review_id,
+                    "decision": parsed.get("decision", "flag"),
+                    "reason": parsed.get("reason", ""),
+                    "sentiment": parsed.get("sentiment", "neutral"),
+                    "source": "ai",
+                }
+        except Exception:
+            pass
+
+    # Fallback
+    if is_profane or has_url:
+        decision, reason = "reject", "Contains profanity or URL spam"
+    elif is_short or is_caps_spam:
+        decision, reason = "flag", "Too short or all-caps shouting"
+    else:
+        decision, reason = "approve", "Looks genuine"
+    return {
+        "review_id": review_id,
+        "decision": decision,
+        "reason": reason,
+        "sentiment": "positive" if rating >= 4 else "negative" if rating <= 2 else "neutral",
+        "source": "heuristic",
+    }

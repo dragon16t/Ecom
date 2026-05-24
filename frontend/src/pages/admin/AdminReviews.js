@@ -31,6 +31,20 @@ export default function AdminReviews() {
 
   const [form, setForm] = useState({ name: '', location: '', rating: 5, body: '', tag: 'product' });
   const [formErr, setFormErr] = useState('');
+  const [aiBusy, setAiBusy] = useState(null); // review id currently being AI-checked
+  const [aiSuggestions, setAiSuggestions] = useState({}); // { reviewId: { decision, reason, source } }
+
+  const aiModerate = async (id) => {
+    setAiBusy(id);
+    try {
+      const r = await axios.post(`${API}/admin/reviews/${id}/ai-moderate`, {}, { headers });
+      setAiSuggestions((p) => ({ ...p, [id]: r.data }));
+    } catch (e) {
+      alert(e.response?.data?.detail || 'AI moderation failed');
+    } finally {
+      setAiBusy(null);
+    }
+  };
 
   useEffect(() => {
     if (!adminToken) navigate('/admin');
@@ -70,6 +84,22 @@ export default function AdminReviews() {
     } catch (e) {
       alert(e.response?.data?.detail || 'Delete failed');
     }
+  };
+
+  const moderate = async (id, patch) => {
+    try {
+      await axios.patch(`${API}/admin/reviews/${id}`, patch, { headers });
+      setReviews(rs => rs.map(r => r.id === id ? { ...r, ...patch, moderated_at: new Date().toISOString() } : r));
+    } catch (e) {
+      alert(e.response?.data?.detail || 'Update failed');
+    }
+  };
+
+  const setReply = async (id) => {
+    const existing = reviews.find(r => r.id === id)?.reply || '';
+    const reply = window.prompt('Admin reply (shown beneath the review). Leave empty to clear.', existing);
+    if (reply === null) return;
+    await moderate(id, { reply });
   };
 
   const wipeAll = async () => {
@@ -266,15 +296,29 @@ export default function AdminReviews() {
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 p-5">
               {filtered.map(r => {
                 const Icon = TAG_ICON[r.tag] || Sparkles;
+                const status = r.status || 'approved';
+                const statusColor = status === 'approved' ? 'bg-emerald-100 text-emerald-700' : status === 'rejected' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700';
                 return (
-                  <div key={r.id} className="bg-stone-50/60 rounded-2xl border border-stone-200 p-4 relative" data-testid={`admin-review-${r.id}`}>
-                    <button onClick={() => remove(r.id)} className="absolute top-3 right-3 p-1.5 rounded-lg text-stone-400 hover:bg-red-50 hover:text-red-600" data-testid={`delete-review-${r.id}`}>
-                      <Trash2 size={14} />
-                    </button>
+                  <div key={r.id} className={`bg-stone-50/60 rounded-2xl border p-4 relative ${r.featured ? 'border-amber-300 ring-2 ring-amber-200' : 'border-stone-200'}`} data-testid={`admin-review-${r.id}`}>
+                    {/* Status badge top-left + Delete top-right */}
+                    <div className="flex items-center justify-between mb-2">
+                      <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${statusColor}`} data-testid={`status-${r.id}`}>
+                        {status}
+                      </span>
+                      <button onClick={() => remove(r.id)} className="p-1.5 rounded-lg text-stone-400 hover:bg-red-50 hover:text-red-600" data-testid={`delete-review-${r.id}`}>
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                     <div className="flex items-center gap-1 mb-2">
                       {[...Array(r.rating || 5)].map((_, k) => <Star key={k} size={11} className="fill-amber-400 text-amber-400" />)}
                     </div>
-                    <p className="text-sm text-gray-800 leading-relaxed mb-3 pr-8">"{r.body}"</p>
+                    <p className="text-sm text-gray-800 leading-relaxed mb-3">"{r.body}"</p>
+                    {r.reply && (
+                      <div className="mt-2 mb-3 p-2.5 bg-emerald-50 border-l-4 border-emerald-600 rounded">
+                        <p className="text-[10px] font-black text-emerald-800 uppercase tracking-wider mb-0.5">Brand reply</p>
+                        <p className="text-xs text-emerald-900 leading-snug">{r.reply}</p>
+                      </div>
+                    )}
                     <div className="flex items-end justify-between text-xs">
                       <div>
                         <p className="font-black text-gray-900">{r.name}</p>
@@ -288,6 +332,37 @@ export default function AdminReviews() {
                     {r.verified !== false && (
                       <div className="mt-2 inline-flex items-center gap-1 text-[10px] font-bold tracking-wider uppercase text-green-700">
                         <BadgeCheck size={11} /> Verified
+                      </div>
+                    )}
+                    {/* Moderation actions */}
+                    <div className="mt-3 pt-3 border-t border-stone-200 flex flex-wrap gap-1.5">
+                      {status !== 'approved' && (
+                        <button onClick={() => moderate(r.id, { status: 'approved' })} className="text-[10px] font-bold px-2 py-1 bg-emerald-100 text-emerald-700 hover:bg-emerald-200 rounded-md" data-testid={`approve-${r.id}`}>Approve</button>
+                      )}
+                      {status !== 'rejected' && (
+                        <button onClick={() => moderate(r.id, { status: 'rejected' })} className="text-[10px] font-bold px-2 py-1 bg-rose-100 text-rose-700 hover:bg-rose-200 rounded-md" data-testid={`reject-${r.id}`}>Reject</button>
+                      )}
+                      <button onClick={() => moderate(r.id, { featured: !r.featured })} className={`text-[10px] font-bold px-2 py-1 rounded-md ${r.featured ? 'bg-amber-500 text-white hover:bg-amber-600' : 'bg-amber-100 text-amber-700 hover:bg-amber-200'}`} data-testid={`feature-${r.id}`}>
+                        {r.featured ? '★ Featured' : '☆ Feature'}
+                      </button>
+                      <button onClick={() => setReply(r.id)} className="text-[10px] font-bold px-2 py-1 bg-indigo-100 text-indigo-700 hover:bg-indigo-200 rounded-md" data-testid={`reply-${r.id}`}>
+                        {r.reply ? 'Edit reply' : 'Add reply'}
+                      </button>
+                      <button
+                        onClick={() => aiModerate(r.id)}
+                        disabled={aiBusy === r.id}
+                        className="text-[10px] font-bold px-2 py-1 bg-purple-100 text-purple-700 hover:bg-purple-200 rounded-md disabled:opacity-50 inline-flex items-center gap-1"
+                        data-testid={`ai-mod-${r.id}`}
+                        title="AI checks review for spam/profanity/authenticity"
+                      >
+                        {aiBusy === r.id ? '...' : '✨'} AI Check
+                      </button>
+                    </div>
+                    {aiSuggestions[r.id] && (
+                      <div className={`mt-2 text-[11px] rounded-md p-2 ${aiSuggestions[r.id].decision === 'approve' ? 'bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200' : aiSuggestions[r.id].decision === 'reject' ? 'bg-rose-50 text-rose-800 ring-1 ring-rose-200' : 'bg-amber-50 text-amber-800 ring-1 ring-amber-200'}`} data-testid={`ai-suggest-${r.id}`}>
+                        <span className="font-bold uppercase">AI: {aiSuggestions[r.id].decision}</span>
+                        <span className="ml-1.5">{aiSuggestions[r.id].reason}</span>
+                        <span className="ml-1 opacity-70">({aiSuggestions[r.id].source})</span>
                       </div>
                     )}
                   </div>

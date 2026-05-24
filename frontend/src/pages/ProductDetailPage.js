@@ -11,6 +11,62 @@ import SEOHead, { productJsonLd, breadcrumbJsonLd, faqJsonLd, SITE } from '../co
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
+// Desktop sticky CTA — appears after scrolling 600px so it doesn't compete with the hero
+function DesktopStickyCTA({ product, onAdd, onBuy, onPreorder, shadeName, shadeOk, stockLeft }) {
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    const onScroll = () => setShow(window.scrollY > 600);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+  if (!product) return null;
+  return (
+    <div
+      className={`hidden lg:flex fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-b border-stone-200 shadow-md transition-transform duration-300 ${show ? 'translate-y-0' : '-translate-y-full'}`}
+      data-testid="pdp-desktop-sticky"
+    >
+      <div className="max-w-7xl mx-auto w-full px-6 py-3 flex items-center gap-4">
+        {product.images?.[0] && (
+          <img src={product.images[0]} alt="" className="w-12 h-12 rounded-lg object-cover ring-1 ring-stone-200 flex-shrink-0" />
+        )}
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-bold text-gray-900 truncate">{product.short_name || product.name}</p>
+          <div className="flex items-baseline gap-2">
+            <p className="text-base font-black text-gray-900">₹{product.prepaid_price}</p>
+            <p className="text-xs text-gray-400 line-through">₹{product.mrp}</p>
+            {shadeName && <p className="text-xs text-stone-500">· Shade: <span className="font-bold text-stone-800">{shadeName}</span></p>}
+          </div>
+        </div>
+        {product.is_to_be_launched ? (
+          <button
+            onClick={onPreorder}
+            className="bg-gradient-to-r from-amber-500 via-amber-600 to-orange-500 text-white font-black px-6 py-2.5 rounded-xl text-xs tracking-[0.16em] ring-1 ring-amber-400/40 shadow-md shadow-amber-700/30"
+            data-testid="pdp-desktop-sticky-preorder"
+          >
+            <Clock size={13} className="inline mr-1 animate-pulse" /> PRE-ORDER · 30% OFF
+          </button>
+        ) : (
+          <>
+            <button
+              onClick={onAdd}
+              disabled={!shadeOk || stockLeft <= 0}
+              className={`border-2 font-bold px-5 py-2.5 rounded-xl text-xs ${shadeOk && stockLeft > 0 ? 'border-green-600 text-green-600 hover:bg-green-50' : 'border-stone-200 text-stone-400 cursor-not-allowed'}`}
+              data-testid="pdp-desktop-sticky-add"
+            >Add to Bag</button>
+            <button
+              onClick={onBuy}
+              disabled={!shadeOk || stockLeft <= 0}
+              className={`font-bold px-6 py-2.5 rounded-xl text-xs shadow-lg ${shadeOk && stockLeft > 0 ? 'bg-green-600 hover:bg-green-700 text-white shadow-green-200/50' : 'bg-stone-200 text-stone-500 cursor-not-allowed shadow-none'}`}
+              data-testid="pdp-desktop-sticky-buy"
+            >Buy Now</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Urgency Timer
 function UrgencyTimer() {
   const [timeLeft, setTimeLeft] = useState({ h: 0, m: 0, s: 0 });
@@ -122,6 +178,8 @@ function ProductDetailPage() {
   const [imgIdx, setImgIdx] = useState(0);
   const [openSection, setOpenSection] = useState('desc');
   const [openFaq, setOpenFaq] = useState(null);
+  const [selectedShadeId, setSelectedShadeId] = useState(null);
+  const [zoomOpen, setZoomOpen] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -133,6 +191,14 @@ function ProductDetailPage() {
           cachedGet(`${API}/api/combos`, { ttl: 60_000 }),
         ]);
         setProduct(p.data); setAllProducts(all.data.filter(x => x.slug !== slug)); setCombos(c.data);
+        // Auto-select first in-stock shade for products with shade variants
+        const shadesArr = (p.data && p.data.shades) || [];
+        if (Array.isArray(shadesArr) && shadesArr.length > 0) {
+          const firstInStock = shadesArr.find(s => (s.stock_qty ?? 0) > 0) || shadesArr[0];
+          setSelectedShadeId(firstInStock?.id || null);
+        } else {
+          setSelectedShadeId(null);
+        }
         // Track recently-viewed slugs (last 8) in sessionStorage so cart can recommend
         try {
           const prev = JSON.parse(sessionStorage.getItem('recentlyViewed') || '[]');
@@ -147,10 +213,32 @@ function ProductDetailPage() {
     load();
   }, [slug]);
 
-  const doAdd = () => { addToCart(slug, qty); trackAction('add_to_cart', { product_slug: slug, quantity: qty }); if (window.fbq) window.fbq('track', 'AddToCart', { content_name: product?.name, content_ids: [slug], value: product?.prepaid_price * qty, currency: 'INR' }); };
-  const doBuy = () => { addToCart(slug, qty); navigate('/cart'); };
+  // Resolve current shade & effective stock
+  const _shades = (product && product.shades) || [];
+  const _hasShades = Array.isArray(_shades) && _shades.length > 0;
+  const _selShade = _hasShades ? (_shades.find(s => s.id === selectedShadeId) || null) : null;
+  const _stockLeft = _hasShades
+    ? (_selShade ? (_selShade.stock_qty ?? 0) : 0)
+    : (product?.stock_qty ?? 999);
+  const _shadeOk = !_hasShades || (_selShade && _stockLeft > 0);
+
+  const doAdd = () => {
+    if (_hasShades && !selectedShadeId) { alert('Please pick a shade'); return; }
+    if (_stockLeft <= 0) { alert('Out of stock'); return; }
+    const finalQty = Math.min(qty, _stockLeft);
+    addToCart(slug, finalQty, _hasShades ? selectedShadeId : null);
+    trackAction('add_to_cart', { product_slug: slug, quantity: finalQty, shade_id: selectedShadeId });
+    if (window.fbq) window.fbq('track', 'AddToCart', { content_name: product?.name, content_ids: [slug], value: product?.prepaid_price * finalQty, currency: 'INR' });
+  };
+  const doBuy = () => {
+    if (_hasShades && !selectedShadeId) { alert('Please pick a shade'); return; }
+    if (_stockLeft <= 0) { alert('Out of stock'); return; }
+    const finalQty = Math.min(qty, _stockLeft);
+    addToCart(slug, finalQty, _hasShades ? selectedShadeId : null);
+    navigate('/cart');
+  };
   const doPreorder = () => {
-    addToCart(slug, qty);
+    addToCart(slug, qty, _hasShades ? selectedShadeId : null);
     axios.post(`${API}/api/products/${slug}/preorder-count`).catch(()=>{});
     trackAction('preorder', { product_slug: slug, quantity: qty });
     navigate('/cart');
@@ -236,7 +324,15 @@ function ProductDetailPage() {
             <div className="aspect-square bg-gradient-to-br from-stone-50 to-gray-50 rounded-3xl overflow-hidden relative shadow-sm">
               {product.is_to_be_launched ? null : product.badge && <div className={`absolute top-4 left-4 z-10 px-3 py-1 rounded-full text-xs font-bold tracking-wide ${product.badge === 'Bestseller' ? 'bg-amber-400 text-amber-900' : product.badge === 'New Launch' ? 'bg-rose-500 text-white' : 'bg-green-600 text-white'}`}>{product.badge.toUpperCase()}</div>}
               {imgs.length > 0 ? (
-                <img src={imgs[imgIdx]} alt={product.name} className="w-full h-full object-contain p-6 sm:p-10" />
+                <button
+                  type="button"
+                  onClick={() => setZoomOpen(true)}
+                  className="block w-full h-full cursor-zoom-in group"
+                  data-testid="pdp-zoom-trigger"
+                  aria-label="Zoom image"
+                >
+                  <img src={imgs[imgIdx]} alt={product.name} className="w-full h-full object-contain p-6 sm:p-10 transition-transform duration-300 group-hover:scale-105" />
+                </button>
               ) : (
                 <div className="w-full h-full flex items-center justify-center"><Sparkles className="w-20 h-20 text-green-200" /></div>
               )}
@@ -273,6 +369,52 @@ function ProductDetailPage() {
             <h1 className="text-xl sm:text-2xl font-bold text-gray-900 leading-snug tracking-tight">{product.name}</h1>
             <p className="text-green-600 text-xs font-medium mt-1 tracking-wide">{product.tagline} | {product.size}</p>
 
+            {/* Shade picker — shown only when product has shade variants */}
+            {_hasShades && (
+              <div className="mt-5" data-testid="shade-picker">
+                <div className="flex items-baseline justify-between mb-2.5">
+                  <p className="text-xs font-bold text-gray-700 uppercase tracking-[0.15em]">
+                    Shade {_selShade ? <span className="text-gray-900 font-bold normal-case tracking-normal ml-1">{_selShade.name}</span> : <span className="text-rose-600 font-bold normal-case ml-1">— pick one</span>}
+                  </p>
+                  <span className="text-[11px] text-gray-500">{_shades.filter(s => (s.stock_qty ?? 0) > 0).length} of {_shades.length} in stock</span>
+                </div>
+                <div className="flex flex-wrap gap-2.5">
+                  {_shades.map(s => {
+                    const outOfStock = (s.stock_qty ?? 0) <= 0;
+                    const active = s.id === selectedShadeId;
+                    return (
+                      <button
+                        key={s.id}
+                        onClick={() => !outOfStock && setSelectedShadeId(s.id)}
+                        disabled={outOfStock}
+                        title={s.name + (outOfStock ? ' — Out of stock' : '')}
+                        aria-label={`Select shade ${s.name}`}
+                        data-testid={`shade-${s.id}`}
+                        className={`relative w-11 h-11 rounded-full border-2 transition-all ${active ? 'border-gray-900 ring-2 ring-offset-2 ring-gray-900' : 'border-white shadow-sm hover:scale-105'} ${outOfStock ? 'opacity-40 cursor-not-allowed' : ''}`}
+                        style={{ backgroundColor: s.hex || '#cccccc' }}
+                      >
+                        {s.image && <img src={s.image} alt="" className="absolute inset-0 w-full h-full rounded-full object-cover" />}
+                        {outOfStock && (
+                          <span className="absolute inset-0 flex items-center justify-center text-[10px] font-black text-white" style={{ background: 'rgba(0,0,0,0.4)', borderRadius: '9999px' }}>×</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+                {_selShade && (_selShade.stock_qty ?? 0) > 0 && (_selShade.stock_qty ?? 0) <= 5 && (
+                  <p className="text-[11px] text-rose-600 font-bold mt-2">Only {_selShade.stock_qty} left in this shade!</p>
+                )}
+              </div>
+            )}
+
+            {/* Stock warning for non-shade products */}
+            {!_hasShades && product.stock_qty !== undefined && product.stock_qty > 0 && product.stock_qty <= 10 && (
+              <p className="text-[12px] text-rose-600 font-bold mt-3">Hurry — only {product.stock_qty} left in stock</p>
+            )}
+            {!_hasShades && product.stock_qty === 0 && (
+              <p className="text-[12px] text-rose-700 font-bold mt-3 bg-rose-50 inline-block px-2.5 py-1 rounded-md">Out of Stock</p>
+            )}
+
             {/* Price — with discount feel */}
             <div className="mt-5 bg-gradient-to-r from-green-50 to-teal-50 rounded-2xl p-4 border border-green-100">
               <div className="flex items-end gap-2.5">
@@ -296,19 +438,35 @@ function ProductDetailPage() {
                 <button onClick={() => setQty(qty + 1)} className="px-3.5 py-2.5 text-gray-500 hover:text-gray-900"><Plus size={16} /></button>
               </div>
             </div>
+            {/* TBL Preorder incentive banner */}
+            {product.is_to_be_launched && (
+              <div className="mt-4 bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-200 rounded-2xl p-4" data-testid="tbl-preorder-incentive">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-full bg-amber-500 flex items-center justify-center flex-shrink-0">
+                    <Sparkles size={18} className="text-white" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-xs font-black text-amber-900 uppercase tracking-wide">Coming Soon · Be First in Line</p>
+                    <p className="text-sm font-bold text-gray-900 mt-1">First 100 pre-orders get <span className="text-orange-700">flat 30% OFF</span> + free gift</p>
+                    <p className="text-[11px] text-amber-800 mt-1">Reserve now. Pay nothing today. Charged only on dispatch.</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="mt-3 flex gap-3">
               {product.is_to_be_launched ? (
-                <button disabled className="flex-1 relative overflow-hidden bg-gradient-to-r from-amber-500 via-amber-600 to-orange-500 text-white font-black py-3.5 rounded-2xl text-sm flex items-center justify-center gap-2 cursor-not-allowed ring-1 ring-amber-400/40 shadow-md shadow-amber-700/25" data-testid="tbl-detail-btn">
+                <button onClick={doPreorder} className="flex-1 relative overflow-hidden bg-gradient-to-r from-amber-500 via-amber-600 to-orange-500 hover:from-amber-600 hover:via-amber-700 hover:to-orange-600 text-white font-black py-3.5 rounded-2xl text-sm flex items-center justify-center gap-2 ring-1 ring-amber-400/40 shadow-md shadow-amber-700/25 transition-all" data-testid="tbl-detail-btn">
                   <span className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.4),transparent_60%)] pointer-events-none" />
                   <span className="relative flex items-center justify-center gap-2">
                     <Clock size={16} className="animate-pulse" />
-                    <span className="tracking-[0.22em]">TBL</span>
+                    <span className="tracking-[0.18em]">PRE-ORDER · 30% OFF</span>
                   </span>
                 </button>
               ) : (
                 <>
-                  <button onClick={doAdd} className="flex-1 border-2 border-green-600 text-green-600 font-bold py-3.5 rounded-2xl hover:bg-green-50 text-sm transition-all" data-testid="add-to-cart-btn">Add to Cart</button>
-                  <button onClick={doBuy} className="flex-1 bg-green-600 text-white font-bold py-3.5 rounded-2xl hover:bg-green-700 text-sm transition-all shadow-lg shadow-green-200/50" data-testid="buy-now-btn">Buy Now</button>
+                  <button onClick={doAdd} disabled={!_shadeOk} className={`flex-1 border-2 font-bold py-3.5 rounded-2xl text-sm transition-all ${_shadeOk ? 'border-green-600 text-green-600 hover:bg-green-50' : 'border-stone-200 text-stone-400 cursor-not-allowed'}`} data-testid="add-to-cart-btn">{_stockLeft <= 0 ? 'Out of Stock' : 'Add to Cart'}</button>
+                  <button onClick={doBuy} disabled={!_shadeOk} className={`flex-1 font-bold py-3.5 rounded-2xl text-sm transition-all shadow-lg ${_shadeOk ? 'bg-green-600 text-white hover:bg-green-700 shadow-green-200/50' : 'bg-stone-200 text-stone-500 cursor-not-allowed shadow-none'}`} data-testid="buy-now-btn">Buy Now</button>
                 </>
               )}
             </div>
@@ -512,7 +670,7 @@ function ProductDetailPage() {
             <p className="text-lg font-black text-gray-900">₹{product.prepaid_price} <span className="text-xs text-gray-400 line-through font-normal">₹{product.mrp}</span></p>
           </div>
           {product.is_to_be_launched ? (
-            <button disabled className="bg-gradient-to-r from-amber-500 via-amber-600 to-orange-500 text-white font-black px-8 py-2.5 rounded-xl text-xs shadow-md shadow-amber-700/30 ring-1 ring-amber-400/40 flex items-center justify-center gap-1.5 cursor-not-allowed tracking-[0.22em]"><Clock size={14} className="animate-pulse" /> TBL</button>
+            <button onClick={doPreorder} className="bg-gradient-to-r from-amber-500 via-amber-600 to-orange-500 text-white font-black px-6 py-2.5 rounded-xl text-xs shadow-md shadow-amber-700/30 ring-1 ring-amber-400/40 flex items-center justify-center gap-1.5 tracking-[0.18em]"><Clock size={14} className="animate-pulse" /> PRE-ORDER</button>
           ) : (
             <>
               <button onClick={doAdd} className="border-2 border-green-600 text-green-600 font-bold px-5 py-2.5 rounded-xl text-xs">Add</button>
@@ -521,6 +679,55 @@ function ProductDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Sticky Bottom CTA — desktop (slides in after scrolling past hero) */}
+      <DesktopStickyCTA
+        product={product}
+        onAdd={doAdd}
+        onBuy={doBuy}
+        onPreorder={doPreorder}
+        shadeName={_selShade?.name}
+        shadeOk={_shadeOk}
+        stockLeft={_stockLeft}
+      />
+      {/* Image Lightbox/Zoom */}
+      {zoomOpen && imgs.length > 0 && (
+        <div
+          className="fixed inset-0 z-[60] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setZoomOpen(false)}
+          data-testid="pdp-zoom-modal"
+        >
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setZoomOpen(false); }}
+            className="absolute top-4 right-4 w-10 h-10 bg-white/10 hover:bg-white/20 rounded-full flex items-center justify-center text-white text-xl"
+            aria-label="Close zoom"
+            data-testid="pdp-zoom-close"
+          >×</button>
+          <img
+            src={imgs[imgIdx]}
+            alt={product.name}
+            className="max-w-full max-h-full object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+          {imgs.length > 1 && (
+            <>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setImgIdx((imgIdx - 1 + imgs.length) % imgs.length); }}
+                className="absolute left-4 top-1/2 -translate-y-1/2 w-11 h-11 bg-white/10 hover:bg-white/20 rounded-full flex items-center justify-center text-white"
+                aria-label="Previous"
+              ><ChevronLeft size={22} /></button>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setImgIdx((imgIdx + 1) % imgs.length); }}
+                className="absolute right-4 top-1/2 -translate-y-1/2 w-11 h-11 bg-white/10 hover:bg-white/20 rounded-full flex items-center justify-center text-white"
+                aria-label="Next"
+              ><ChevronRight size={22} /></button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

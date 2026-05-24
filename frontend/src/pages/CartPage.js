@@ -264,6 +264,20 @@ function CartPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           <div className="lg:col-span-2 space-y-3">
+            {/* Stock warnings banner (CT-2 fix) */}
+            {Array.isArray(cartData.stock_warnings) && cartData.stock_warnings.length > 0 && (
+              <div className="bg-amber-50 ring-1 ring-amber-200 rounded-2xl p-4" data-testid="cart-stock-warnings">
+                <p className="text-xs font-bold text-amber-900 uppercase tracking-wider mb-2">⚠ Stock alert</p>
+                <ul className="text-sm text-amber-800 space-y-1">
+                  {cartData.stock_warnings.map((w, wi) => (
+                    <li key={wi} data-testid={`cart-stock-warning-${wi}`}>
+                      {w.message || `${w.name || w.slug}: ${w.available != null ? `only ${w.available} left` : 'limited stock'}`}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             {/* Items */}
             {cartData.items.map((item, index) => (
               <div key={index} className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm flex gap-3.5" data-testid={`cart-item-${index}`}>
@@ -273,6 +287,12 @@ function CartPage() {
                 <div className="flex-1 min-w-0">
                   <h3 className="font-bold text-gray-900 text-sm leading-tight">{item.type === 'combo' ? item.name : item.short_name || item.name}</h3>
                   {item.type === 'combo' && <p className="text-xs text-green-600 font-medium">{item.product_slugs?.length} products included</p>}
+                  {item.shade_name && (
+                    <p className="text-[11px] text-gray-500 mt-0.5 flex items-center gap-1.5">
+                      <span className="inline-block w-3 h-3 rounded-full border border-gray-200" style={{ backgroundColor: item.shade_hex || '#cccccc' }} />
+                      Shade: <span className="font-semibold text-gray-700">{item.shade_name}</span>
+                    </p>
+                  )}
                   <div className="flex items-baseline gap-2 mt-1">
                     <span className="font-bold text-gray-900">₹{item.price}</span>
                     {(item.mrp || item.mrp_total) > item.price && <span className="text-xs text-gray-400 line-through">₹{item.mrp || item.mrp_total}</span>}

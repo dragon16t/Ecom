@@ -26,6 +26,7 @@ function AdminBlogEditor() {
   const [loading, setLoading] = useState(isEditing);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [editorMode, setEditorMode] = useState('edit'); // 'edit' | 'preview'
 
   useEffect(() => {
     if (!adminToken) {
@@ -179,20 +180,63 @@ function AdminBlogEditor() {
 
           {/* Content */}
           <div className="bg-white rounded-2xl p-6 border border-gray-100">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Content *
-            </label>
-            <textarea
-              value={formData.content}
-              onChange={(e) => setFormData({ ...formData, content: e.target.value })}
-              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none min-h-[400px] resize-y"
-              placeholder="Write your blog content here... (Supports HTML)"
-              required
-              data-testid="content-input"
-            />
-            <p className="text-xs text-gray-400 mt-2">
-              Tip: You can use HTML tags for formatting (h2, p, ul, strong, etc.)
-            </p>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-gray-700">
+                Content *
+              </label>
+              <div className="flex gap-2" data-testid="blog-editor-tabs">
+                <button
+                  type="button"
+                  onClick={() => setEditorMode('edit')}
+                  className={`text-xs font-bold px-3 py-1.5 rounded-md ${editorMode === 'edit' ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                  data-testid="blog-tab-edit"
+                >Write</button>
+                <button
+                  type="button"
+                  onClick={() => setEditorMode('preview')}
+                  className={`text-xs font-bold px-3 py-1.5 rounded-md inline-flex items-center gap-1 ${editorMode === 'preview' ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                  data-testid="blog-tab-preview"
+                >
+                  <Eye size={12} /> Preview
+                </button>
+              </div>
+            </div>
+            {editorMode === 'edit' ? (
+              <textarea
+                value={formData.content}
+                onChange={(e) => setFormData({ ...formData, content: e.target.value })}
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none min-h-[400px] resize-y font-mono text-sm"
+                placeholder="Write your blog content here... (Supports HTML)"
+                required
+                data-testid="content-input"
+              />
+            ) : (
+              <div
+                className="prose prose-sm max-w-none min-h-[400px] px-4 py-3 border border-gray-200 rounded-xl bg-stone-50 overflow-y-auto"
+                data-testid="blog-content-preview"
+                // eslint-disable-next-line react/no-danger
+                dangerouslySetInnerHTML={{ __html: formData.content || '<p class="text-gray-400 italic">Nothing to preview yet.</p>' }}
+              />
+            )}
+            <div className="mt-2 flex items-center justify-between flex-wrap gap-2">
+              <p className="text-xs text-gray-400">
+                Tip: You can use HTML tags for formatting (h2, p, ul, strong, etc.)
+              </p>
+              <div className="flex items-center gap-3 text-[11px] font-bold" data-testid="blog-seo-score">
+                <span className={`px-2 py-0.5 rounded ${formData.content.length >= 600 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                  {formData.content.replace(/<[^>]+>/g, '').split(/\s+/).filter(Boolean).length} words
+                </span>
+                <span className={`px-2 py-0.5 rounded ${formData.title.length >= 30 && formData.title.length <= 60 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                  Title: {formData.title.length}/60
+                </span>
+                <span className={`px-2 py-0.5 rounded ${formData.meta_description.length >= 120 && formData.meta_description.length <= 160 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                  Meta: {formData.meta_description.length}/160
+                </span>
+                <span className={`px-2 py-0.5 rounded ${formData.keywords.length >= 3 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                  KW: {formData.keywords.length}
+                </span>
+              </div>
+            </div>
           </div>
 
           {/* Meta & SEO */}

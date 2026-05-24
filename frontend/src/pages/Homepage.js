@@ -5,6 +5,7 @@ import { ArrowRight, ChevronRight, Flame, Sparkles, ShoppingCart, Star, Truck, S
 import { useTracking } from '../providers/TrackingProvider';
 import SearchBar from '../components/SearchBar';
 import TrustStrip from '../components/TrustStrip';
+import SaleBadge from '../components/SaleBadge';
 import NicheHero from '../components/NicheHero';
 import HeroCarousel from '../components/HeroCarousel'; // eslint-disable-line no-unused-vars
 import { ProductCard } from './ConcernCategoryPage';
@@ -23,8 +24,24 @@ const BANNER_IMG = 'https://customer-assets.emergentagent.com/job_cg3-render/art
 const BANNER_IMG_MOBILE = 'https://images.unsplash.com/photo-1620916566398-39f1143ab7be?auto=format&fit=crop&w=1200&q=80';
 
 /* ---- Cart helpers (preserved API for the rest of the app) ---- */
-const getCart = () => JSON.parse(sessionStorage.getItem('cart') || '{"items":[]}');
-const saveCart = (cart) => { sessionStorage.setItem('cart', JSON.stringify(cart)); window.dispatchEvent(new Event('cartUpdated')); };
+/* MIGRATED to localStorage so cart survives across tab/browser sessions.
+   We still read sessionStorage on first load and copy it forward for users
+   mid-session when the deploy ships. */
+const _readCart = () => {
+  try {
+    const ls = localStorage.getItem('cart');
+    if (ls) return JSON.parse(ls);
+    const ss = sessionStorage.getItem('cart');
+    if (ss) { localStorage.setItem('cart', ss); return JSON.parse(ss); }
+  } catch {}
+  return { items: [] };
+};
+const getCart = () => _readCart();
+const saveCart = (cart) => {
+  try { localStorage.setItem('cart', JSON.stringify(cart)); } catch {}
+  try { sessionStorage.setItem('cart', JSON.stringify(cart)); } catch {}
+  window.dispatchEvent(new Event('cartUpdated'));
+};
 
 /**
  * TBL guard helpers — read the apiCache (already populated by every page load)
@@ -99,7 +116,8 @@ const pruneTblItemsFromCart = () => {
     return true;
   });
   if (cart.items.length !== before) {
-    sessionStorage.setItem('cart', JSON.stringify(cart));
+    try { localStorage.setItem('cart', JSON.stringify(cart)); } catch {}
+    try { sessionStorage.setItem('cart', JSON.stringify(cart)); } catch {}
     window.dispatchEvent(new Event('cartUpdated'));
   }
 };
@@ -109,15 +127,16 @@ if (typeof window !== 'undefined') {
   window.addEventListener('admin-data-changed', pruneTblItemsFromCart);
 }
 
-const addToCart = (slug, quantity = 1) => {
+const addToCart = (slug, quantity = 1, shadeId = null) => {
   if (isProductTbl(slug)) {
     _toast('This product is coming soon — not available yet.');
     return false;
   }
   const cart = getCart();
-  const existing = cart.items.find(i => i.product_slug === slug);
+  // Same slug + same shade = same line. Different shades = separate lines.
+  const existing = cart.items.find(i => i.product_slug === slug && (i.shade_id || null) === (shadeId || null));
   if (existing) existing.quantity += quantity;
-  else cart.items.push({ product_slug: slug, quantity });
+  else cart.items.push({ product_slug: slug, quantity, ...(shadeId ? { shade_id: shadeId } : {}) });
   saveCart(cart);
   playCartSound();
   _toast('✓ Added to bag', 'success');
@@ -139,20 +158,20 @@ const addComboToCart = (comboId, quantity = 1) => {
   try { window.dispatchEvent(new Event('cart-bounce')); } catch {}
   return true;
 };
-const setProductQty = (slug, quantity) => {
+const setProductQty = (slug, quantity, shadeId = null) => {
   if (quantity > 0 && isProductTbl(slug)) {
     _toast('This product is coming soon — not available yet.');
     return;
   }
   const cart = getCart();
-  const idx = cart.items.findIndex(i => i.product_slug === slug);
+  const idx = cart.items.findIndex(i => i.product_slug === slug && (i.shade_id || null) === (shadeId || null));
   const wasZero = idx === -1;
   if (quantity <= 0) {
     if (idx > -1) cart.items.splice(idx, 1);
   } else if (idx > -1) {
     cart.items[idx].quantity = quantity;
   } else {
-    cart.items.push({ product_slug: slug, quantity });
+    cart.items.push({ product_slug: slug, quantity, ...(shadeId ? { shade_id: shadeId } : {}) });
     playCartSound();
     _toast('✓ Added to bag', 'success');
     try { window.dispatchEvent(new Event('cart-bounce')); } catch {}
@@ -163,10 +182,15 @@ const setProductQty = (slug, quantity) => {
     try { window.dispatchEvent(new Event('cart-bounce')); } catch {}
   }
 };
-const getProductQty = (slug) => {
+const getProductQty = (slug, shadeId = null) => {
   const cart = getCart();
-  const item = cart.items.find(i => i.product_slug === slug);
-  return item ? item.quantity : 0;
+  // If shadeId specified, return only the matching shade quantity.
+  // If shadeId is null, sum all quantities of the same slug (legacy callers).
+  if (shadeId) {
+    const item = cart.items.find(i => i.product_slug === slug && (i.shade_id || null) === shadeId);
+    return item ? item.quantity : 0;
+  }
+  return cart.items.filter(i => i.product_slug === slug).reduce((s, i) => s + (i.quantity || 0), 0);
 };
 export { getCart, saveCart, addToCart, addComboToCart, setProductQty, getProductQty, isProductTbl, isComboTbl, pruneTblItemsFromCart };
 
@@ -297,6 +321,8 @@ function Homepage() {
         ]}
       />
       <SearchBar accent={accent} niche="anti-aging" testId="anti-aging-search-bar" />
+
+      <SaleBadge cfg={niche.sale_badge} niche="anti-aging" testIdPrefix="anti-aging-sale-badge" />
 
       <NicheHero
         bgImage={hero.image_desktop || BANNER_IMG}

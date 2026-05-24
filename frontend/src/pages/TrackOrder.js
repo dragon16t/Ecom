@@ -219,6 +219,42 @@ function TrackOrder() {
                   </div>
                 </div>
                 
+                {/* Visual horizontal progress timeline */}
+                {(() => {
+                  const status = (order.delivery_status || order.status || 'confirmed').toLowerCase();
+                  const steps = [
+                    { key: 'confirmed', label: 'Confirmed', icon: CheckCircle },
+                    { key: 'shipped', label: 'Shipped', icon: Package },
+                    { key: 'out_for_delivery', label: 'Out for delivery', icon: Truck },
+                    { key: 'delivered', label: 'Delivered', icon: CheckCircle },
+                  ];
+                  const order_status_index = { confirmed: 0, processing: 0, shipped: 1, in_transit: 1, out_for_delivery: 2, delivered: 3 };
+                  const reached = order_status_index[status] ?? 0;
+                  return (
+                    <div className="px-4 sm:px-6 py-5 bg-white border-b border-stone-100" data-testid={`timeline-${order.order_id}`}>
+                      <div className="flex items-center justify-between max-w-2xl mx-auto">
+                        {steps.map((s, i) => {
+                          const done = i <= reached;
+                          const Icon = s.icon;
+                          return (
+                            <React.Fragment key={s.key}>
+                              <div className="flex flex-col items-center flex-shrink-0 z-10">
+                                <div className={`w-9 h-9 sm:w-11 sm:h-11 rounded-full flex items-center justify-center transition-colors ${done ? 'bg-emerald-600 text-white' : 'bg-stone-100 text-stone-400'}`}>
+                                  <Icon size={18} />
+                                </div>
+                                <p className={`text-[10px] sm:text-xs font-semibold mt-1.5 text-center ${done ? 'text-emerald-700' : 'text-stone-400'}`}>{s.label}</p>
+                              </div>
+                              {i < steps.length - 1 && (
+                                <div className={`flex-1 h-0.5 mx-1 sm:mx-2 -mt-5 sm:-mt-6 ${i < reached ? 'bg-emerald-600' : 'bg-stone-200'}`} />
+                              )}
+                            </React.Fragment>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {/* Order Details */}
                 <div className="p-4 space-y-4">
                   <div className="flex items-center justify-between">

@@ -318,13 +318,35 @@ async def create_razorpay_order(order_data: RazorpayOrderCreate):
 
 @api_router.post("/verify-payment")
 async def verify_payment(payment_data: RazorpayPaymentVerify):
+    if razorpay_client is None:
+        raise HTTPException(status_code=503, detail="Razorpay not configured")
     try:
         razorpay_client.utility.verify_payment_signature({
             'razorpay_order_id': payment_data.razorpay_order_id,
             'razorpay_payment_id': payment_data.razorpay_payment_id,
             'razorpay_signature': payment_data.razorpay_signature
         })
+        # S3 fix: verify the captured payment amount matches the order amount.
+        # Without this check, an attacker can pay ₹1 for a ₹5000 order using
+        # a hijacked order_id from a different user.
+        try:
+            rzp_order = razorpay_client.order.fetch(payment_data.razorpay_order_id)
+            rzp_payment = razorpay_client.payment.fetch(payment_data.razorpay_payment_id)
+            if int(rzp_payment.get("amount", 0)) < int(rzp_order.get("amount", 0)):
+                logging.warning(
+                    f"[security] Razorpay amount mismatch order={rzp_order.get('amount')} "
+                    f"paid={rzp_payment.get('amount')} payment_id={payment_data.razorpay_payment_id}"
+                )
+                raise HTTPException(status_code=400, detail="Payment amount mismatch")
+            if rzp_payment.get("status") not in ("captured", "authorized"):
+                raise HTTPException(status_code=400, detail=f"Payment not captured (status: {rzp_payment.get('status')})")
+        except HTTPException:
+            raise
+        except Exception as fetch_err:
+            logging.warning(f"[razorpay] amount-check fetch failed: {fetch_err}")
         return {"verified": True}
+    except HTTPException:
+        raise
     except Exception:
         raise HTTPException(status_code=400, detail="Payment verification failed")
 
@@ -332,22 +354,23 @@ async def verify_payment(payment_data: RazorpayPaymentVerify):
 @api_router.post("/orders", response_model=Order)
 async def create_order(order_input: OrderCreate):
     # ===== STOCK VALIDATION + DECREMENT =====
-    # Build a list of (slug, qty) tuples from incoming items + combo (combos decrement underlying products too)
-    stock_changes = []  # list of (slug, qty)
+    # Build a list of (slug, qty, shade_id) tuples from incoming items + combo (combos decrement underlying products too)
+    stock_changes = []  # list of (slug, qty, shade_id_or_None)
     if order_input.items:
         for it in order_input.items:
             slug = it.get('slug') or it.get('product_slug')
             qty = int(it.get('quantity') or 1)
+            shade_id = it.get('shade_id')
             if slug:
-                stock_changes.append((slug, qty))
+                stock_changes.append((slug, qty, shade_id))
     if order_input.combo_id:
         combo = await db.combos.find_one({"combo_id": order_input.combo_id}, {"_id": 0})
         if combo:
             for slug in (combo.get('product_slugs') or []):
-                stock_changes.append((slug, 1))
+                stock_changes.append((slug, 1, None))
     # Validate stock for non-TBL products + REJECT any TBL product (defense in depth)
-    for slug, qty in stock_changes:
-        prod = await db.products.find_one({"slug": slug}, {"_id": 0, "stock_qty": 1, "is_to_be_launched": 1, "name": 1})
+    for slug, qty, shade_id in stock_changes:
+        prod = await db.products.find_one({"slug": slug}, {"_id": 0, "stock_qty": 1, "is_to_be_launched": 1, "name": 1, "shades": 1})
         if not prod:
             continue
         if prod.get("is_to_be_launched"):
@@ -356,9 +379,111 @@ async def create_order(order_input: OrderCreate):
                 status_code=400,
                 detail=f"{prod.get('name', slug)} is To Be Launched and not yet available for purchase. Please remove it from your cart."
             )
-        available = prod.get("stock_qty")
-        if available is not None and available < qty:
-            raise HTTPException(status_code=400, detail=f"Out of stock: {prod.get('name', slug)} (only {available} left)")
+        # Shade-aware stock check
+        shades = prod.get("shades") or []
+        if shades and shade_id:
+            shade = next((s for s in shades if str(s.get("id")) == str(shade_id)), None)
+            if not shade:
+                raise HTTPException(status_code=400, detail=f"{prod.get('name', slug)}: selected shade no longer available")
+            shade_stock = shade.get("stock_qty")
+            if shade_stock is not None and shade_stock < qty:
+                raise HTTPException(status_code=400, detail=f"Out of stock: {prod.get('name', slug)} — {shade.get('name','shade')} (only {shade_stock} left)")
+        else:
+            available = prod.get("stock_qty")
+            if available is not None and available < qty:
+                raise HTTPException(status_code=400, detail=f"Out of stock: {prod.get('name', slug)} (only {available} left)")
+
+    # ===== SERVER-SIDE AMOUNT RECALCULATION (S1/S2 fix) =====
+    # NEVER trust client-sent amount. Recalculate from authoritative product prices.
+    computed_subtotal = 0.0
+    payment_method_normalised = (order_input.payment_method or "").upper()
+    use_prepaid_price = payment_method_normalised != "COD"
+
+    for it in (order_input.items or []):
+        slug = it.get('slug') or it.get('product_slug')
+        qty = int(it.get('quantity') or 1)
+        if not slug:
+            continue
+        prod = await db.products.find_one(
+            {"slug": slug},
+            {"_id": 0, "prepaid_price": 1, "cod_price": 1, "price": 1, "mrp": 1, "name": 1}
+        )
+        if not prod:
+            continue
+        unit = (prod.get("prepaid_price") if use_prepaid_price else prod.get("cod_price")) or prod.get("price") or prod.get("mrp") or 0
+        computed_subtotal += float(unit) * qty
+
+    if order_input.combo_id:
+        combo_doc = await db.combos.find_one(
+            {"combo_id": order_input.combo_id},
+            {"_id": 0, "prepaid_price": 1, "cod_price": 1, "price": 1, "mrp": 1}
+        )
+        if combo_doc:
+            combo_unit = (combo_doc.get("prepaid_price") if use_prepaid_price else combo_doc.get("cod_price")) or combo_doc.get("price") or combo_doc.get("mrp") or 0
+            computed_subtotal += float(combo_unit)
+
+    # Validate + recalculate coupon discount server-side
+    server_coupon_discount = 0.0
+    server_coupon_code = None
+    if order_input.coupon_code:
+        coupon = await db.coupons.find_one(
+            {"code": order_input.coupon_code.upper(), "is_active": True},
+            {"_id": 0}
+        )
+        if coupon:
+            # expiry + max-uses + min-order all enforced server-side
+            now_dt = datetime.now(timezone.utc)
+            expired = False
+            if coupon.get("expiry_date"):
+                try:
+                    if datetime.fromisoformat(coupon["expiry_date"]) < now_dt:
+                        expired = True
+                except Exception:
+                    pass
+            exhausted = bool(coupon.get("max_uses") and coupon.get("used_count", 0) >= coupon["max_uses"])
+            meets_min = computed_subtotal >= coupon.get("min_order_amount", 0)
+            if not expired and not exhausted and meets_min:
+                if coupon.get("discount_type") == "percentage":
+                    server_coupon_discount = round(computed_subtotal * coupon["discount_value"] / 100, 2)
+                else:
+                    server_coupon_discount = float(coupon["discount_value"])
+                server_coupon_code = order_input.coupon_code.upper()
+
+    # Validate + recalculate referral discount server-side
+    server_referral_discount = 0.0
+    if order_input.referral_code:
+        ref = await db.referrals.find_one({"referral_code": order_input.referral_code}, {"_id": 0}) if hasattr(db, 'referrals') else None
+        try:
+            ref = await db.referrals.find_one({"referral_code": order_input.referral_code}, {"_id": 0})
+        except Exception:
+            ref = None
+        if ref:
+            # ₹50 friend discount on referred orders (matches client-side default)
+            server_referral_discount = min(float(order_input.referral_discount or 50), 50.0)
+
+    server_amount_before_shipping = max(0.0, computed_subtotal - server_coupon_discount - server_referral_discount)
+    # Free shipping over ₹499 (matches frontend rule)
+    server_shipping = 0.0 if server_amount_before_shipping >= 499 else 49.0
+    server_final_amount = round(server_amount_before_shipping + server_shipping, 2)
+
+    # Reject if client-sent amount differs by more than ₹1 (rounding tolerance)
+    client_amount = float(order_input.amount or 0)
+    if abs(client_amount - server_final_amount) > 1.0:
+        logging.warning(
+            f"[security] amount mismatch — client={client_amount} server={server_final_amount} "
+            f"subtotal={computed_subtotal} coupon_disc={server_coupon_discount} ref_disc={server_referral_discount} "
+            f"shipping={server_shipping} pm={payment_method_normalised}"
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=f"Amount mismatch — your cart total has changed. Please refresh and try again. (server: ₹{server_final_amount}, sent: ₹{client_amount})"
+        )
+
+    # Override client values with server-computed authoritative values
+    order_input.amount = server_final_amount
+    order_input.coupon_code = server_coupon_code
+    order_input.coupon_discount = server_coupon_discount
+    order_input.referral_discount = server_referral_discount
 
     order_obj = Order(**order_input.model_dump())
     
@@ -396,25 +521,39 @@ async def create_order(order_input: OrderCreate):
     await db.orders.insert_one(doc)
 
     # Decrement stock_qty atomically on live (non-TBL) products — guard against overselling
-    for slug, qty in stock_changes:
-        prod = await db.products.find_one({"slug": slug}, {"_id": 0, "is_to_be_launched": 1, "name": 1})
+    for slug, qty, shade_id in stock_changes:
+        prod = await db.products.find_one({"slug": slug}, {"_id": 0, "is_to_be_launched": 1, "name": 1, "shades": 1})
         if not prod or prod.get("is_to_be_launched"):
             continue
-        # Atomic conditional decrement: only succeeds if stock_qty >= qty
-        result = await db.products.update_one(
-            {"slug": slug, "stock_qty": {"$gte": qty}},
-            {"$inc": {"stock_qty": -qty}, "$set": {"updated_at": datetime.now(timezone.utc).isoformat()}}
-        )
+        shades = prod.get("shades") or []
+        if shades and shade_id:
+            # Shade-level atomic decrement using positional operator
+            result = await db.products.update_one(
+                {"slug": slug, "shades": {"$elemMatch": {"id": shade_id, "stock_qty": {"$gte": qty}}}},
+                {"$inc": {"shades.$.stock_qty": -qty}, "$set": {"updated_at": datetime.now(timezone.utc).isoformat()}}
+            )
+        else:
+            # Atomic conditional decrement: only succeeds if stock_qty >= qty
+            result = await db.products.update_one(
+                {"slug": slug, "stock_qty": {"$gte": qty}},
+                {"$inc": {"stock_qty": -qty}, "$set": {"updated_at": datetime.now(timezone.utc).isoformat()}}
+            )
         if result.matched_count == 0:
             # Race lost — stock was depleted between validation and decrement.
             # Roll back any prior decrements in this order to prevent partial fulfillment.
-            for prev_slug, prev_qty in stock_changes:
-                if prev_slug == slug:
+            for prev_slug, prev_qty, prev_shade in stock_changes:
+                if prev_slug == slug and prev_shade == shade_id:
                     break
-                await db.products.update_one(
-                    {"slug": prev_slug},
-                    {"$inc": {"stock_qty": prev_qty}}
-                )
+                if prev_shade:
+                    await db.products.update_one(
+                        {"slug": prev_slug, "shades.id": prev_shade},
+                        {"$inc": {"shades.$.stock_qty": prev_qty}}
+                    )
+                else:
+                    await db.products.update_one(
+                        {"slug": prev_slug},
+                        {"$inc": {"stock_qty": prev_qty}}
+                    )
             await db.orders.delete_one({"order_id": doc.get("order_id")})
             raise HTTPException(status_code=409, detail=f"Out of stock: {prod.get('name', slug)} sold out before checkout completed")
     
@@ -3035,6 +3174,32 @@ from routes import routines as routines_routes  # noqa: E402
 routines_routes.set_db(db)
 app.include_router(routines_routes.router, prefix="/api")
 
+# AI-generated FAQs per niche (skincare / cosmetics / anti-aging)
+from routes import faqs as faqs_routes  # noqa: E402
+from services.faq_generator import FAQGenerator  # noqa: E402
+_faq_service = FAQGenerator(db)
+faqs_routes.set_faq_service(_faq_service)
+faqs_routes.set_admin_sessions(admin_sessions)
+app.include_router(faqs_routes.router)
+
+# Admin orders v2 — internal notes, audit log, bulk status, printable invoice (B5)
+from routes import admin_orders_v2 as admin_orders_v2_routes  # noqa: E402
+admin_orders_v2_routes.set_db(db)
+admin_orders_v2_routes.set_admin_sessions(admin_sessions)
+app.include_router(admin_orders_v2_routes.router)
+
+# Admin shades — AI color lookup + swatch image upload
+from routes import admin_shades as admin_shades_routes  # noqa: E402
+admin_shades_routes.set_db(db)
+admin_shades_routes.set_admin_sessions(admin_sessions)
+app.include_router(admin_shades_routes.router)
+
+# Admin dashboard summary widgets
+from routes import admin_dashboard as admin_dashboard_routes  # noqa: E402
+admin_dashboard_routes.set_db(db)
+admin_dashboard_routes.set_admin_sessions(admin_sessions)
+app.include_router(admin_dashboard_routes.router)
+
 # Share admin_sessions with image_ai routes
 image_ai_routes.set_admin_sessions(admin_sessions)
 image_ai_routes.set_db(db)
@@ -3055,6 +3220,10 @@ app.add_middleware(
 
 # Gzip-compress responses > 1KB → 60-80% smaller payloads, much faster page loads
 app.add_middleware(GZipMiddleware, minimum_size=1024)
+
+# Rate limiting (B8 fix S12) — per-IP + per-endpoint token bucket
+from services.rate_limit import RateLimitMiddleware  # noqa: E402
+app.add_middleware(RateLimitMiddleware)
 
 logging.basicConfig(
     level=logging.INFO,

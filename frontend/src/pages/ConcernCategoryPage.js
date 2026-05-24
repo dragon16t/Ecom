@@ -10,6 +10,7 @@ import CircularCategoryStrip from '../components/CircularCategoryStrip';
 import { getProductBrand } from '../utils/brand';
 import { prefetchHandlers } from '../utils/routePrefetch';
 import { shareProduct } from '../utils/shareProduct';
+import { isWishlisted, toggleWishlist } from '../utils/wishlist';
 import { cachedGet } from '../utils/apiCache';
 import SEOHead, { breadcrumbJsonLd } from '../components/SEOHead';
 
@@ -415,6 +416,17 @@ export default function ConcernCategoryPage({ mode = 'concern' }) {
  *  - Pill "ADD TO BAG" button in brand green at the bottom.
  */
 export function ProductCard({ product, compact = false }) {
+  const [wished, setWished] = React.useState(() => isWishlisted(product.slug));
+  React.useEffect(() => {
+    const onUpd = () => setWished(isWishlisted(product.slug));
+    window.addEventListener('wishlistUpdated', onUpd);
+    return () => window.removeEventListener('wishlistUpdated', onUpd);
+  }, [product.slug]);
+  const handleWish = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setWished(toggleWishlist(product.slug));
+  };
   return (
     <div
       className="group relative bg-white rounded-2xl ring-1 ring-gray-200/70 hover:ring-green-300 overflow-hidden hover:shadow-[0_18px_50px_-15px_rgba(34,197,94,0.22)] hover:-translate-y-0.5 transition-all duration-500 flex flex-col h-full"
@@ -572,16 +584,37 @@ export function ProductCard({ product, compact = false }) {
           <span className="text-[10px] sm:text-[11px] text-stone-500">({product.reviews_count?.toLocaleString() || '0'})</span>
         </div>
 
+        {/* SHADE SWATCHES — show first 5 shades + "+N more" pill */}
+        {Array.isArray(product.shades) && product.shades.length > 0 && (
+          <div className="flex items-center gap-1.5 mb-2.5" data-testid={`shades-strip-${product.slug}`}>
+            {product.shades.slice(0, 5).map(s => (
+              <span
+                key={s.id}
+                title={s.name}
+                aria-label={s.name}
+                className="w-4 h-4 sm:w-[18px] sm:h-[18px] rounded-full ring-1 ring-stone-200 ring-offset-1 ring-offset-white inline-block"
+                style={{ background: s.hex || '#ccc' }}
+              />
+            ))}
+            {product.shades.length > 5 && (
+              <span className="text-[10px] text-stone-500 font-semibold ml-1">+{product.shades.length - 5}</span>
+            )}
+          </div>
+        )}
+
         {/* CTA ROW — TBL products are NEVER orderable (purely informational pill).
             Only when admin sets the product LIVE (is_to_be_launched=false) can users add to cart. */}
         {product.is_to_be_launched ? (
           <div className="mt-auto flex items-center gap-2">
             <button
-              aria-label="Wishlist"
-              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white ring-1 ring-stone-200 flex items-center justify-center text-stone-400 hover:text-rose-500 hover:ring-rose-200 transition-all flex-shrink-0"
+              type="button"
+              aria-label={wished ? 'Remove from wishlist' : 'Add to wishlist'}
+              aria-pressed={wished}
+              onClick={handleWish}
+              className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full ring-1 flex items-center justify-center transition-all flex-shrink-0 ${wished ? 'bg-rose-50 ring-rose-200 text-rose-500' : 'bg-white ring-stone-200 text-stone-400 hover:text-rose-500 hover:ring-rose-200'}`}
               data-testid={`wishlist-cta-${product.slug}`}
             >
-              <Heart size={15} />
+              <Heart size={15} className={wished ? 'fill-rose-500 text-rose-500' : ''} />
             </button>
             <Link
               to={`/product/${product.slug}`}
@@ -600,11 +633,14 @@ export function ProductCard({ product, compact = false }) {
         ) : (
           <div className="mt-auto flex items-center gap-2">
             <button
-              aria-label="Wishlist"
-              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white ring-1 ring-stone-200 flex items-center justify-center text-stone-400 hover:text-rose-500 hover:ring-rose-200 transition-all flex-shrink-0"
+              type="button"
+              aria-label={wished ? 'Remove from wishlist' : 'Add to wishlist'}
+              aria-pressed={wished}
+              onClick={handleWish}
+              className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full ring-1 flex items-center justify-center transition-all flex-shrink-0 ${wished ? 'bg-rose-50 ring-rose-200 text-rose-500' : 'bg-white ring-stone-200 text-stone-400 hover:text-rose-500 hover:ring-rose-200'}`}
               data-testid={`wishlist-cta-${product.slug}`}
             >
-              <Heart size={15} />
+              <Heart size={15} className={wished ? 'fill-rose-500 text-rose-500' : ''} />
             </button>
             <AddToBagButton slug={product.slug} />
           </div>

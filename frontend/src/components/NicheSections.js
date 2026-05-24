@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, BadgeCheck, ChevronDown } from 'lucide-react';
+
+const API = process.env.REACT_APP_BACKEND_URL;
 
 /**
  * Niche-shared sections — rendered in 3 niche home pages (Anti-Aging / Skincare / Cosmetics)
@@ -74,14 +76,35 @@ function FaqItem({ q, a, defaultOpen, accent }) {
   );
 }
 
-export function FaqSection({ accent = '#0f766e', faqs: customFaqs, title, eyebrow }) {
+export function FaqSection({ accent = '#0f766e', faqs: customFaqs, title, eyebrow, niche }) {
   const defaults = [
     { q: 'How quickly will I see results?', a: 'Most users notice softer skin and a brighter complexion within 7–10 days. Visible improvements typically appear at 4 weeks of consistent use.' },
     { q: 'Are the products dermatologically tested?', a: 'Every formula passes a 3-stage review with board-certified dermatologists.' },
     { q: 'What if it doesn\'t work for me?', a: 'We accept 7-day returns on unopened, factory-sealed items only. Opened bottles cannot be returned for hygiene reasons — please WhatsApp us before breaking the seal and we\'ll guide you to the right product.' },
     { q: 'How is shipping & delivery?', a: 'Free shipping on orders over ₹499. Most metros receive within 2–3 business days. COD available.' },
   ];
-  const faqs = (Array.isArray(customFaqs) && customFaqs.length > 0) ? customFaqs : defaults;
+
+  // 1) Prefer admin-curated faqs prop. 2) Otherwise fetch AI-generated FAQs for the niche. 3) Fallback to defaults.
+  const hasCustom = Array.isArray(customFaqs) && customFaqs.length > 0;
+  const [aiFaqs, setAiFaqs] = useState([]);
+  const [loadingFaqs, setLoadingFaqs] = useState(false);
+
+  useEffect(() => {
+    if (hasCustom || !niche) return;
+    let cancelled = false;
+    setLoadingFaqs(true);
+    fetch(`${API}/api/faqs/${niche}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (cancelled || !d?.faqs?.length) return;
+        setAiFaqs(d.faqs);
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoadingFaqs(false); });
+    return () => { cancelled = true; };
+  }, [niche, hasCustom]);
+
+  const faqs = hasCustom ? customFaqs : (aiFaqs.length > 0 ? aiFaqs : defaults);
   return (
     <section className="bg-white py-8 sm:py-12" data-testid="niche-faq">
       <div className="max-w-3xl mx-auto px-3 sm:px-6">
@@ -94,8 +117,11 @@ export function FaqSection({ accent = '#0f766e', faqs: customFaqs, title, eyebro
               <>Got <span className="italic" style={{ color: accent }}>questions?</span></>
             )}
           </h2>
+          {loadingFaqs && !aiFaqs.length && (
+            <p className="text-[11px] text-stone-400 mt-2" data-testid="faq-loading">Loading detailed answers…</p>
+          )}
         </div>
-        <div className="space-y-3">
+        <div className="space-y-3" data-testid="faq-list">
           {faqs.map((f, i) => <FaqItem key={f.q || i} q={f.q} a={f.a} defaultOpen={i === 0} accent={accent} />)}
         </div>
       </div>

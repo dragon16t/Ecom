@@ -236,7 +236,80 @@ async def me(authorization: Optional[str] = Header(None)):
         "email": customer.get("email"),
         "phone": customer.get("phone"),
         "name": customer.get("name"),
+        "addresses": customer.get("addresses", []),
     }}
+
+
+class ProfileUpdate(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+
+
+class AddressItem(BaseModel):
+    label: Optional[str] = "Home"
+    name: str
+    phone: str
+    house_number: str
+    area: str
+    pincode: str
+    state: str
+    is_default: Optional[bool] = False
+
+
+@router.patch("/me")
+async def update_profile(req: ProfileUpdate, authorization: Optional[str] = Header(None)):
+    """B5 AC-1 fix: customer can edit name + phone from /account → Profile tab."""
+    session = await _get_session_user(authorization)
+    upd = {}
+    if req.name is not None:
+        upd["name"] = req.name.strip()[:80]
+    if req.phone is not None:
+        ph = "".join(c for c in req.phone if c.isdigit())[-10:]
+        if len(ph) != 10:
+            raise HTTPException(status_code=400, detail="Phone must be 10 digits")
+        upd["phone"] = ph
+    if upd:
+        upd["updated_at"] = datetime.now(timezone.utc).isoformat()
+        await _db.customers.update_one({"email": session["email"]}, {"$set": upd})
+    customer = await _db.customers.find_one({"email": session["email"]}, {"_id": 0})
+    return {"success": True, "user": {k: customer.get(k) for k in ("customer_id", "email", "phone", "name", "addresses")}}
+
+
+@router.get("/addresses")
+async def list_addresses(authorization: Optional[str] = Header(None)):
+    session = await _get_session_user(authorization)
+    customer = await _db.customers.find_one({"email": session["email"]}, {"_id": 0, "addresses": 1}) or {}
+    return {"addresses": customer.get("addresses", [])}
+
+
+@router.post("/addresses")
+async def add_address(addr: AddressItem, authorization: Optional[str] = Header(None)):
+    session = await _get_session_user(authorization)
+    addr_dict = addr.model_dump()
+    addr_dict["id"] = f"addr_{int(datetime.now(timezone.utc).timestamp() * 1000)}"
+    addr_dict["created_at"] = datetime.now(timezone.utc).isoformat()
+    if addr.is_default:
+        # Unset any existing default
+        await _db.customers.update_one(
+            {"email": session["email"]},
+            {"$set": {"addresses.$[].is_default": False}}
+        )
+    await _db.customers.update_one(
+        {"email": session["email"]},
+        {"$push": {"addresses": addr_dict}},
+        upsert=True,
+    )
+    return {"success": True, "address": addr_dict}
+
+
+@router.delete("/addresses/{address_id}")
+async def delete_address(address_id: str, authorization: Optional[str] = Header(None)):
+    session = await _get_session_user(authorization)
+    await _db.customers.update_one(
+        {"email": session["email"]},
+        {"$pull": {"addresses": {"id": address_id}}}
+    )
+    return {"success": True}
 
 
 @router.post("/logout")

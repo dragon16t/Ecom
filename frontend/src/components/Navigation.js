@@ -6,7 +6,8 @@ import { isProductTbl, isComboTbl, pruneTblItemsFromCart } from '../pages/Homepa
 
 const getCartCount = () => {
   try {
-    const cart = JSON.parse(sessionStorage.getItem('cart') || '{"items":[]}');
+    const raw = localStorage.getItem('cart') || sessionStorage.getItem('cart') || '{"items":[]}';
+    const cart = JSON.parse(raw);
     // Exclude TBL items from the badge count — they cannot be ordered anyway
     return cart.items
       .filter(i => {

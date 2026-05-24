@@ -4,6 +4,7 @@ import axios from 'axios';
 import { Package, Plus, Edit, Trash2, Image as ImageIcon, DollarSign, Eye, EyeOff, Save, X, ChevronDown, Tag, Settings, Layers, Upload, Trash, Clock, Rocket, GripVertical, ArrowUp, ArrowDown, ArrowLeft, LayoutDashboard, Sparkles, Crop } from 'lucide-react';
 import { List } from 'react-window';
 import ImageCropperModal from '../../components/admin/ImageCropperModal';
+import ShadeEditor from '../../components/admin/ShadeEditor';
 import { resolveImageUrl } from '../../utils/productImage';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -1112,6 +1113,16 @@ function AdminProducts() {
                   <p className="text-xs font-semibold text-gray-500 mb-1">12. Product Images</p>
                   <ImageManager images={editProduct.images || []} onChange={(imgs) => setEditProduct({...editProduct, images: imgs})} label="" headers={headers} />
                 </div>
+                {/* 12b. Shades — cosmetics only */}
+                {(editProduct.niche === 'cosmetics') && (
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 mb-1">12b. Shade Variants</p>
+                    <ShadeEditor
+                      shades={editProduct.shades || []}
+                      onChange={(shades) => setEditProduct({ ...editProduct, shades })}
+                    />
+                  </div>
+                )}
                 {/* 13. Badges */}
                 <div>
                   <p className="text-xs font-semibold text-gray-500 mb-1">13. Badges <span className="text-gray-400 font-normal">(shown on card — pick any)</span></p>
@@ -1325,6 +1336,16 @@ function AdminProducts() {
                   </div>
 
                   <ImageManager images={editProduct.images || []} onChange={(imgs) => setEditProduct({...editProduct, images: imgs})} label="Product Images" headers={headers} />
+
+                  {/* Shade Variants — surfaced only when niche === 'cosmetics' to keep the
+                      skincare/anti-aging forms clean. Admins can still toggle niche to
+                      reveal it for products that span both worlds (e.g., tinted SPF). */}
+                  {(editProduct.niche === 'cosmetics') && (
+                    <ShadeEditor
+                      shades={editProduct.shades || []}
+                      onChange={(shades) => setEditProduct({ ...editProduct, shades })}
+                    />
+                  )}
 
                   {/* Category + Concerns assignment */}
                   <div className="rounded-xl border border-pink-100 bg-pink-50/40 p-3 space-y-3">
