@@ -10,16 +10,44 @@ but every write is also persisted to MongoDB so:
   • Sessions are shared across multiple uvicorn workers / k8s pods.
   • A TTL index on `expires_at` auto-purges stale rows.
 
-Reads are O(1) in-memory; on a miss we fall back to MongoDB so a session
-created by another pod is still recognized.
+Reads are O(1) in-memory; on a miss we fall back to MongoDB (via a SYNC
+pymongo client) so a session created by another pod is still recognized
+immediately, even from synchronous code paths like ``verify_admin_token``.
 """
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 import logging
+import os
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 logger = logging.getLogger(__name__)
+
+
+# ---- Sync pymongo singleton (used only for cache-miss fallback in __contains__) ----
+_sync_clients: Dict[str, Any] = {}
+
+
+def _sync_collection(collection_name: str):
+    """Return a sync pymongo collection for the configured DB. Lazy-init.
+    pymongo ships as a transitive dependency of motor so no new install required.
+    """
+    key = f"{collection_name}"
+    if key in _sync_clients:
+        return _sync_clients[key]
+    try:
+        from pymongo import MongoClient  # bundled with motor
+        url = os.environ.get("MONGO_URL")
+        dbname = os.environ.get("DB_NAME")
+        if not url or not dbname:
+            return None
+        client = MongoClient(url, serverSelectionTimeoutMS=2000)
+        coll = client[dbname][collection_name]
+        _sync_clients[key] = coll
+        return coll
+    except Exception as e:
+        logger.warning(f"[session_store] sync pymongo client init failed: {e}")
+        return None
 
 
 class SessionStore:
@@ -31,11 +59,52 @@ class SessionStore:
         self._cache: Dict[str, Dict[str, Any]] = {}
         self._collection_name = collection_name
 
-    # ---------- dict protocol (sync, cache-only) ----------
+    # ---------- dict protocol (sync, with Mongo fallback on cache miss) ----------
     def __contains__(self, token: str) -> bool:
-        return token in self._cache
+        if token in self._cache:
+            return True
+        # Cross-worker fallback: session may have been created on another pod.
+        # We hit Mongo synchronously here (~1-5ms) so the verifier on this pod
+        # can see it. This is what fixes the "login → dashboard → bounced back"
+        # bug on multi-worker production deployments.
+        coll = _sync_collection(self._collection_name)
+        if coll is None:
+            return False
+        try:
+            doc = coll.find_one({"token": token}, {"_id": 0})
+        except Exception:
+            return False
+        if not doc:
+            return False
+        # Expiry check
+        exp = doc.get("expires_at")
+        if isinstance(exp, str):
+            try:
+                exp = datetime.fromisoformat(exp.replace("Z", "+00:00"))
+            except Exception:
+                exp = None
+        if isinstance(exp, datetime):
+            if exp.tzinfo is None:
+                exp = exp.replace(tzinfo=timezone.utc)
+            if exp < datetime.now(timezone.utc):
+                # Stale — clean up and reject
+                try:
+                    coll.delete_one({"token": token})
+                except Exception:
+                    pass
+                return False
+        # Hydrate the local cache so subsequent reads are O(1)
+        doc.pop("token", None)
+        doc.pop("_updated_at", None)
+        self._cache[token] = doc
+        return True
 
     def __getitem__(self, token: str) -> Dict[str, Any]:
+        # __contains__ above hydrates self._cache as a side effect on miss,
+        # so by the time call sites do `if t in store: session = store[t]`,
+        # the entry is present.
+        if token not in self._cache and not self.__contains__(token):
+            raise KeyError(token)
         return self._cache[token]
 
     def __setitem__(self, token: str, value: Dict[str, Any]) -> None:
@@ -60,7 +129,11 @@ class SessionStore:
             pass
 
     def get(self, token: str, default: Any = None) -> Any:
-        return self._cache.get(token, default)
+        # Use __contains__ which auto-hydrates from Mongo on cache miss so a
+        # session created on another worker / pod is still returned.
+        if self.__contains__(token):
+            return self._cache.get(token, default)
+        return default
 
     def pop(self, token: str, default: Any = None) -> Any:
         val = self._cache.pop(token, default)
