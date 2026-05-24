@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { ArrowLeft, Plus, Trash2, Save, Edit, Sparkles, Package, Image as ImageIcon, Layers } from 'lucide-react';
 import { getAdminToken, clearAdminToken } from '../../utils/adminAuth';
+import QuickImageEditor from '../../components/admin/QuickImageEditor';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -204,6 +205,26 @@ export default function AdminConcerns() {
 
       {/* Body */}
       <div className="max-w-7xl mx-auto px-5 py-8">
+        {/* Quick-image-edit explainer + sale-badge shortcut */}
+        <div className="mb-5 grid grid-cols-1 md:grid-cols-2 gap-3" data-testid="admin-concerns-helper">
+          <div className="bg-purple-50 ring-1 ring-purple-200 rounded-2xl px-4 py-3">
+            <p className="text-xs font-black text-purple-900 mb-0.5">📷 Replace banner images in one click</p>
+            <p className="text-[11px] text-purple-800 leading-snug">
+              Click the <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-white ring-1 ring-purple-200 mx-0.5"><ImageIcon size={11} className="text-purple-600" /></span> /
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-white ring-1 ring-purple-200 mx-0.5">⬆</span>
+              icon on any card to upload a new banner — no need to open the full edit form.
+            </p>
+          </div>
+          <Link to="/admin/niches" className="bg-gradient-to-r from-orange-500 to-pink-500 rounded-2xl px-4 py-3 text-white hover:opacity-95 transition flex items-start gap-2" data-testid="link-sale-badge-editor">
+            <Sparkles size={18} className="flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-xs font-black">🔥 Edit Sale Badge banners</p>
+              <p className="text-[11px] opacity-90 leading-snug">
+                Per-niche rotating offer ribbon shown on top of every page. Tap to open the editor under <strong>Niches → Sale Badge</strong> tab.
+              </p>
+            </div>
+          </Link>
+        </div>
         {(tab === 'concerns' || tab === 'cosmetic-concerns') && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {concerns
@@ -228,7 +249,14 @@ export default function AdminConcerns() {
                 </div>
                 <div className="p-3 flex items-center justify-between">
                   <span className="text-[11px] text-gray-500 font-mono truncate">/{c.slug}</span>
-                  <div className="flex gap-1">
+                  <div className="flex gap-1 items-center">
+                    <QuickImageEditor
+                      currentImage={c.image}
+                      resourceType="concern"
+                      slug={c.slug}
+                      token={token}
+                      onUpdated={() => load()}
+                    />
                     <button onClick={() => setEditing({ type: 'concern', data: { ...c }, isNew: false })} className="text-blue-600 hover:bg-blue-50 p-1.5 rounded" data-testid={`edit-concern-${c.slug}`}>
                       <Edit size={14} />
                     </button>
@@ -276,7 +304,14 @@ export default function AdminConcerns() {
                   <p className="text-xs text-gray-500 line-clamp-1 mb-2">{c.tagline}</p>
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] text-gray-500 font-mono truncate">/{c.slug}</span>
-                    <div className="flex gap-1">
+                    <div className="flex gap-1 items-center">
+                      <QuickImageEditor
+                        currentImage={c.image}
+                        resourceType="category"
+                        slug={c.slug}
+                        token={token}
+                        onUpdated={() => load()}
+                      />
                       <button onClick={() => setEditing({ type: 'category', data: { ...c }, isNew: false })} className="text-blue-600 hover:bg-blue-50 p-1.5 rounded" data-testid={`edit-category-${c.slug}`}>
                         <Edit size={14} />
                       </button>
@@ -351,7 +386,14 @@ export default function AdminConcerns() {
                         <p className="text-xs text-gray-500 line-clamp-1 mb-2">{s.tagline}</p>
                         <div className="flex items-center justify-between">
                           <span className="text-[11px] text-gray-500 font-mono truncate">/{s.slug}</span>
-                          <div className="flex gap-1">
+                          <div className="flex gap-1 items-center">
+                            <QuickImageEditor
+                              currentImage={s.image}
+                              resourceType="subcategory"
+                              slug={s.slug}
+                              token={token}
+                              onUpdated={() => load()}
+                            />
                             <button onClick={() => setEditing({ type: 'subcategory', data: { ...s }, isNew: false })} className="text-blue-600 hover:bg-blue-50 p-1.5 rounded" data-testid={`edit-subcategory-${s.slug}`}>
                               <Edit size={14} />
                             </button>

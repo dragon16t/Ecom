@@ -694,6 +694,13 @@ function AdminDashboard() {
                       </div>
                       <ChevronRight className="w-5 h-5 text-orange-600" />
                     </Link>
+                    <Link to="/admin/niches?tab=sale-badge" className="flex items-center justify-between p-4 bg-gradient-to-r from-orange-50 to-rose-50 rounded-xl hover:from-orange-100 hover:to-rose-100 transition-colors" data-testid="quick-sale-badge">
+                      <div className="flex items-center gap-3">
+                        <Sparkles className="w-5 h-5 text-rose-600" />
+                        <span className="font-medium text-rose-700">Sale Badge / Offer Ribbon</span>
+                      </div>
+                      <ChevronRight className="w-5 h-5 text-rose-600" />
+                    </Link>
                     <Link to="/admin/referrals" className="flex items-center justify-between p-4 bg-purple-50 rounded-xl hover:bg-purple-100 transition-colors" data-testid="quick-referrals">
                       <div className="flex items-center gap-3">
                         <Gift className="w-5 h-5 text-purple-600" />

@@ -101,7 +101,14 @@ function Toggle({ value, onChange, label, testId }) {
 export default function AdminNiches() {
   const navigate = useNavigate();
   const [activeNiche, setActiveNiche] = useState('anti-aging');
-  const [activeTab, setActiveTab] = useState('hero');
+  const [activeTab, setActiveTab] = useState(() => {
+    // Respect ?tab=sale-badge so "Quick Action → Sale Badge" lands directly here.
+    if (typeof window !== 'undefined') {
+      const t = new URLSearchParams(window.location.search).get('tab');
+      if (t) return t;
+    }
+    return 'hero';
+  });
   const [settings, setSettings] = useState(null);
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
