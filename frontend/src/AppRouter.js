@@ -297,7 +297,21 @@ function App() {
                   <Suspense fallback={<PageLoader />}><SearchResults /></Suspense>
                 </PublicLayout>
               } />
-              
+
+              {/* Catch-all 404 — prevents white-screen on bad CTAs / stale links.
+                  Falls back to the homepage with a soft message instead of a blank page. */}
+              <Route path="*" element={
+                <PublicLayout>
+                  <div className="min-h-[60vh] flex items-center justify-center px-6 text-center" data-testid="page-not-found">
+                    <div>
+                      <h1 className="text-5xl font-light text-stone-900 mb-3">404</h1>
+                      <p className="text-stone-600 mb-6">This page doesn't exist or has moved.</p>
+                      <a href="/" className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-green-700 text-white font-semibold text-sm hover:bg-green-800 transition">Back to home</a>
+                    </div>
+                  </div>
+                </PublicLayout>
+              } />
+
               {/* Landing Page Funnel route removed — was matching every unmatched
                   path and conflicting with real routes. */}
             </Routes>
