@@ -114,6 +114,76 @@ CONCERNS = [
         "sort_order": 8,
         "is_active": True,
     },
+    {
+        "slug": "large-pores",
+        "name": "Large Pores",
+        "tagline": "Pore size, congestion",
+        "icon": "🔬",
+        "image": "https://images.unsplash.com/photo-1571781926291-c477ebfd024b?auto=format&fit=crop&w=800&q=80",
+        "accent_from": "#e0f2fe", "accent_to": "#bae6fd", "accent_text": "#075985",
+        "description": "Niacinamide + BHA exfoliators refine pore size and clear congestion.",
+        "sort_order": 9, "is_active": True,
+    },
+    {
+        "slug": "fine-lines",
+        "name": "Fine Lines & Wrinkles",
+        "tagline": "Early signs of aging",
+        "icon": "🌿",
+        "image": "https://images.unsplash.com/photo-1620916566398-39f1143ab7be?auto=format&fit=crop&w=800&q=80",
+        "accent_from": "#fef3c7", "accent_to": "#fde68a", "accent_text": "#92400e",
+        "description": "Peptides, retinoids and bakuchiol smooth fine lines.",
+        "sort_order": 10, "is_active": True,
+    },
+    {
+        "slug": "sun-damage",
+        "name": "Sun Damage",
+        "tagline": "UV stress, photo-aging",
+        "icon": "☀️",
+        "image": "https://images.unsplash.com/photo-1611080541599-8c6dbde6ed28?auto=format&fit=crop&w=800&q=80",
+        "accent_from": "#fef9c3", "accent_to": "#fef08a", "accent_text": "#854d0e",
+        "description": "Broad-spectrum SPF + antioxidants reverse and prevent UV damage.",
+        "sort_order": 11, "is_active": True,
+    },
+    {
+        "slug": "uneven-tone",
+        "name": "Uneven Skin Tone",
+        "tagline": "Patchiness, texture",
+        "icon": "🎨",
+        "image": "https://images.unsplash.com/photo-1605497788044-5a32c7078486?auto=format&fit=crop&w=800&q=80",
+        "accent_from": "#ede9fe", "accent_to": "#ddd6fe", "accent_text": "#6d28d9",
+        "description": "Gentle AHAs + tranexamic acid even out tone.",
+        "sort_order": 12, "is_active": True,
+    },
+    {
+        "slug": "redness",
+        "name": "Redness & Rosacea",
+        "tagline": "Flushing, broken capillaries",
+        "icon": "🍃",
+        "image": "https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=800&q=80",
+        "accent_from": "#fee2e2", "accent_to": "#fecaca", "accent_text": "#991b1b",
+        "description": "Centella + azelaic-acid formulas calm chronic redness.",
+        "sort_order": 13, "is_active": True,
+    },
+    {
+        "slug": "blackheads",
+        "name": "Blackheads & Whiteheads",
+        "tagline": "Comedones, nose & chin",
+        "icon": "⚪",
+        "image": "https://images.unsplash.com/photo-1571875257727-256c39da42af?auto=format&fit=crop&w=800&q=80",
+        "accent_from": "#e0e7ff", "accent_to": "#c7d2fe", "accent_text": "#3730a3",
+        "description": "Salicylic acid + clay masks for stubborn comedones.",
+        "sort_order": 14, "is_active": True,
+    },
+    {
+        "slug": "dehydration",
+        "name": "Dehydrated Skin",
+        "tagline": "Tightness, surface fine lines",
+        "icon": "💧",
+        "image": "https://images.unsplash.com/photo-1576608472635-91a946e0bb73?auto=format&fit=crop&w=800&q=80",
+        "accent_from": "#cffafe", "accent_to": "#a5f3fc", "accent_text": "#155e75",
+        "description": "Hyaluronic acid + beta glucan restore moisture instantly.",
+        "sort_order": 15, "is_active": True,
+    },
 ]
 
 
@@ -430,6 +500,62 @@ CATEGORIES = [
         "sort_order": 31,
         "is_active": True,
         "group": "cosmetics",
+    },
+    {
+        "slug": "mascara",
+        "name": "Mascara",
+        "tagline": "Volume, length, lift",
+        "icon": "👁️",
+        "image": "https://images.unsplash.com/photo-1631214540242-3cd8c4b0b3b8?auto=format&fit=crop&w=800&q=80",
+        "sort_order": 32, "is_active": True, "group": "cosmetics",
+    },
+    {
+        "slug": "lip-liner",
+        "name": "Lip Liners",
+        "tagline": "Define & shape lips",
+        "icon": "💄",
+        "image": "https://images.unsplash.com/photo-1583241475880-083f84372725?auto=format&fit=crop&w=800&q=80",
+        "sort_order": 33, "is_active": True, "group": "cosmetics",
+    },
+    {
+        "slug": "setting-powder",
+        "name": "Setting Powder",
+        "tagline": "Matte finish, all-day wear",
+        "icon": "⚪",
+        "image": "https://images.unsplash.com/photo-1522335789203-aaa56a4d9b8d?auto=format&fit=crop&w=800&q=80",
+        "sort_order": 34, "is_active": True, "group": "cosmetics",
+    },
+    {
+        "slug": "bronzer-contour",
+        "name": "Bronzer & Contour",
+        "tagline": "Warmth, sculpt, definition",
+        "icon": "🌅",
+        "image": "https://images.unsplash.com/photo-1583241475880-083f84372725?auto=format&fit=crop&w=800&q=80",
+        "sort_order": 35, "is_active": True, "group": "cosmetics",
+    },
+    {
+        "slug": "body-care",
+        "name": "Body Care",
+        "tagline": "Body wash, scrubs, oils",
+        "icon": "🛁",
+        "image": "https://images.unsplash.com/photo-1556228852-80b6e5eeff06?auto=format&fit=crop&w=800&q=80",
+        "sort_order": 36, "is_active": True, "group": "skincare",
+    },
+    {
+        "slug": "hair-care",
+        "name": "Hair Care",
+        "tagline": "Shampoo, conditioner, serums",
+        "icon": "💇",
+        "image": "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=800&q=80",
+        "sort_order": 37, "is_active": True, "group": "skincare",
+    },
+    {
+        "slug": "lip-care",
+        "name": "Lip Care",
+        "tagline": "Lip balms, scrubs, masks",
+        "icon": "💋",
+        "image": "https://images.unsplash.com/photo-1631730486572-226d1f595b68?auto=format&fit=crop&w=800&q=80",
+        "sort_order": 38, "is_active": True, "group": "skincare",
     },
 ]
 
@@ -1049,14 +1175,30 @@ async def deactivate_legacy_cosmetics_dupes(db):
 
 
 async def run_concerns_seed(db):
-    """Run all concerns/categories/products seed (idempotent)."""
+    """Run all concerns/categories/products seed (idempotent).
+
+    NOTE (Jan 2026): concerns + categories are now authoritatively managed by
+    `taxonomy_v2.py`. We skip the legacy `seed_concerns_and_categories` step
+    once taxonomy_v2 has been applied (sentinel: settings.taxonomy_v2_applied).
+    """
     try:
-        await seed_concerns_and_categories(db)
+        settings = await db.site_settings.find_one({"_id": "main"}, {"_id": 0, "taxonomy_v2_applied": 1})
+        v2_applied = bool(settings and settings.get("taxonomy_v2_applied"))
+        if not v2_applied:
+            await seed_concerns_and_categories(db)
         await seed_extra_products(db)
         await backfill_existing_product_concerns(db)
         await backfill_product_niches(db)
         await seed_niches(db)
-        await deactivate_legacy_cosmetics_dupes(db)
+        if not v2_applied:
+            await deactivate_legacy_cosmetics_dupes(db)
+        # Re-activate any legacy taxonomy_v2 categories that may have been
+        # incorrectly deactivated by an earlier startup.
+        if v2_applied:
+            await db.categories.update_many(
+                {"niche": {"$in": ["skincare", "cosmetics"]}, "is_active": False},
+                {"$set": {"is_active": True}},
+            )
         logging.info("[concerns_seed] All concerns/categories/products seed completed")
     except Exception as e:
         logging.error(f"[concerns_seed] Failed: {e}", exc_info=True)

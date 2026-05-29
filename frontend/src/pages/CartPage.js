@@ -17,6 +17,9 @@ function CartPage() {
   const [couponCode, setCouponCode] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState(null);
   const [couponError, setCouponError] = useState('');
+  const [giftCardCode, setGiftCardCode] = useState('');
+  const [appliedGiftCard, setAppliedGiftCard] = useState(null);
+  const [giftCardError, setGiftCardError] = useState('');
   const [upsellProducts, setUpsellProducts] = useState([]);
   const [recentlyViewedProducts, setRecentlyViewedProducts] = useState([]);
   const [combos, setCombos] = useState([]);
@@ -24,16 +27,27 @@ function CartPage() {
 
   const appliedCouponRef = React.useRef(appliedCoupon);
   appliedCouponRef.current = appliedCoupon;
+  const appliedGiftCardRef = React.useRef(appliedGiftCard);
+  appliedGiftCardRef.current = appliedGiftCard;
   const initialLoadRef = React.useRef(true);
 
-  const validateCart = useCallback(async (couponOverride) => {
+  const validateCart = useCallback(async (couponOverride, giftCardOverride) => {
     if (initialLoadRef.current) setLoading(true);
     const cart = getCart();
     if (!cart.items.length) { setCartData(null); setLoading(false); initialLoadRef.current = false; return; }
     const couponCodeToUse = couponOverride !== undefined ? couponOverride : (appliedCouponRef.current?.code || null);
+    const giftCardToUse = giftCardOverride !== undefined ? giftCardOverride : (appliedGiftCardRef.current?.code || null);
     try {
-      const res = await axios.post(`${API}/api/cart/validate`, { items: cart.items, coupon_code: couponCodeToUse, payment_method: 'prepaid' });
+      const res = await axios.post(`${API}/api/cart/validate`, { items: cart.items, coupon_code: couponCodeToUse, gift_card_code: giftCardToUse, payment_method: 'prepaid' });
       setCartData(res.data);
+      // Sync applied gift card state with server validation
+      if (res.data.gift_card?.error) {
+        setGiftCardError(res.data.gift_card.error);
+        setAppliedGiftCard(null);
+      } else if (res.data.gift_card?.code) {
+        setAppliedGiftCard(res.data.gift_card);
+        setGiftCardError('');
+      }
       if (initialLoadRef.current) {
         // Use cache first — these endpoints rarely change so we keep them for 5 mins
         const [allProds, comboRes] = await Promise.all([
@@ -186,9 +200,13 @@ function CartPage() {
 
   const proceedToCheckout = () => {
     if (!cartData?.items?.length) return;
+    if (cartData?.moq_block) {
+      alert(`Minimum order amount is ₹${cartData.moq_amount || 300}. Add ₹${Math.ceil(cartData.moq_remaining)} more to checkout.`);
+      return;
+    }
     trackAction('initiate_checkout', { items: cartData.items.length, total: cartData.total });
     if (window.fbq) window.fbq('track', 'InitiateCheckout', { value: cartData.total, currency: 'INR', num_items: cartData.item_count });
-    navigate('/checkout', { state: { cartData, paymentMethod: 'prepaid', coupon: appliedCoupon } });
+    navigate('/checkout', { state: { cartData, paymentMethod: 'prepaid', coupon: appliedCoupon, giftCard: appliedGiftCard } });
   };
 
   if (loading) {
@@ -457,30 +475,107 @@ function CartPage() {
               {couponError && <p className="text-red-500 text-xs mt-1">{couponError}</p>}
             </div>
 
+            {/* Gift Card section */}
+            <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm" data-testid="gift-card-section">
+              <div className="flex items-center gap-2 mb-3">
+                <Sparkles size={16} className="text-rose-500" />
+                <h3 className="font-bold text-sm text-gray-900">Have a Gift Card?</h3>
+              </div>
+              {appliedGiftCard && appliedGiftCard.code ? (
+                <div className="bg-gradient-to-r from-rose-50 to-pink-50 border border-rose-200 rounded-xl p-3 flex items-center justify-between" data-testid="applied-giftcard">
+                  <div>
+                    <p className="font-bold text-rose-700 text-sm font-mono">{appliedGiftCard.code}</p>
+                    <p className="text-xs text-rose-600">−₹{appliedGiftCard.discount} applied • ₹{appliedGiftCard.remaining_after} left on card</p>
+                  </div>
+                  <button onClick={() => { setAppliedGiftCard(null); setGiftCardCode(''); validateCart(undefined, null); }} className="text-gray-400 text-xs hover:text-red-500" data-testid="remove-giftcard">Remove</button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={giftCardCode}
+                    onChange={e => setGiftCardCode(e.target.value.toUpperCase())}
+                    placeholder="Enter gift card code"
+                    data-testid="giftcard-input"
+                    className="flex-1 px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-stone-50 focus:bg-white focus:ring-2 focus:ring-rose-200 font-mono"
+                  />
+                  <button
+                    onClick={() => { if (giftCardCode.trim()) { validateCart(undefined, giftCardCode.trim()); } }}
+                    data-testid="giftcard-apply"
+                    className="px-4 py-2.5 bg-rose-600 text-white text-sm font-bold rounded-xl hover:bg-rose-700"
+                  >Apply</button>
+                </div>
+              )}
+              {giftCardError && <p className="text-red-500 text-xs mt-1" data-testid="giftcard-error">{giftCardError}</p>}
+              <p className="text-[10px] text-gray-400 mt-2">💡 Gift cards work like cash. Unused balance stays on your card for future orders.</p>
+            </div>
+
             <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm" data-testid="order-summary">
               <p className="text-xs font-bold text-gray-400 uppercase tracking-[0.15em] mb-3">Order Summary</p>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between text-gray-400"><span>MRP</span><span className="line-through">₹{cartData.mrp_total?.toLocaleString()}</span></div>
                 <div className="flex justify-between text-gray-700"><span>Subtotal</span><span className="font-medium">₹{cartData.subtotal?.toLocaleString()}</span></div>
                 {cartData.discount > 0 && <div className="flex justify-between text-green-600"><span>Coupon Discount</span><span>-₹{cartData.discount}</span></div>}
-                {cartData.volume_discount > 0 && <div className="flex justify-between text-purple-600"><span>Buy More Discount ({cartData.volume_discount_percent}% off)</span><span>-₹{cartData.volume_discount}</span></div>}
+                {cartData.gift_card_discount > 0 && (
+                  <div className="flex justify-between text-rose-600 font-medium" data-testid="gift-card-discount-row">
+                    <span>🎁 Gift Card ({cartData.gift_card?.code})</span>
+                    <span>-₹{cartData.gift_card_discount}</span>
+                  </div>
+                )}
+                {/* Volume discount removed — no buy-more nudge on the cart summary */}
+                {/* Taxes & charges — psychological pricing with 50% off framing at ₹999 */}
+                {cartData.tax_charges > 0 && (
+                  <div className="flex justify-between text-gray-700" data-testid="tax-charges-row">
+                    <span className="flex items-center gap-1.5">
+                      Taxes &amp; Charges
+                      {cartData.tax_charges_original > cartData.tax_charges && (
+                        <span className="bg-green-100 text-green-700 text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-wider">50% OFF</span>
+                      )}
+                    </span>
+                    <span className="font-medium text-gray-900">
+                      {cartData.tax_charges_original > cartData.tax_charges && (
+                        <span className="text-gray-400 line-through mr-1.5">₹{cartData.tax_charges_original}</span>
+                      )}
+                      ₹{cartData.tax_charges}
+                    </span>
+                  </div>
+                )}
+                {/* Delivery */}
                 <div className="flex justify-between text-gray-700">
-                  <span>Shipping</span>
-                  {cartData.shipping_fee > 0
-                    ? <span className="font-medium text-orange-600" data-testid="shipping-fee">₹{cartData.shipping_fee}</span>
-                    : <span className="text-green-600 font-medium" data-testid="shipping-free">FREE</span>}
+                  <span>Delivery</span>
+                  {cartData.delivery_fee > 0
+                    ? <span className="font-medium text-orange-600" data-testid="delivery-fee">₹{cartData.delivery_fee}</span>
+                    : <span className="text-green-600 font-medium" data-testid="delivery-free">FREE</span>}
                 </div>
-                {cartData.shipping_fee > 0 && cartData.free_shipping_remaining > 0 && (
-                  <div className="bg-amber-50 border border-amber-100 rounded-lg p-2 text-[11px] text-amber-800 leading-snug" data-testid="free-shipping-nudge">
-                    <span className="font-semibold">Add ₹{Math.ceil(cartData.free_shipping_remaining)} more</span> to get <span className="font-semibold">free delivery</span> 🚚
+                {/* Eco packaging */}
+                {cartData.packaging_fee > 0 && (
+                  <div className="flex justify-between text-gray-500 text-xs" data-testid="packaging-row">
+                    <span className="flex items-center gap-1">📦 Eco Packaging</span>
+                    <span>₹{cartData.packaging_fee}</span>
+                  </div>
+                )}
+                {/* Nudge banner — show only when cart < ₹999 */}
+                {cartData.free_shipping_remaining > 0 && (
+                  <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-lg p-2.5 text-[11px] text-amber-900 leading-snug" data-testid="free-shipping-nudge">
+                    🎁 Add <span className="font-bold">₹{Math.ceil(cartData.free_shipping_remaining)}</span> more to unlock <span className="font-semibold">FREE delivery</span> + <span className="font-semibold">50% OFF taxes</span> — save up to ₹{(cartData.delivery_fee || 0) + Math.round((cartData.tax_charges_original || 0) / 2)}
+                  </div>
+                )}
+                {cartData.charges_savings > 0 && (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-2 text-[11px] text-green-800 leading-snug" data-testid="qualified-banner">
+                    🎉 You unlocked <span className="font-bold">FREE delivery</span> + <span className="font-bold">50% OFF taxes</span> — saving ₹{cartData.charges_savings}!
+                  </div>
+                )}
+                {cartData.moq_block && (
+                  <div className="bg-rose-50 border border-rose-200 rounded-lg p-2.5 text-[11px] text-rose-800 leading-snug" data-testid="moq-block-banner">
+                    <span className="font-semibold">Minimum order ₹{cartData.moq_amount || 300}.</span> Add <b>₹{Math.ceil(cartData.moq_remaining)}</b> more to proceed.
                   </div>
                 )}
                 <div className="border-t border-gray-100 pt-2.5 flex justify-between font-bold text-gray-900 text-lg"><span>Total</span><span>₹{cartData.total?.toLocaleString()}</span></div>
               </div>
             </div>
 
-            <button onClick={proceedToCheckout} className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-2xl text-base shadow-xl shadow-green-200/40 transition-all" data-testid="proceed-checkout-btn">
-              Proceed to Checkout
+            <button onClick={proceedToCheckout} disabled={cartData?.moq_block} className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-2xl text-base shadow-xl shadow-green-200/40 transition-all disabled:opacity-60 disabled:cursor-not-allowed" data-testid="proceed-checkout-btn">
+              {cartData?.moq_block ? `Add ₹${Math.ceil(cartData.moq_remaining)} more to checkout` : 'Proceed to Checkout'}
             </button>
 
             {/* Social Proof Badges */}

@@ -522,24 +522,28 @@ function ShopPage() {
               ))}
             </div>
             {hasMore && (
-              <div className="flex justify-center mb-10">
-                <button
-                  type="button"
-                  onClick={loadMore}
-                  disabled={loadingMore}
-                  data-testid="shop-load-more"
-                  className="px-6 h-11 rounded-full bg-white ring-1 ring-gray-300 text-sm font-bold text-gray-800 hover:bg-gray-50 disabled:opacity-60 transition-colors flex items-center gap-2"
-                >
-                  {loadingMore ? (
-                    <>
-                      <span className="w-4 h-4 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
-                      Loading…
-                    </>
-                  ) : (
-                    <>Load more · {Math.max(0, total - visibleProducts.length)} remaining</>
-                  )}
-                </button>
-              </div>
+              <>
+                {/* Sentinel for infinite scroll — auto-loads next page as user scrolls */}
+                <InfiniteScrollSentinel onIntersect={loadMore} disabled={loadingMore} />
+                <div className="flex justify-center mb-10">
+                  <button
+                    type="button"
+                    onClick={loadMore}
+                    disabled={loadingMore}
+                    data-testid="shop-load-more"
+                    className="px-6 h-11 rounded-full bg-white ring-1 ring-gray-300 text-sm font-bold text-gray-800 hover:bg-gray-50 disabled:opacity-60 transition-colors flex items-center gap-2"
+                  >
+                    {loadingMore ? (
+                      <>
+                        <span className="w-4 h-4 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
+                        Loading…
+                      </>
+                    ) : (
+                      <>Load more · {Math.max(0, total - visibleProducts.length)} remaining</>
+                    )}
+                  </button>
+                </div>
+              </>
             )}
           </>
         )}
@@ -673,3 +677,19 @@ function ShopPage() {
 }
 
 export default ShopPage;
+
+// IntersectionObserver-based sentinel for infinite scroll.
+function InfiniteScrollSentinel({ onIntersect, disabled }) {
+  const ref = React.useRef(null);
+  React.useEffect(() => {
+    if (disabled || !ref.current) return;
+    const obs = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) onIntersect();
+      });
+    }, { rootMargin: '600px 0px' });
+    obs.observe(ref.current);
+    return () => obs.disconnect();
+  }, [onIntersect, disabled]);
+  return <div ref={ref} data-testid="infinite-scroll-sentinel" style={{ height: 1 }} />;
+}

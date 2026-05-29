@@ -928,6 +928,85 @@ function AdminProducts() {
         <div className="flex items-center gap-2">
           <button
             type="button"
+            onClick={async () => {
+              const scopeChoice = window.prompt(
+                'AI Taxonomy Audit — runs Claude across the catalog to:\n' +
+                '  • Route every product into the right niche / category / subcategory\n' +
+                '  • Auto-create new sub-categories, concerns and filters as needed\n' +
+                '  • Connect everything to the matching storefront tabs\n\n' +
+                'Type a scope and click OK:\n' +
+                '  needs   = products with missing taxonomy (recommended after bulk upload)\n' +
+                '  all     = re-audit EVERY product (use sparingly, uses more LLM credits)\n' +
+                '  niche:cosmetics  = only that niche\n' +
+                '  niche:skincare   = only that niche',
+                'needs'
+              );
+              if (!scopeChoice) return;
+              let payload = { scope: 'needs_taxonomy', only_missing: true, concurrency: 6 };
+              if (scopeChoice.trim() === 'all') payload = { scope: 'all', only_missing: false, concurrency: 6 };
+              else if (scopeChoice.startsWith('niche:')) payload = { scope: 'niche', niche: scopeChoice.split(':')[1].trim(), only_missing: false, concurrency: 6 };
+              try {
+                const { data } = await axios.post(`${API}/admin/taxonomy/ai-audit`, payload, { headers });
+                if (!data.job_id) { alert('Failed to start audit'); return; }
+                const jobId = data.job_id;
+                alert(`Audit started. Job: ${jobId}\nThis page will keep polling for progress in the console — feel free to keep browsing.`);
+                // Poll for up to 10 minutes; show one-shot alert on completion
+                const poll = setInterval(async () => {
+                  try {
+                    const { data: j } = await axios.get(`${API}/admin/taxonomy/ai-audit/${jobId}`, { headers });
+                    console.log(`[ai-audit ${jobId}] ${j.status} ${j.done}/${j.total} done · ${j.failed} failed · cats+${j.created_categories?.length||0} subs+${j.created_subcategories?.length||0} concerns+${j.created_concerns?.length||0}`);
+                    if (j.status === 'completed' || j.status === 'failed') {
+                      clearInterval(poll);
+                      alert(
+                        `Audit ${j.status}!\n` +
+                        `Updated: ${j.done}/${j.total}  ·  Failed: ${j.failed}\n` +
+                        `New categories: ${j.created_categories?.length || 0}\n` +
+                        `New subcategories: ${j.created_subcategories?.length || 0}\n` +
+                        `New concerns: ${j.created_concerns?.length || 0}`
+                      );
+                      fetchAll();
+                    }
+                  } catch (e) { /* keep polling */ }
+                }, 4000);
+              } catch (e) {
+                alert(e.response?.data?.detail || e.message);
+              }
+            }}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700 text-white text-sm font-bold shadow-md hover:shadow-lg"
+            data-testid="ai-taxonomy-audit-btn"
+            title="One-click AI audit — re-routes every product into the right category/subcategory/concerns and creates missing taxonomy."
+          >
+            <Sparkles size={16} /> AI Audit Catalog
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              const keep = window.prompt(
+                'DANGER — this DELETES products from the catalog.\n\n' +
+                'Type a comma-separated list of niches to KEEP (e.g. "anti-aging") and click OK,\n' +
+                'or leave empty to wipe EVERY product.\n\n' +
+                'Cancel to abort.',
+                'anti-aging'
+              );
+              if (keep === null) return; // cancelled
+              if (!window.confirm(`This will hard-delete all products${keep.trim() ? ` EXCEPT niches: ${keep}` : ' from every niche'}.\n\nProceed?`)) return;
+              try {
+                const url = `${API}/admin/products/wipe-all?confirm=DELETE_ALL${keep.trim() ? `&keep_niches=${encodeURIComponent(keep.trim())}` : ''}`;
+                const res = await axios.post(url, {}, { headers });
+                alert(`Done. Deleted ${res.data.deleted} products. Remaining: ${res.data.remaining_total}.`);
+                fetchAll();
+              } catch (e) {
+                alert(e.response?.data?.detail || e.message);
+              }
+            }}
+            className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-sm font-semibold"
+            data-testid="wipe-all-products-btn"
+            title="Hard-delete products (with optional niche preserve) — for re-testing bulk upload"
+          >
+            <Trash size={16} /> Wipe All
+          </button>
+          <button
+            type="button"
             onClick={() => navigate('/admin')}
             className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gray-50 hover:bg-gray-100 text-gray-700 text-sm font-medium"
             title="Open dashboard"
@@ -954,15 +1033,70 @@ function AdminProducts() {
             <div className="bg-white rounded-2xl border-2 border-green-300 p-4" data-testid="new-product-editor">
               <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                 <h3 className="font-black text-gray-900 flex items-center gap-2"><Plus size={16} className="text-green-600" /> Create New Product</h3>
-                <button
-                  type="button"
-                  onClick={() => setAnalyzerOpen(true)}
-                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5"
-                  data-testid="open-url-analyzer"
-                  title="Paste a product URL — we'll auto-fill name, price, image, ingredients & description"
-                >
-                  ⚡ Analyze URL (optional)
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={!editProduct.name || aiGenerating}
+                    onClick={async () => {
+                      if (!editProduct.name) { alert('Enter the product name first, then click AI Analyze'); return; }
+                      setAiGenerating(true);
+                      try {
+                        const res = await axios.post(`${API}/admin/ai/analyze-product`, {
+                          name: editProduct.name,
+                          brand: editProduct.brand || '',
+                          main_category: editProduct.niche || '',
+                          product_type: editProduct.subcategory || editProduct.category || '',
+                          concern: (editProduct.concerns || [])[0] || '',
+                          auto_create: true,
+                        }, { headers });
+                        if (res.data?.success) {
+                          const c = res.data.classification || {};
+                          setEditProduct({
+                            ...editProduct,
+                            niche: c.niche || editProduct.niche,
+                            category: c.category_slug || editProduct.category,
+                            subcategory: c.subcategory_slug || editProduct.subcategory,
+                            concerns: [
+                              ...(editProduct.concerns || []),
+                              ...(c.concerns || []).map(x => x.slug),
+                            ].filter((v, i, a) => v && a.indexOf(v) === i),
+                          });
+                          try {
+                            const [cnR, ctR, scR] = await Promise.allSettled([
+                              axios.get(`${API}/concerns`),
+                              axios.get(`${API}/categories`),
+                              axios.get(`${API}/subcategories`),
+                            ]);
+                            if (cnR.status === 'fulfilled') setConcerns(cnR.value.data || []);
+                            if (ctR.status === 'fulfilled') setCategories(ctR.value.data || []);
+                            if (scR.status === 'fulfilled') setSubcategories(scR.value.data || []);
+                          } catch { /* non-fatal */ }
+                          const created = res.data.auto_created || {};
+                          const total = (created.categories?.length || 0) + (created.subcategories?.length || 0) + (created.concerns?.length || 0);
+                          alert(`AI Analyze: routed to ${c.niche} → ${c.category_slug}${c.subcategory_slug ? ' / ' + c.subcategory_slug : ''}\n${total > 0 ? `Auto-created ${total} taxonomy row(s).` : 'All taxonomy already existed.'}`);
+                        }
+                      } catch (e) {
+                        alert(e.response?.data?.detail || 'AI Analyze failed');
+                      } finally {
+                        setAiGenerating(false);
+                      }
+                    }}
+                    className="px-3 py-1.5 bg-violet-600 hover:bg-violet-700 disabled:bg-gray-300 text-white rounded-lg text-xs font-bold flex items-center gap-1.5"
+                    data-testid="ai-analyze-new-product"
+                    title="AI classifies niche / category / subcategory / concerns from the product name and auto-creates missing taxonomy."
+                  >
+                    <Sparkles size={12} /> {aiGenerating ? 'Analyzing…' : 'AI Analyze'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAnalyzerOpen(true)}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5"
+                    data-testid="open-url-analyzer"
+                    title="Paste a product URL — we'll auto-fill name, price, image, ingredients & description"
+                  >
+                    ⚡ Analyze URL (optional)
+                  </button>
+                </div>
               </div>
               <p className="text-[11px] text-gray-500 mb-3">Fill fields top-to-bottom. Fields marked <span className="text-red-500">*</span> are required.</p>
               <div className="space-y-3">
@@ -1490,6 +1624,63 @@ function AdminProducts() {
                   <div className="flex flex-wrap gap-2">
                     <button onClick={() => updateProduct(product.slug, editProduct)} className="flex items-center gap-1 px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold"><Save size={14} /> Save</button>
                     <button onClick={() => setEditProduct(null)} className="flex items-center gap-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg text-sm"><X size={14} /> Cancel</button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!editProduct.name) { alert('Enter product name first'); return; }
+                        setAiGenerating(true);
+                        try {
+                          const res = await axios.post(`${API}/admin/ai/analyze-product`, {
+                            name: editProduct.name,
+                            brand: editProduct.brand || '',
+                            main_category: editProduct.niche || '',
+                            product_type: editProduct.subcategory || editProduct.category || '',
+                            concern: (editProduct.concerns || [])[0] || '',
+                            auto_create: true,
+                          }, { headers });
+                          if (res.data?.success) {
+                            const c = res.data.classification || {};
+                            const merged = {
+                              ...editProduct,
+                              niche: c.niche || editProduct.niche,
+                              category: c.category_slug || editProduct.category,
+                              subcategory: c.subcategory_slug || editProduct.subcategory,
+                              concerns: [
+                                ...(editProduct.concerns || []),
+                                ...(c.concerns || []).map(x => x.slug),
+                              ].filter((v, i, a) => v && a.indexOf(v) === i),
+                            };
+                            setEditProduct(merged);
+                            // Refresh taxonomy so the new chips/options appear
+                            try {
+                              const [cnR, ctR, scR] = await Promise.allSettled([
+                                axios.get(`${API}/concerns`),
+                                axios.get(`${API}/categories`),
+                                axios.get(`${API}/subcategories`),
+                              ]);
+                              if (cnR.status === 'fulfilled') setConcerns(cnR.value.data || []);
+                              if (ctR.status === 'fulfilled') setCategories(ctR.value.data || []);
+                              if (scR.status === 'fulfilled') setSubcategories(scR.value.data || []);
+                            } catch { /* non-fatal */ }
+                            const created = res.data.auto_created || {};
+                            const total = (created.categories?.length || 0) + (created.subcategories?.length || 0) + (created.concerns?.length || 0);
+                            if (total > 0) {
+                              alert(`AI Analyze: routed to ${c.niche} → ${c.category_slug}${c.subcategory_slug ? ' / ' + c.subcategory_slug : ''}\nAuto-created ${total} new taxonomy row(s).`);
+                            }
+                          }
+                        } catch (e) {
+                          alert(e.response?.data?.detail || 'AI Analyze failed');
+                        } finally {
+                          setAiGenerating(false);
+                        }
+                      }}
+                      disabled={aiGenerating || !editProduct.name}
+                      className="flex items-center gap-1 px-4 py-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-60 text-white rounded-lg text-sm font-semibold"
+                      data-testid="ai-analyze-product"
+                      title="AI classifies niche / category / subcategory / concerns from the product name and auto-creates missing taxonomy."
+                    >
+                      <Sparkles size={14} /> {aiGenerating ? 'Analyzing…' : 'AI Analyze'}
+                    </button>
                     <button
                       type="button"
                       onClick={async () => {

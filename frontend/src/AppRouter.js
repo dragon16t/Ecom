@@ -4,6 +4,7 @@ import { loadNicheBrands } from './utils/brand';
 import ScrollToTop from './components/ScrollToTop';
 import { TrackingProvider } from './providers/TrackingProvider';
 import PublicLayout from './layouts/PublicLayout';
+import AdminMobileNav from './components/admin/AdminMobileNav';
 
 // Eagerly loaded pages (critical for first paint)
 import Homepage from './pages/Homepage';
@@ -61,6 +62,9 @@ const AdminRetention = lazy(() => import('./pages/admin/AdminRetention'));
 const AdminReviews = lazy(() => import('./pages/admin/AdminReviews'));
 const AdminSettings = lazy(() => import('./pages/admin/AdminSettings'));
 const AdminRoutines = lazy(() => import('./pages/admin/AdminRoutines'));
+const AdminBulkImport = lazy(() => import('./pages/admin/AdminBulkImport'));
+const AdminMasterTools = lazy(() => import('./pages/admin/AdminMasterTools'));
+const AdminGiftCards = lazy(() => import('./pages/admin/AdminGiftCards'));
 
 // Employee Pages
 const EmployeeLogin = lazy(() => import('./pages/employee/EmployeeLogin'));
@@ -83,9 +87,10 @@ const LandingPage = lazy(() => import('./pages/LandingPage'));
 // Loading spinner for lazy loaded pages (delayed — only appears for slow chunk loads)
 const PageLoader = () => <DelayedLoader delay={280} />;
 
-// Admin layout wrapper (no tracking, minimal overhead)
+// Admin layout wrapper (no tracking, minimal overhead) — includes mobile hamburger nav drawer
 const AdminLayout = ({ children }) => (
   <Suspense fallback={<PageLoader />}>
+    <AdminMobileNav />
     {children}
   </Suspense>
 );
@@ -135,6 +140,9 @@ function App() {
         <Route path="/admin/reviews" element={<AdminLayout><AdminReviews /></AdminLayout>} />
         <Route path="/admin/settings" element={<AdminLayout><AdminSettings /></AdminLayout>} />
         <Route path="/admin/routines" element={<AdminLayout><AdminRoutines /></AdminLayout>} />
+        <Route path="/admin/bulk-import" element={<AdminLayout><AdminBulkImport /></AdminLayout>} />
+        <Route path="/admin/master-tools" element={<AdminLayout><AdminMasterTools /></AdminLayout>} />
+        <Route path="/admin/gift-cards" element={<AdminLayout><AdminGiftCards /></AdminLayout>} />
         
         {/* Employee Routes */}
         <Route path="/employee/login" element={

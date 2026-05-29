@@ -335,9 +335,14 @@ export default function ConcernCategoryPage({ mode = 'concern' }) {
       <div className="max-w-7xl mx-auto px-3 sm:px-6 py-7 sm:py-12">
         <div className="flex items-end justify-between mb-4 sm:mb-5 px-1">
           <h2 className="font-heading text-base sm:text-2xl font-black text-gray-900">
-            {visibleProducts.length} product{visibleProducts.length === 1 ? '' : 's'}
+            {total} product{total === 1 ? '' : 's'}
             {mode === 'concern' ? ' for ' : ' in '}
             <span style={{ color: accentText }}>{head.name}</span>
+            {visibleProducts.length < total && (
+              <span className="ml-2 text-xs font-normal text-stone-500">
+                (showing {visibleProducts.length})
+              </span>
+            )}
           </h2>
           <Link to="/shop" className="text-[11px] sm:text-xs font-bold hover:underline flex items-center gap-1" style={{ color: accentText }}>
             View entire shop <ArrowRight size={12} />
@@ -377,24 +382,27 @@ export default function ConcernCategoryPage({ mode = 'concern' }) {
               {visibleProducts.map(product => <ProductCard key={product.slug} product={product} />)}
             </div>
             {hasMore && (
-              <div className="flex justify-center mt-6">
-                <button
-                  type="button"
-                  onClick={loadMore}
-                  disabled={loadingMore}
-                  data-testid="ccp-load-more"
-                  className="px-6 h-11 rounded-full bg-white ring-1 ring-stone-300 text-sm font-bold text-stone-800 hover:bg-stone-50 disabled:opacity-60 transition-colors flex items-center gap-2"
-                >
-                  {loadingMore ? (
-                    <>
-                      <span className="w-4 h-4 border-2 border-stone-600 border-t-transparent rounded-full animate-spin" />
-                      Loading…
-                    </>
-                  ) : (
-                    <>Load more · {Math.max(0, total - visibleProducts.length)} remaining</>
-                  )}
-                </button>
-              </div>
+              <>
+                <ConcernInfiniteSentinel onIntersect={loadMore} disabled={loadingMore} />
+                <div className="flex justify-center mt-6">
+                  <button
+                    type="button"
+                    onClick={loadMore}
+                    disabled={loadingMore}
+                    data-testid="ccp-load-more"
+                    className="px-6 h-11 rounded-full bg-white ring-1 ring-stone-300 text-sm font-bold text-stone-800 hover:bg-stone-50 disabled:opacity-60 transition-colors flex items-center gap-2"
+                  >
+                    {loadingMore ? (
+                      <>
+                        <span className="w-4 h-4 border-2 border-stone-600 border-t-transparent rounded-full animate-spin" />
+                        Loading…
+                      </>
+                    ) : (
+                      <>Load more · {Math.max(0, total - visibleProducts.length)} remaining</>
+                    )}
+                  </button>
+                </div>
+              </>
             )}
           </>
         )}
@@ -495,15 +503,17 @@ export function ProductCard({ product, compact = false }) {
             </div>
           )}
 
-          {/* Product image — always fills the card image area edge-to-edge */}
-          <div className="absolute inset-0 flex items-center justify-center">
+          {/* Product image — fits entirely inside a generous uniform square frame.
+              Using object-contain (not cover) so tall bottles / wide jars aren't cropped.
+              Light off-white background gives a clean catalog look. */}
+          <div className="absolute inset-0 flex items-center justify-center p-3 sm:p-4 bg-gradient-to-br from-stone-50 via-white to-stone-50">
             {product.images?.[0] ? (
               <>
                 <img
                   src={resolveImageUrl(product.images[0])}
                   alt={product.short_name}
                   loading="lazy"
-                  className="relative z-[2] w-full h-full object-cover transition-all duration-700 ease-out group-hover:scale-[1.06]"
+                  className="relative z-[2] max-w-full max-h-full w-auto h-auto object-contain transition-all duration-700 ease-out group-hover:scale-[1.04]"
                 />
                 {/* Secondary image crossfade on hover */}
                 {product.images?.[1] && (
@@ -511,7 +521,7 @@ export function ProductCard({ product, compact = false }) {
                     src={resolveImageUrl(product.images[1])}
                     alt=""
                     loading="lazy"
-                    className="absolute inset-0 w-full h-full object-cover opacity-0 group-hover:opacity-100 transition-opacity duration-500 z-[3]"
+                    className="absolute inset-0 m-auto max-w-[88%] max-h-[88%] w-auto h-auto object-contain opacity-0 group-hover:opacity-100 transition-opacity duration-500 z-[3]"
                   />
                 )}
               </>
@@ -648,4 +658,33 @@ export function ProductCard({ product, compact = false }) {
       </div>
     </div>
   );
+}
+
+
+
+/**
+ * IntersectionObserver-based "load more" sentinel.
+ * Fires `onIntersect` whenever the sentinel scrolls into view.
+ */
+export function ConcernInfiniteSentinel({ onIntersect, disabled = false }) {
+  const ref = React.useRef(null);
+  React.useEffect(() => {
+    if (disabled) return;
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            onIntersect?.();
+            break;
+          }
+        }
+      },
+      { rootMargin: '600px 0px' }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [onIntersect, disabled]);
+  return <div ref={ref} aria-hidden="true" style={{ height: 1 }} data-testid="ccp-infinite-sentinel" />;
 }

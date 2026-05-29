@@ -32,7 +32,7 @@ function CheckoutPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { trackAction, trackPurchase, trackGAEvent } = useTracking();
-  const { cartData: passedCartData, paymentMethod: passedMethod, coupon } = location.state || {};
+  const { cartData: passedCartData, paymentMethod: passedMethod, coupon, giftCard } = location.state || {};
   const [cartData, setCartData] = useState(passedCartData);
   const [paymentMethod, setPaymentMethod] = useState(passedMethod || 'prepaid');
   const [formData, setFormData] = useState({ name: '', phone: '', email: '', house_number: '', area: '', city: '', pincode: '', state: '' });
@@ -96,7 +96,7 @@ function CheckoutPage() {
     if (!cartData) {
       const cart = getCart();
       if (!cart.items.length) { navigate('/cart'); return; }
-      axios.post(`${API}/api/cart/validate`, { items: cart.items, payment_method: paymentMethod, coupon_code: coupon?.code })
+      axios.post(`${API}/api/cart/validate`, { items: cart.items, payment_method: paymentMethod, coupon_code: coupon?.code, gift_card_code: giftCard?.code || null })
         .then(res => setCartData(res.data)).catch(() => navigate('/cart'));
     }
   }, []);
@@ -130,7 +130,7 @@ function CheckoutPage() {
     if (!cartData) return;
     const cart = getCart();
     if (!cart.items.length) return;
-    axios.post(`${API}/api/cart/validate`, { items: cart.items, payment_method: paymentMethod, coupon_code: coupon?.code })
+    axios.post(`${API}/api/cart/validate`, { items: cart.items, payment_method: paymentMethod, coupon_code: coupon?.code, gift_card_code: giftCard?.code || null })
       .then(res => setCartData(res.data)).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paymentMethod]);
@@ -155,7 +155,7 @@ function CheckoutPage() {
     setSubmitting(true);
     trackAction('payment_method_selected', { method: paymentMethod });
     const referralCode = (typeof window !== 'undefined') ? sessionStorage.getItem('referralCode') : null;
-    const payload = { ...formData, payment_method: paymentMethod, amount: cartData.total, items: cartData.items, coupon_code: coupon?.code || null, coupon_discount: coupon?.discount || 0, referral_code: referralCode || null };
+    const payload = { ...formData, payment_method: paymentMethod, amount: cartData.total, items: cartData.items, coupon_code: coupon?.code || null, coupon_discount: coupon?.discount || 0, referral_code: referralCode || null, gift_card_code: cartData.gift_card?.code || null, gift_card_discount: cartData.gift_card_discount || 0 };
     const fireConversion = (orderId) => {
       trackAction('order_complete', { order_id: orderId, total: cartData.total, items: cartData.item_count, payment_method: paymentMethod });
       trackPurchase(orderId, cartData.total, paymentMethod);
@@ -318,46 +318,20 @@ function CheckoutPage() {
                       <p className="font-bold text-sm text-gray-900">Prepaid (UPI / Card)</p>
                       <span className="text-xs bg-green-600 text-white px-2 py-0.5 rounded-full font-bold">RECOMMENDED</span>
                     </div>
-                    <p className="text-xs text-green-600 font-medium mt-0.5">Faster delivery in 1-3 days · Best price</p>
+                    <p className="text-xs text-green-600 font-medium mt-0.5">Faster delivery · Best price</p>
                   </div>
                 </label>
                 <label className={`flex items-center gap-3 p-3.5 rounded-xl border-2 cursor-pointer transition-all ${paymentMethod === 'COD' ? 'border-green-500 bg-green-50/50' : 'border-gray-100 hover:border-gray-200'}`}>
                   <input type="radio" name="pay" checked={paymentMethod === 'COD'} onChange={() => setPaymentMethod('COD')} className="text-green-600 w-4 h-4" />
                   <div className="flex-1">
                     <p className="font-bold text-sm text-gray-900">Cash on Delivery</p>
-                    <p className="text-xs text-gray-500 mt-0.5">Delivery in 4-5 days · ₹0 advance · Pay full on delivery</p>
+                    <p className="text-xs text-gray-500 mt-0.5">₹0 advance · Pay full on delivery</p>
                   </div>
                 </label>
-                {paymentMethod === 'COD' && (
-                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-center">
-                    <p className="text-xs text-amber-800 font-bold">💡 Pay online & save ₹50 extra!</p>
-                    <p className="text-xs text-amber-700 mt-0.5">Switch to Prepaid for the lowest price + faster delivery.</p>
-                  </div>
-                )}
               </div>
             </div>
 
-            {/* Volume Discount — Tappable */}
-            <div className="bg-gradient-to-r from-green-600 to-green-700 rounded-2xl p-4 text-white">
-              <p className="text-xs font-bold mb-2">Add More, Save More!</p>
-              <div className="flex gap-2">
-                {[{n:2,d:'Additional 3% OFF'},{n:3,d:'Additional 5% OFF'},{n:4,d:'Additional 8% OFF'}].map((t,i) => (
-                  <button key={i} onClick={() => {
-                    const cart = getCart();
-                    if (cart.items.length > 0 && cart.items[0].product_slug) {
-                      cart.items[0].quantity = t.n;
-                      saveCart(cart);
-                      // Re-validate cart without reload
-                      axios.post(`${API}/api/cart/validate`, { items: cart.items, payment_method: paymentMethod, coupon_code: coupon?.code })
-                        .then(res => setCartData(res.data)).catch(() => {});
-                    }
-                  }} className="bg-white/15 hover:bg-white/25 rounded-lg px-2.5 py-2 text-center flex-1 transition-colors cursor-pointer">
-                    <p className="text-xs font-bold">{t.n} items</p>
-                    <p className="text-xs opacity-80">{t.d}</p>
-                  </button>
-                ))}
-              </div>
-            </div>
+            {/* Volume / buy-more discount panel removed per business policy. */}
 
             {/* Referral Program */}
             <div className="bg-gradient-to-r from-purple-50 to-violet-50 rounded-2xl p-4 border border-purple-100">
@@ -392,27 +366,44 @@ function CheckoutPage() {
               <div className="border-t border-gray-100 pt-3 space-y-1.5 text-sm">
                 <div className="flex justify-between text-gray-400"><span>Subtotal</span><span>₹{cartData.subtotal?.toLocaleString()}</span></div>
                 {cartData.discount > 0 && <div className="flex justify-between text-green-600"><span>Coupon Discount</span><span className="font-semibold">-₹{cartData.discount}</span></div>}
-                {cartData.volume_discount > 0 && <div className="flex justify-between text-purple-600"><span>Buy More Discount ({cartData.volume_discount_percent}% off)</span><span className="font-semibold">-₹{cartData.volume_discount}</span></div>}
+                {cartData.tax_charges > 0 && (
+                  <div className="flex justify-between text-gray-400">
+                    <span>Taxes &amp; Charges</span>
+                    <span>
+                      {cartData.tax_charges_original > cartData.tax_charges && (
+                        <span className="text-gray-300 line-through mr-1.5">₹{cartData.tax_charges_original}</span>
+                      )}
+                      ₹{cartData.tax_charges}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between text-gray-400">
-                  <span>Taxes &amp; Charges</span>
-                  {paymentMethod === 'COD'
-                    ? <span className="font-semibold text-amber-700">₹50</span>
-                    : <span className="text-green-600 font-medium">₹0</span>
+                  <span>Delivery</span>
+                  {cartData.delivery_fee > 0
+                    ? <span className="font-medium text-orange-600">₹{cartData.delivery_fee}</span>
+                    : <span className="text-green-600 font-medium">FREE</span>
                   }
                 </div>
-                <div className="flex justify-between text-gray-400"><span>Shipping</span><span className="text-green-600 font-medium">FREE</span></div>
+                {cartData.packaging_fee > 0 && (
+                  <div className="flex justify-between text-gray-500 text-xs">
+                    <span>🌿 Eco-Friendly Packaging</span>
+                    <span>₹{cartData.packaging_fee}</span>
+                  </div>
+                )}
+                {cartData.gift_card_discount > 0 && (
+                  <div className="flex justify-between text-rose-600 font-medium" data-testid="checkout-giftcard-row">
+                    <span>🎁 Gift Card ({cartData.gift_card?.code})</span>
+                    <span>-₹{cartData.gift_card_discount}</span>
+                  </div>
+                )}
                 <div className="border-t border-gray-100 pt-2 flex justify-between font-bold text-gray-900 text-lg"><span>Total</span><span>₹{cartData.total?.toLocaleString()}</span></div>
               </div>
 
-              {paymentMethod === 'COD' && (
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('prepaid')}
-                  className="mt-3 w-full text-xs font-bold text-green-800 bg-green-50 hover:bg-green-100 ring-1 ring-green-100 rounded-xl py-2.5 px-3 flex items-center justify-center gap-1.5 transition-colors"
-                  data-testid="switch-to-prepaid-hint"
-                >
-                  💡 Pay online and save ₹50 extra
-                </button>
+              {cartData.gift_card?.code && cartData.gift_card_discount > 0 && (
+                <div className="mt-3 bg-rose-50 border border-rose-200 rounded-xl p-2.5 text-center" data-testid="checkout-giftcard-note">
+                  <p className="text-xs text-rose-800 font-bold">🎁 Gift card {cartData.gift_card.code} applied</p>
+                  <p className="text-xs text-rose-700 mt-0.5">₹{cartData.gift_card.remaining_after} balance will remain after this order</p>
+                </div>
               )}
 
               {cartData.savings > 0 && (
@@ -429,9 +420,9 @@ function CheckoutPage() {
               {/* Delivery Timeline */}
               <div className="mt-3 text-center text-xs text-gray-500">
                 {paymentMethod === 'prepaid' ? (
-                  <p>Estimated delivery: <strong className="text-green-600">1-2 business days</strong></p>
+                  <p>Faster delivery · <strong className="text-green-600">1–3 business days</strong></p>
                 ) : (
-                  <p>Estimated delivery: <strong>5-7 business days</strong></p>
+                  <p>Standard delivery · <strong>4–6 business days</strong></p>
                 )}
               </div>
 

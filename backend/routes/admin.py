@@ -599,3 +599,62 @@ async def orders_daily_summary(admin: bool = Depends(verify_admin), days: int = 
         })
     out.reverse()
     return {"days": out, "total_orders": sum(d["orders"] for d in out), "total_revenue": round(sum(d["revenue"] for d in out), 2)}
+
+
+
+# ==================== TAXONOMY ADMIN (Jan 2026 canonical reset) ====================
+
+@router.post("/taxonomy/reset-canonical")
+async def admin_reset_canonical_taxonomy(admin: bool = Depends(verify_admin)):
+    """Wipe + reseed the canonical taxonomy (13 skincare concerns, 16 skincare
+    categories, 6 cosmetics categories) and re-classify ALL products. Safe to
+    re-run — fully idempotent."""
+    from services.taxonomy_canonical import (
+        reset_canonical_taxonomy, reclassify_all_products, compute_product_tags
+    )
+    seeded = await reset_canonical_taxonomy(db)
+    classified = await reclassify_all_products(db)
+    tagged = await compute_product_tags(db)
+    return {"seeded": seeded, "classified": classified, "tagged": tagged}
+
+
+@router.post("/taxonomy/reclassify-products")
+async def admin_reclassify_products(admin: bool = Depends(verify_admin)):
+    """Re-link every product to concerns/categories/subcategories via keyword
+    matching on name+description. Use after a bulk-import or admin edits."""
+    from services.taxonomy_canonical import reclassify_all_products
+    return await reclassify_all_products(db)
+
+
+@router.post("/taxonomy/recompute-tags")
+async def admin_recompute_tags(admin: bool = Depends(verify_admin)):
+    """Re-compute filter tags (bestseller / luxury / trending / most_bought)."""
+    from services.taxonomy_canonical import compute_product_tags
+    return await compute_product_tags(db)
+
+
+@router.post("/products/cleanup-bad-brands")
+async def admin_cleanup_bad_brands(dry_run: bool = False, admin: bool = Depends(verify_admin)):
+    """Repair bad brand values from bulk imports: sheet names ('Sheet27'),
+    numeric / empty / 'nan' / 'null' strings. Extracts the real brand from
+    the product name's first word(s) when a known brand prefix matches;
+    otherwise sets brand=None. Pass dry_run=true to preview only."""
+    from services.taxonomy_canonical import cleanup_bad_brands
+    return await cleanup_bad_brands(db, dry_run=dry_run)
+
+
+@router.post("/taxonomy/cleanup-empty")
+async def admin_cleanup_empty_taxonomy(admin: bool = Depends(verify_admin)):
+    """Auto-deactivate (sub)categories that have no products. Hides them from
+    the Cosmetics/Skincare hub UIs without deleting them — reactivates when a
+    product is added later via the same endpoint."""
+    from services.taxonomy_canonical import cleanup_empty_taxonomy
+    return await cleanup_empty_taxonomy(db)
+
+
+@router.post("/products/dedupe")
+async def admin_dedupe_products(dry_run: bool = False, admin: bool = Depends(verify_admin)):
+    """Find products with identical names, keep the best one (most reviews +
+    rating) and deactivate the rest. Pass `dry_run=true` to preview only."""
+    from services.taxonomy_canonical import dedupe_products
+    return await dedupe_products(db, dry_run=dry_run)

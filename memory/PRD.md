@@ -1,128 +1,80 @@
-# Celesta Glow — Product Requirements
+# Celesta Glow — PRD
 
-## Original problem statement
-Clone the "Celesta Glow" website and build a pixel-perfect, responsive frontend
-plus a fully functional FastAPI + MongoDB backend with niche-based browsing,
-cart, Razorpay checkout, Delhivery shipping, admin/employee panels, AI auto-fill,
-and a referral system.
+## Problem Statement (verbatim)
+1. Clone repo `veegalenterprises-sudo/Sd` and replicate `https://build-stage-42.preview.emergentagent.com`.
+2. Restructure taxonomy: clean Skincare & Cosmetics niches with concerns → categories → subcategories. Auto-link ~9.7k products. Add filter tags (Bestsellers / Luxury / Trending / Most-bought / New Launch). Dedupe duplicates. Differentiate products properly.
 
-## Stack
-- React (CRA) + TailwindCSS + Shadcn UI
-- FastAPI (async) + Motor (MongoDB)
-- Razorpay (checkout), Delhivery (shipping), Cloudinary (image hosting)
-- SendGrid + Gmail SMTP (transactional email with auto-failover)
-- Emergent LLM key (Claude Sonnet for AI auto-fill, Gemini Nano Banana for
-  background removal)
+## Architecture
+- Backend: FastAPI + Motor (MongoDB).
+- Frontend: React 19 + CRA/Craco + Tailwind + Radix UI.
+- Integrations dormant (Razorpay / Cloudinary / SendGrid / Delhivery / WhatsApp).
 
-## Core requirements (implemented)
-- Niches: Anti-Aging / Skincare / Cosmetics
-- Product detail with full content + AI-fillable fields
-- Cart + Razorpay checkout with COD advance
-- Customer Email-OTP login + referral dashboard
-- Admin panel: catalog, banners, combos, coupons, niches (incl. per-device card
-  images), employees, referrals, withdrawals, **subcategories**, live visitors
-- Employee panel: orders, products, retention, AI Studio (with permission gates)
-- MongoDB-backed sessions
-- Pagination + server-side search storefront-wide
-- Cloudinary-only image upload (no ephemeral disk writes)
-- Email service with daily Gmail quota → SendGrid auto-failover at 250/day
-- Admin Products list virtualization (handles 2,000-4,000 SKUs)
+## What's been implemented
 
-## Implemented (date log)
-- 2026-02-01 — Admin Products virtualization (react-window).
-- 2026-02-02 — Referral refresh, add-to-cart toast + bounce, cosmetics sort
-  stable, employee /products route, white theme-color.
-- 2026-02-03 — Shop-by-Category infrastructure: mandatory category, /admin/categories
-  route, CategoryShowcase rich cards on /skincare + /cosmetics, AI auto-fill button
-  next to Name, valid-HTML category cards.
-- 2026-02-04 — Image-only category cards, AI fill returns mrp/offer_price/brand/
-  size-with-fl-oz, URL scraper repaired (bs4+lxml).
-- 2026-02-05 — Cosmetics concern drill-down, smoother search, live visitor tracking.
-- 2026-02-05 — Subcategories end-to-end: new collection + GET/POST/PUT/DELETE
-  admin endpoints, ProductInput.subcategory field, AdminConcerns 5th tab with
-  parent-category filter, AdminProducts subcategory dropdown filtered by selected
-  category, ConcernCategoryPage chip strip on category-mode pages.
-- 2026-02-05 — Per-device niche card images for the homepage 3-up.
-- 2026-02-05 — ConcernCategoryPage emoji removed; SearchBar Enter opens first
-  matching product directly.
-- **2026-02-06 — Subcategory taxonomy reset to standard e-commerce model**:
-  • Wiped 48 generic auto-seeded subcategories (Best Sellers / Luxury / Everyday)
-    that were polluting every cosmetic category.
-  • AdminProducts create form: Subcategory dropdown only renders when chosen
-    Category has real subcategories; otherwise an amber "No subcategories under
-    {parent} yet — Add some" hint links straight to /admin/categories.
-  • AdminConcerns Subcategories tab: added prominent "How subcategories work"
-    explainer banner with real examples (Lipstick → Matte / Glossy / Liquid).
-  • Verified by testing agent iter6: 12/12 backend + 6/6 frontend flows pass.
-- **2026-02-06 — Edit Product modal + concerns refetch on open**:
-  • Added cascading Subcategory picker to the Edit Product modal (was only on
-    New). Switching Category now resets subcategory='' here too.
-  • New useEffect refetches concerns + categories + subcategories every time
-    the product modal opens, so a freshly-created concern shows up without a
-    page reload. Verified iter7 7/7 backend + 6/6 frontend pass.
-  • Added server-side validation rejecting empty/whitespace slug or name on
-    POST /api/admin/subcategories (prevents zombie rows).
-  • Frontend AdminConcerns save() auto-derives slug from name (parent-prefixed
-    for subcategories) so admins can leave the slug blank.
-- **2026-02-06 — 🔐 Critical admin auth security fix**:
-  • Centralized active-admin-hash cache in services/admin_auth.py.
-  • Previously: env-seed password 'celestaglow2024' was accepted forever even
-    after the admin saved a custom password — leaked default = forever access.
-  • Now: once admin_settings.password is set, the env-seed value is INERT.
-    Verifier files refactored: admin.py, server.py, concerns.py, products.py,
-    reviews.py, image_ai.py, landing_pages.py, consultation.py.
-  • change-password now invalidates ALL admin_sessions (clear_all on
-    SessionStore) so anyone holding a stale token is forced to re-auth.
-  • ALSO fixed: GET /api/products?active_only=false was fully PUBLIC (leaked
-    every inactive/draft product). Anonymous callers with active_only=false
-    are now silently coerced to active_only=true.
-  • Verified by testing agent iter8: 36/44 pytest pass — all real security
-    assertions green; 8 misses were spec/test-design issues, not code bugs.
-- **2026-02-06 — Return Policy rewrite (opened bottles non-returnable)**:
-  • Rewrote /refund-policy: "Sealed-Bottle Returns Only" banner, 7-day window
-    on UNOPENED items only, explicit Section 3 "Non-Returnable / Non-Refundable"
-    listing opened/used/sampled/swatched/seal-broken — even if used only once.
-  • Updated all storefront trust strips, product FAQ, About page, Terms page,
-    LanguageContext label from "30-Day Money Back" → "7-Day Sealed Return".
-- **2026-02-06 — 🚀 SEO + AEO foundation laid (no Next.js migration needed)**:
-  • New reusable <SEOHead> React component (react-helmet) with builders for
-    productJsonLd / breadcrumbJsonLd / faqJsonLd.
-  • Wired SEOHead into Homepage, ShopPage, ProductDetailPage,
-    ConcernCategoryPage (concern + category modes), About, Refund, Terms,
-    Shipping, Privacy, Contact. Each page now emits its own canonical, OG
-    tags, Twitter card, hreflang en-IN and per-page JSON-LD.
-  • Product pages auto-generate Product + Offer + AggregateRating +
-    MerchantReturnPolicy + ShippingDetails + BreadcrumbList + FAQ schema from
-    live DB data — every new SKU added in admin instantly has full schema.
-  • Trimmed homepage title to 51 chars; switched index.html JSON-LD to
-    Organization + WebSite (SearchAction) + FAQPage; replaced "You need to
-    enable JavaScript" noscript with brand-rich plain-text content (gives
-    legacy/AI crawlers something to read).
-  • New backend module routes/seo.py:
-    - GET /api/sitemap.xml — dynamic DB-backed sitemap (81 URLs today;
-      auto-grows with every new product / blog / category / subcategory).
-    - GET /api/seo/product-feed.json — AI-crawler-friendly JSON feed of all
-      active products (28 today).
-  • robots.txt rewritten with explicit allowlists for Googlebot, Bingbot,
-    GPTBot, ClaudeBot, PerplexityBot, Google-Extended and sitemap reference.
-  • Static /sitemap.xml is now a sitemap-index pointing at the dynamic
-    /api/sitemap.xml — so even without a redeploy, crawlers see fresh URLs.
-  • Domain redirect prelauch → celestaglow handled by user manually later.
+### Jan 2026 — Repo clone
+- Cloned `veegalenterprises-sudo/Sd`, installed deps, both services running.
+- DB contains 7,863 imported products.
 
-## Backlog (priority order)
-- 🔴 P0 (user-verification pending): deployed employee login. User must
-  redeploy + delete/recreate the affected employee in admin panel.
-- 🟡 P1: Cloudinary plan / ImageKit migration before 2,000+ SKUs go live.
-- 🟢 P2: Refactor `backend/server.py` (>3000 lines) into routes/orders.py,
-  routes/referrals.py, routes/visitor_tracking.py.
-- 🟢 P2: AI image generation button next to image uploader (Nano Banana).
-- 🟢 P2: Razorpay Payouts API for automated referral withdrawal.
-- 🟢 P2: Tag products with subcategories (admin data-entry — UI is ready, DB
-  is now clean for fresh real-world subcategories).
-- 🟢 P2: Add data-testids to ImageInput component for E2E testing of the niche
-  card image admin uploads.
-- 🟢 P2: ConcernCategoryPage 'Back to Skincare' link still says 'Skincare' even
-  when concern.niche='cosmetics' (low-priority polish, noted iter6).
+### Jan 2026 — Canonical taxonomy (v3 = final Cosmetics spec)
+- New service `services/taxonomy_canonical.py` = single source of truth.
+- **Skincare:** 13 main Concerns (Acne · Pigmentation · Dryness · Oil & Sebum · Aging · Sensitivity · Texture & Pores · Brightening · Under Eye · Barrier · Skin Conditions · Sun Protection · Men's) — each with `subs` array. Plus Anti-Aging (Flagship) alias.
+- **Skincare categories:** 16 (Cleansers · Exfoliators · Toners & Mists · Serums & Treatments · Moisturizers · Sunscreens · Masks & Packs · Spot Treatments · Eye Care · Lip Care · Face Oils · Essences & Ampoules · Skin Repair & Barrier Care · Brightening Products · Anti-Aging Products · Body Skincare).
+- **Cosmetics categories (USER'S FINAL SPEC):** 7 mains — Face (14 subs) · Lips (8 subs) · Eyes (10 subs) · Nails (7 subs) · Tools & Brushes (11 subs) · Multi-Functional Makeup Palettes (5 subs) · Makeup Kits & Combos (5 subs).
+- Total: 14 concerns, 158 categories (parents+children for frontend hub), 135 subcategories.
+- Sentinel `taxonomy_canonical_version=2026-01-cosmetics-v3` gates re-seeding.
 
-## Test credentials
-See `/app/memory/test_credentials.md`.
+### Jan 2026 — Auto-classification
+- `classify_product(name, description, brand)` does longest-keyword matching with composite-name handling (e.g. "BB & CC Cream" → matches "bb cream", "cc cream", "bb", "cc").
+- Brand-aware niche hint (Lakme/Maybelline/Sugar/Faces/MAC/etc. → cosmetics).
+- All 7,863 products re-classified: skincare 2,817 / cosmetics 5,041 / anti-aging 5.
+- Subcategory population: 25+ subcats with real product counts (Lipstick 682, Nail Polish 460, Foundation 350, Eye Shadow 176, Eye Shadow Palette 62, Setting Spray 22, etc.).
+- `needs_review=true` flag on unmatched products for admin curation.
+
+### Jan 2026 — Filter tags
+- Heuristic auto-tagger: `bestseller`, `luxury` (₹1500+), `trending`, `most_bought`, `new_launch` (top-100 newest + badge contains "new").
+- Admin overrides preserved via `manual:` prefix.
+- Currently: 1,184 bestsellers · 591 luxury · 5,029 trending · 394 most_bought · 108 new_launch.
+- `/api/products?tag={tag}` for filtering.
+
+### Jan 2026 — Cosmetics homepage config
+- `COSMETICS_FEATURED_NAV` (12 chips: Bestseller · New Launch · Bridal Store · Base Makeup Routine · Foundation · Concealer · Eye Shadow · Eyeliner & Kajals · Mascara · Lipstick · Nail Polish · Tools & Brushes).
+- `COSMETICS_PROMO_SECTIONS` (Best Of Makeup · Brands You Will Love · Find Your Perfect Match).
+- Public `GET /api/cosmetics/home-config` · Admin `PUT /api/admin/cosmetics/home-config` for edits.
+
+### Jan 2026 — Dedupe
+- `dedupe_products(dry_run)` collapses by normalized name. Currently 0 exact-name duplicates.
+
+### Backend filter improvement
+- `/api/products?category={slug}` now matches the parent category OR child subcategory slug, so the Cosmetics hub tile counts (e.g. `?category=foundation`) work even though products are stored as `category=face-makeup, subcategory=foundation`.
+
+## New endpoints (require X-Admin-Token unless noted)
+- Public `GET /api/cosmetics/home-config`
+- `PUT /api/admin/cosmetics/home-config`
+- `POST /api/admin/taxonomy/reset-canonical`
+- `POST /api/admin/taxonomy/reclassify-products`
+- `POST /api/admin/taxonomy/recompute-tags`
+- `POST /api/admin/products/dedupe?dry_run=true|false`
+
+### Jan 2026 — Tiered classifier + haircare extraction + auto-cleanup
+- New **definitive keyword tiers** in `classify_product` — concealer / foundation / lipstick / mascara / kajal etc. ALWAYS win the niche, overriding skincare ingredient names (Vit C / Niacinamide / Hyaluronic) that previously misled the counter.
+- **Haircare niche** auto-detected (shampoo / conditioner / hair oil / hair serum etc.) — 177 products extracted from cosmetics; they no longer pollute the makeup hub.
+- **Empty-subcategory auto-cleanup** — `cleanup_empty_taxonomy()` sets `is_active=false` on subcats with 0 products; the `/api/categories` endpoint already filters by `is_active=true`, so empty tiles auto-hide on the cosmetics/skincare hub. 41 empty subcats are currently hidden (Tinted Moisturizer, Under-Eye Concealer, False Eyelashes, Contact Lenses, all kit subcats, etc.). Re-enables them automatically when products are added.
+- Unclassified products now leave `category=null` (instead of polluting a fallback bucket) — they're still browsable via the niche filter, and marked `needs_review=true` for admin curation.
+- Brand-aware niche detection (Lakme, Maybelline, Sugar, Faces, MAC, Elle 18, Swiss Beauty, Mamaearth Makeup, etc.).
+- Singular/plural matcher (Highlighter ↔ Highlighters, False Eyelash ↔ False Eyelashes).
+
+### Distribution after final reclassify
+- Niches: skincare 2,516 · cosmetics 5,165 · haircare 177 · anti-aging 5
+- Top subcats: Lipstick 684, Nail Polish 460, Foundation 374, Concealer 242, Liquid Lipstick 170, Blush 168, Face Wash 162, Compact 145, Eyeliner 117, Kajal 97, Lip Liner 84, Lip Balm 75, Highlighters 73, Mascara 73, Body Lotion 64, Sheet Mask 58, Lip Gloss 58, Lip Crayon 52, Eye Shadow 176, BB & CC 30, Setting Spray 20, Multi-Palettes 120.
+
+### Jan 2026 — Operator playbook
+- **`/app/PROMPT_FOR_BULK_REIMPORT.md`** — copy-paste prompt template the user gives E1 after every bulk upload. Contains the full taxonomy reference (niches · concerns · categories · subcategories · tags · brand list) + a 7-step routing prompt.
+
+## Backlog
+- **P0:** Send the ~9.7k product CSV/Excel — current DB has 7,863; new import will auto-classify + auto-cleanup on the way in.
+- **P0:** ~2,439 products still classified with `category=null` (mostly brand-line cosmetics like "Lakme True Wear", "Elle 18 Color Pops") — keyword coverage can be expanded incrementally; admin-curate via `needs_review` flag in the meantime.
+- **P1:** Frontend — render Featured Nav strip + 3 Promo Sections on `/cosmetics`. Backend ready; UI not yet wired.
+- **P1:** Hook reclassifier into `bulk_import_service` so future imports auto-classify on insert.
+- **P2:** Razorpay / Cloudinary / SendGrid / Delhivery / WhatsApp API keys.
+
+## New admin endpoints (require X-Admin-Token)

@@ -38,6 +38,11 @@ from routes import concerns as concerns_routes
 from routes import image_ai as image_ai_routes
 from routes import reviews as reviews_routes
 from routes import customer_auth as customer_auth_routes
+from routes import bulk_import as bulk_import_routes
+from routes import master_import as master_import_routes
+from routes import gift_cards_and_ai as gift_cards_routes
+from services.bulk_import_service import BulkImportService
+from services.gift_card_service import GiftCardService
 
 
 ROOT_DIR = Path(__file__).parent
@@ -111,6 +116,8 @@ class OrderCreate(BaseModel):
     combo_id: Optional[str] = None
     coupon_code: Optional[str] = None
     coupon_discount: Optional[float] = 0
+    gift_card_code: Optional[str] = None
+    gift_card_discount: Optional[float] = 0
 
 
 class Order(BaseModel):
@@ -462,9 +469,35 @@ async def create_order(order_input: OrderCreate):
             server_referral_discount = min(float(order_input.referral_discount or 50), 50.0)
 
     server_amount_before_shipping = max(0.0, computed_subtotal - server_coupon_discount - server_referral_discount)
-    # Free shipping over ₹499 (matches frontend rule)
-    server_shipping = 0.0 if server_amount_before_shipping >= 499 else 49.0
-    server_final_amount = round(server_amount_before_shipping + server_shipping, 2)
+    # Band Margin Pricing Strategy:
+    #   • MOQ: block carts below ₹300
+    #   • Free delivery ≥ ₹999, else ₹49 delivery
+    #   • Taxes & charges: ₹99 if < ₹999, else ₹49 (50% off)
+    #   • Packaging fee: ₹10 (always when cart > 0)
+    if server_amount_before_shipping > 0 and server_amount_before_shipping < 300:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Minimum order amount is ₹300. Add more items to your cart. (current: ₹{server_amount_before_shipping:.0f})"
+        )
+    qualifies_999 = server_amount_before_shipping >= 999
+    server_delivery_fee = 0.0 if qualifies_999 else 49.0
+    server_tax_charges = 49.0 if qualifies_999 else 99.0
+    server_packaging = 10.0 if server_amount_before_shipping > 0 else 0.0
+    server_shipping = server_delivery_fee + server_tax_charges + server_packaging
+    server_total_with_charges = round(server_amount_before_shipping + server_shipping, 2)
+
+    # Server-side gift card redemption (validate + compute discount)
+    server_gift_card_discount = 0.0
+    if order_input.gift_card_code:
+        from services.gift_card_service import GiftCardService
+        gc_svc = GiftCardService(db)
+        gc_res = await gc_svc.validate_for_redemption(order_input.gift_card_code, server_total_with_charges)
+        if gc_res.get("valid"):
+            server_gift_card_discount = float(gc_res["discount"])
+        else:
+            raise HTTPException(status_code=400, detail=f"Gift card: {gc_res.get('message')}")
+
+    server_final_amount = round(max(0, server_total_with_charges - server_gift_card_discount), 2)
 
     # Reject if client-sent amount differs by more than ₹1 (rounding tolerance)
     client_amount = float(order_input.amount or 0)
@@ -484,6 +517,7 @@ async def create_order(order_input: OrderCreate):
     order_input.coupon_code = server_coupon_code
     order_input.coupon_discount = server_coupon_discount
     order_input.referral_discount = server_referral_discount
+    order_input.gift_card_discount = server_gift_card_discount
 
     order_obj = Order(**order_input.model_dump())
     
@@ -519,6 +553,22 @@ async def create_order(order_input: OrderCreate):
         })
     
     await db.orders.insert_one(doc)
+
+    # Redeem gift card AFTER order is inserted (idempotent on order_id)
+    if order_input.gift_card_code and server_gift_card_discount > 0:
+        try:
+            from services.gift_card_service import GiftCardService
+            gc_svc = GiftCardService(db)
+            await gc_svc.redeem(order_input.gift_card_code, server_gift_card_discount, doc['order_id'])
+            await db.orders.update_one(
+                {"order_id": doc['order_id']},
+                {"$set": {
+                    "gift_card_code": order_input.gift_card_code,
+                    "gift_card_discount": server_gift_card_discount,
+                }},
+            )
+        except Exception as e:
+            logging.warning(f"[order] gift card redemption failed for {doc['order_id']}: {e}")
 
     # Decrement stock_qty atomically on live (non-TBL) products — guard against overselling
     for slug, qty, shade_id in stock_changes:
@@ -1458,6 +1508,17 @@ reviews_routes.set_admin_sessions(admin_sessions)
 
 # Share admin_sessions with consultation routes for token verification
 consultation_routes.set_admin_sessions(admin_sessions)
+
+# Wire bulk-import service + auth into its routes module
+bulk_import_service = BulkImportService(db)
+bulk_import_routes.setup(bulk_import_service, admin_sessions, verify_admin_token)
+
+# Wire up the fast master-list import + product groups + margin updater + order export
+master_import_routes.setup(db, admin_sessions, verify_admin_token)
+
+# Wire up gift cards + AI URL analyze + per-product fill-with-AI
+gift_card_service = GiftCardService(db)
+gift_cards_routes.setup(db, gift_card_service, verify_admin_token)
 
 @api_router.post("/admin/login")
 async def admin_login(request: AdminLoginRequest, response: Response):
@@ -3160,6 +3221,9 @@ app.include_router(_visitor_tracking.router)
 # Customer Email OTP auth + orders + cart
 customer_auth_routes.init_auth_router(db)
 app.include_router(customer_auth_routes.router, prefix="/api")
+app.include_router(bulk_import_routes.router)
+app.include_router(master_import_routes.router)
+app.include_router(gift_cards_routes.router)
 
 # Email service (Gmail → SendGrid auto-failover at 250 emails/day IST)
 from services import email_service as _email_service
@@ -3257,6 +3321,31 @@ async def startup_seed():
         await run_concerns_seed(db)
     except Exception as e:
         logging.error(f"Failed to seed concerns: {e}", exc_info=True)
+    # Apply the CANONICAL taxonomy (Jan 2026 user spec): 13 skincare concerns
+    # (each with `subs` array), 16 skincare categories, 7 cosmetics categories.
+    # Runs ONCE per version on startup (sentinel: taxonomy_canonical_version).
+    # Also re-classifies every product and computes filter tags.
+    CANONICAL_VERSION = "2026-01-cosmetics-v4"
+    try:
+        settings = await db.site_settings.find_one(
+            {"_id": "main"},
+            {"_id": 0, "taxonomy_canonical_applied": 1, "taxonomy_canonical_version": 1}
+        )
+        applied_version = (settings or {}).get("taxonomy_canonical_version")
+        if applied_version != CANONICAL_VERSION:
+            from services.taxonomy_canonical import (
+                reset_canonical_taxonomy, reclassify_all_products, compute_product_tags
+            )
+            seeded = await reset_canonical_taxonomy(db)
+            logging.info(f"[taxonomy_canonical {CANONICAL_VERSION}] reset inserted {seeded}")
+            classified = await reclassify_all_products(db)
+            logging.info(f"[taxonomy_canonical] classified {classified.get('updated')} products")
+            tagged = await compute_product_tags(db)
+            logging.info(f"[taxonomy_canonical] tagged {tagged.get('updated')} products")
+        else:
+            logging.info(f"[taxonomy_canonical] {CANONICAL_VERSION} already applied — skipping reset")
+    except Exception as e:
+        logging.error(f"Failed to apply canonical taxonomy: {e}", exc_info=True)
     # Live visitor tracking TTL index (5-min auto-expiry on `last_seen`)
     try:
         await _visitor_tracking.ensure_indexes()

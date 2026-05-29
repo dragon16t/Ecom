@@ -177,12 +177,33 @@ class CategoryUpsert(BaseModel):
     is_active: bool = True
     group: str = "skincare"  # 'skincare' or 'cosmetics' (legacy)
     niche: str = "skincare"  # 'anti-aging' | 'skincare' | 'cosmetics'
+    # Taxonomy V2 fields — preserved on partial admin updates.
+    is_parent: Optional[bool] = None
+    parent: Optional[str] = None
+    subs: Optional[List[str]] = None
+
+
+class CategoryPatch(BaseModel):
+    """Partial update — only sent fields are written. Used by /admin/categories/{slug}."""
+    name: Optional[str] = None
+    tagline: Optional[str] = None
+    icon: Optional[str] = None
+    image: Optional[str] = None
+    sort_order: Optional[int] = None
+    is_active: Optional[bool] = None
+    niche: Optional[str] = None
+    is_parent: Optional[bool] = None
+    parent: Optional[str] = None
+    subs: Optional[List[str]] = None
 
 
 @router.get("/categories")
-async def list_categories():
-    """Public: List all active categories"""
-    items = await db.categories.find({"is_active": True}, {"_id": 0}).sort("sort_order", 1).to_list(50)
+async def list_categories(niche: Optional[str] = None):
+    """Public: List all active categories. Optional `niche` filter (skincare/cosmetics)."""
+    q = {"is_active": True}
+    if niche:
+        q["niche"] = niche
+    items = await db.categories.find(q, {"_id": 0}).sort("sort_order", 1).to_list(length=None)
     return items
 
 
@@ -199,16 +220,30 @@ async def get_category_with_products(
     if not category:
         raise HTTPException(status_code=404, detail="Category not found")
 
-    query = {"is_active": True, "category": slug}
+    # Match products whose category OR subcategory slug matches. This lets
+    # /category/concealer (a subcategory) return the 242 products stored as
+    # category=face-makeup + subcategory=concealer.
+    query = {
+        "is_active": True,
+        "$or": [{"category": slug}, {"subcategory": slug}],
+    }
     if search and search.strip():
         import re as _re
         safe = _re.escape(search.strip())
-        query["$or"] = [
-            {"name":        {"$regex": safe, "$options": "i"}},
-            {"description": {"$regex": safe, "$options": "i"}},
-            {"brand":       {"$regex": safe, "$options": "i"}},
-            {"tags":        {"$regex": safe, "$options": "i"}},
-        ]
+        # Wrap existing $or in $and to keep the category-OR-subcategory filter
+        # alongside the search-OR filter.
+        query = {
+            "is_active": True,
+            "$and": [
+                {"$or": [{"category": slug}, {"subcategory": slug}]},
+                {"$or": [
+                    {"name":        {"$regex": safe, "$options": "i"}},
+                    {"description": {"$regex": safe, "$options": "i"}},
+                    {"brand":       {"$regex": safe, "$options": "i"}},
+                    {"tags":        {"$regex": safe, "$options": "i"}},
+                ]},
+            ],
+        }
 
     sort_spec = {
         "sort_order": [("sort_order", 1), ("name", 1)],
@@ -249,9 +284,16 @@ async def create_category(data: CategoryUpsert, x_admin_token: str = Header(None
 
 
 @router.put("/admin/categories/{slug}")
-async def update_category(slug: str, data: CategoryUpsert, x_admin_token: str = Header(None, alias="X-Admin-Token")):
+async def update_category(slug: str, data: CategoryPatch, x_admin_token: str = Header(None, alias="X-Admin-Token")):
+    """Partial update — only fields explicitly sent are written.
+
+    This preserves the taxonomy_v2 parent/sub relationships when admin only
+    changes image/icon/name from the category editor.
+    """
     verify_admin(x_admin_token)
-    update = data.dict()
+    update = {k: v for k, v in data.dict().items() if v is not None}
+    if not update:
+        raise HTTPException(status_code=400, detail="Nothing to update")
     update["updated_at"] = datetime.now(timezone.utc).isoformat()
     result = await db.categories.update_one({"slug": slug}, {"$set": update})
     if result.matched_count == 0:
@@ -366,3 +408,45 @@ async def delete_subcategory(slug: str, x_admin_token: str = Header(None, alias=
     # Also clear `subcategory` field from any products that referenced it
     await db.products.update_many({"subcategory": slug}, {"$set": {"subcategory": ""}})
     return {"success": True}
+
+
+
+# ==================== COSMETICS HOMEPAGE CONFIG (public) ====================
+
+@router.get("/cosmetics/home-config")
+async def get_cosmetics_home_config():
+    """Featured navigation strip + promo sections rendered on /cosmetics page.
+
+    Falls back to canonical defaults if no override stored in site_settings.
+    Admin can persist overrides via PUT /admin/cosmetics/home-config.
+    """
+    from services.taxonomy_canonical import (
+        COSMETICS_FEATURED_NAV, COSMETICS_PROMO_SECTIONS
+    )
+    settings = await db.site_settings.find_one(
+        {"_id": "main"},
+        {"_id": 0, "cosmetics_featured_nav": 1, "cosmetics_promo_sections": 1}
+    ) or {}
+    return {
+        "featured_nav": settings.get("cosmetics_featured_nav") or COSMETICS_FEATURED_NAV,
+        "promo_sections": settings.get("cosmetics_promo_sections") or COSMETICS_PROMO_SECTIONS,
+    }
+
+
+@router.put("/admin/cosmetics/home-config")
+async def update_cosmetics_home_config(
+    payload: dict,
+    x_admin_token: str = Header(None, alias="X-Admin-Token"),
+):
+    """Admin: persist Featured Nav + Promo Sections overrides."""
+    verify_admin(x_admin_token)
+    update = {}
+    if "featured_nav" in payload and isinstance(payload["featured_nav"], list):
+        update["cosmetics_featured_nav"] = payload["featured_nav"]
+    if "promo_sections" in payload and isinstance(payload["promo_sections"], list):
+        update["cosmetics_promo_sections"] = payload["promo_sections"]
+    if not update:
+        raise HTTPException(status_code=400, detail="Nothing to update")
+    update["cosmetics_home_config_updated_at"] = datetime.now(timezone.utc).isoformat()
+    await db.site_settings.update_one({"_id": "main"}, {"$set": update}, upsert=True)
+    return {"success": True, "updated": list(update.keys())}

@@ -88,6 +88,7 @@ class ProductUpdate(BaseModel):
     how_to_use: Optional[str] = None
     size: Optional[str] = None
     images: Optional[List[str]] = None
+    image: Optional[str] = None  # singular convenience field — mirrored into images[0] on save
     mrp: Optional[float] = None
     prepaid_price: Optional[float] = None
     cod_price: Optional[float] = None
@@ -125,6 +126,8 @@ class ProductUpdate(BaseModel):
     # Cosmetics shade variants — each shade has independent stock & optional image.
     # Empty/None means the product is sold as a single SKU (no shade picker).
     shades: Optional[List[Dict[str, Any]]] = None  # [{id,name,hex,image,sku,stock_qty}]
+    # Price guard — must be explicitly true to allow prepaid_price/cod_price/mrp updates
+    allow_price_change: Optional[bool] = False
 
 class ProductCreate(BaseModel):
     slug: str
@@ -177,6 +180,8 @@ async def get_all_products(
     niche: Optional[str] = Query(None),
     category: Optional[str] = Query(None),
     concern: Optional[str] = Query(None),
+    subcategory: Optional[str] = Query(None),
+    tag: Optional[str] = Query(None, description="Filter by tag: bestseller | luxury | trending | most_bought"),
     # --- NEW: pagination + server-side search ---
     # `page` is 1-indexed. `limit` is the page size.
     # When neither param is passed, the endpoint stays backward-compatible and
@@ -211,12 +216,32 @@ async def get_all_products(
             active_only = True
     # Build the query
     query = {"is_active": True} if active_only else {}
+    # Public catalog: hide out-of-stock products entirely (business rule).
+    # Admins can still see all products via active_only=false.
+    if active_only:
+        query["$and"] = [
+            {"$or": [
+                {"is_to_be_launched": True},  # Coming-soon products are shown (different CTA)
+                {"stock_qty": {"$gt": 0}},
+                {"shades.stock_qty": {"$gt": 0}},
+            ]}
+        ]
     if niche:
         query["niche"] = niche
     if category:
-        query["category"] = category
+        # Match the parent category OR a child subcategory with this slug.
+        # This lets the Cosmetics hub fetch counts via ?category=foundation
+        # even though the product is stored as category=face-makeup + subcategory=foundation.
+        query["$or"] = (query.get("$or") or []) + [
+            {"category": category},
+            {"subcategory": category},
+        ]
     if concern:
         query["concerns"] = concern
+    if subcategory:
+        query["subcategory"] = subcategory
+    if tag:
+        query["tags"] = tag
     if search and search.strip():
         # Case-insensitive partial match across the four most useful fields.
         s = search.strip()
@@ -475,9 +500,31 @@ async def update_product(
     data: ProductUpdate,
     x_admin_token: str = Header(None, alias="X-Admin-Token")
 ):
-    """Admin: Update product details"""
+    """Admin: Update product details.
+
+    PRICE GUARD: prepaid_price / cod_price / mrp are NEVER updated by this
+    endpoint unless the request also passes ``allow_price_change=true``.
+    This is enforced because price changes must be a deliberate admin action
+    (Jan 2026 spec — see gift_cards_and_ai.admin_update_product).
+    """
     verify_auth(x_admin_token=x_admin_token)
     update = {k: v for k, v in data.dict().items() if v is not None}
+    allow_price = bool(update.pop("allow_price_change", False))
+    if not allow_price:
+        for k in ("prepaid_price", "cod_price", "mrp"):
+            update.pop(k, None)
+    if not update:
+        raise HTTPException(status_code=400, detail="Nothing to update")
+    # Mirror singular `image` into images[0] so legacy schema consumers still find it.
+    if "image" in update and update["image"]:
+        img = update["image"]
+        existing_imgs = update.get("images") or []
+        if not existing_imgs:
+            # Fetch current images to preserve any extras
+            cur = await db.products.find_one({"slug": slug}, {"_id": 0, "images": 1})
+            existing_imgs = (cur or {}).get("images") or []
+        if not existing_imgs or existing_imgs[0] != img:
+            update["images"] = [img] + [i for i in existing_imgs if i and i != img]
     update["updated_at"] = datetime.now(timezone.utc).isoformat()
     result = await db.products.update_one({"slug": slug}, {"$set": update})
     if result.matched_count == 0:
@@ -859,6 +906,7 @@ class CartItem(BaseModel):
 class CartValidateRequest(BaseModel):
     items: List[CartItem]
     coupon_code: Optional[str] = None
+    gift_card_code: Optional[str] = None
     payment_method: str = "prepaid"
 
 
@@ -869,9 +917,10 @@ async def validate_cart(data: CartValidateRequest):
     subtotal = 0
     mrp_total = 0
     stock_warnings = []  # list of {slug, message, capped_to}
-    
-    is_cod = (data.payment_method or "").lower() == "cod"
-    cod_premium = 50 if is_cod else 0  # COD costs ₹50 more (achieved by reducing savings)
+
+    # COD no longer carries a premium — the new platform fee covers both COD + prepaid
+    # uniformly (delivery & taxes are the differentiators below).
+    cod_premium = 0
 
     for item in data.items:
         if item.product_slug:
@@ -961,49 +1010,88 @@ async def validate_cart(data: CartValidateRequest):
     
     total = max(subtotal - discount, 0)
     
-    # Apply volume discount
+    # Volume discount DISABLED — buy-N-get-X% removed per business policy (kills margin).
     total_items = sum(i["quantity"] for i in validated_items)
     volume_discount = 0
     volume_discount_percent = 0
     settings_doc = await db.site_settings.find_one({"_id": "main"}, {"_id": 0})
-    volume_tiers = (settings_doc or {}).get("volume_discounts", [
-        {"min_items": 2, "discount_percent": 3},
-        {"min_items": 3, "discount_percent": 5},
-        {"min_items": 4, "discount_percent": 8},
-    ])
-    for tier in sorted(volume_tiers, key=lambda x: x.get("min_items", 0), reverse=True):
-        if total_items >= tier.get("min_items", 0):
-            volume_discount_percent = tier.get("discount_percent", 0)
-            volume_discount = round(total * volume_discount_percent / 100, 2)
-            break
-    
-    # Shipping fee: free above ₹200, else ₹50.
-    # Free-shipping threshold can be overridden via site_settings.free_shipping_threshold
-    free_shipping_threshold = float((settings_doc or {}).get("free_shipping_threshold") or 200)
-    shipping_fee_amount = float((settings_doc or {}).get("shipping_fee") or 50)
+
+    # Band Margin Strategy: free shipping ≥₹999, ₹49 delivery below, MOQ ₹300.
+    # Plus: psychological pricing charges shown to customer.
+    #   • Packaging fee: ₹10 always (covers eco-packaging)
+    #   • Taxes & charges: ₹99 if < ₹999, else ₹49 (50% off — incentive to hit ₹999)
+    #   • Delivery: ₹49 if < ₹999, else FREE
+    free_shipping_threshold = float((settings_doc or {}).get("free_shipping_threshold") or 999)
+    delivery_fee_amount = float((settings_doc or {}).get("delivery_fee") or 49)
+    tax_charges_full = float((settings_doc or {}).get("tax_charges") or 99)
+    # ₹15 = ₹10 eco packaging + ₹5 platform fee (merged for simpler UI per Jan-2026 spec)
+    packaging_fee_amount = float((settings_doc or {}).get("packaging_fee") or 15)
+    moq_amount = float((settings_doc or {}).get("moq_amount") or 300)
     pre_ship_total = max(total - volume_discount, 0)
-    shipping_fee = 0 if pre_ship_total >= free_shipping_threshold else shipping_fee_amount
+
+    qualifies_999 = pre_ship_total >= free_shipping_threshold
+    delivery_fee = 0 if qualifies_999 else delivery_fee_amount
+    tax_charges = round(tax_charges_full * 0.5) if qualifies_999 else tax_charges_full
+    packaging_fee = packaging_fee_amount if pre_ship_total > 0 else 0
+    # Savings on charges (50% off framing)
+    charges_savings = (delivery_fee_amount + round(tax_charges_full * 0.5)) if qualifies_999 else 0
+
     free_shipping_remaining = max(0, free_shipping_threshold - pre_ship_total)
+    moq_remaining = max(0, moq_amount - pre_ship_total) if pre_ship_total > 0 else 0
+    moq_block = bool(pre_ship_total > 0 and pre_ship_total < moq_amount)
+
+    # Keep legacy `shipping_fee` field for backward compatibility with older clients
+    shipping_fee = delivery_fee + tax_charges + packaging_fee
 
     final_total = pre_ship_total + cod_premium + shipping_fee
     total_savings = max(mrp_total - (final_total - shipping_fee - cod_premium), 0)
+
+    # Apply gift card AFTER all charges — gift card can pay for charges too
+    gift_card_discount = 0
+    gift_card_info = None
+    if data.gift_card_code and final_total > 0:
+        from services.gift_card_service import GiftCardService
+        gc_svc = GiftCardService(db)
+        gc_res = await gc_svc.validate_for_redemption(data.gift_card_code, final_total)
+        if gc_res.get("valid"):
+            gift_card_discount = gc_res["discount"]
+            gift_card_info = {
+                "code": gc_res["code"],
+                "discount": gc_res["discount"],
+                "remaining_balance": gc_res["remaining_balance"],
+                "remaining_after": gc_res["remaining_after"],
+                "message": gc_res["message"],
+            }
+            final_total = max(0, final_total - gift_card_discount)
+        else:
+            gift_card_info = {"error": gc_res.get("message", "Invalid gift card")}
     
     return {
         "items": validated_items,
-        "mrp_total": mrp_total,
-        "subtotal": subtotal,
-        "discount": discount,
-        "volume_discount": volume_discount,
-        "volume_discount_percent": volume_discount_percent,
-        "cod_premium": cod_premium,
-        "shipping_fee": shipping_fee,
-        "free_shipping_threshold": free_shipping_threshold,
-        "free_shipping_remaining": free_shipping_remaining,
+        "mrp_total": int(round(mrp_total)),
+        "subtotal": int(round(subtotal)),
+        "discount": int(round(discount)),
+        "volume_discount": 0,
+        "volume_discount_percent": 0,
+        "cod_premium": int(round(cod_premium)),
+        "shipping_fee": int(round(shipping_fee)),
+        "delivery_fee": int(round(delivery_fee)),
+        "tax_charges": int(round(tax_charges)),
+        "tax_charges_original": int(round(tax_charges_full)),
+        "packaging_fee": int(round(packaging_fee)),
+        "charges_savings": int(round(charges_savings)),
+        "free_shipping_threshold": int(round(free_shipping_threshold)),
+        "free_shipping_remaining": int(round(free_shipping_remaining)),
+        "moq_amount": int(round(moq_amount)),
+        "moq_remaining": int(round(moq_remaining)),
+        "moq_block": moq_block,
         "payment_method": data.payment_method,
-        "total": final_total,
-        "savings": total_savings,
+        "gift_card": gift_card_info,
+        "gift_card_discount": int(round(gift_card_discount)),
+        "total": int(round(final_total)),
+        "savings": int(round(total_savings)),
         "item_count": total_items,
-        "prepaid_savings_hint": cod_premium,  # ₹ saved by switching to prepaid
+        "prepaid_savings_hint": int(round(cod_premium)),
         "stock_warnings": stock_warnings,
     }
 

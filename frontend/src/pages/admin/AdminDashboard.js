@@ -260,6 +260,12 @@ function AdminDashboard() {
           <Link to="/admin/products" className="flex items-center gap-3 px-4 py-3 text-green-600 hover:bg-green-50 rounded-xl" data-testid="nav-products">
             <Package size={20} /> Products
           </Link>
+          <Link to="/admin/bulk-import" className="flex items-center gap-3 px-4 py-3 text-indigo-600 hover:bg-indigo-50 rounded-xl" data-testid="nav-bulk-import">
+            <Package size={20} /> Bulk Import (Excel)
+          </Link>
+          <Link to="/admin/master-tools" className="flex items-center gap-3 px-4 py-3 text-emerald-600 hover:bg-emerald-50 rounded-xl" data-testid="nav-master-tools">
+            <Sparkles size={20} /> Master Tools (Groups, Margin, Orders)
+          </Link>
           <Link to="/admin/concerns" className="flex items-center gap-3 px-4 py-3 text-pink-600 hover:bg-pink-50 rounded-xl" data-testid="nav-concerns">
             <Sparkles size={20} /> Concerns &amp; Categories
           </Link>
@@ -319,16 +325,10 @@ function AdminDashboard() {
         </div>
       </aside>
 
-      {/* Mobile Header */}
-      <header className="lg:hidden fixed top-0 left-0 right-0 bg-white border-b border-gray-200 z-40 px-4 py-3">
-        <div className="flex items-center justify-between">
-          <h1 className="text-lg font-bold text-green-500">Admin</h1>
-          <button onClick={handleLogout} className="text-gray-600"><LogOut size={20} /></button>
-        </div>
-      </header>
+      {/* Mobile Header removed — replaced by global AdminMobileNav drawer in AppRouter.js */}
 
       {/* Main Content */}
-      <main className="lg:ml-64 pt-16 lg:pt-0 min-h-screen">
+      <main className="lg:ml-64 min-h-screen">
         <div className="p-6 lg:p-8">
           {/* Page Header with Refresh & Notifications */}
           <div className="flex items-center justify-between mb-8">

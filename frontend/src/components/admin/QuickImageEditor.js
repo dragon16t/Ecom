@@ -62,6 +62,9 @@ export default function QuickImageEditor({ currentImage, resourceType, slug, onU
 
       setOk(true);
       onUpdated?.(newUrl);
+      // Broadcast: tells SkincareHome/CosmeticsHome/CategoryHub to refetch
+      // /api/categories so the new image lands on the hub tile without reload.
+      try { window.dispatchEvent(new Event('admin-data-changed')); } catch (_) { /* noop */ }
       setTimeout(() => setOk(false), 2500);
     } catch (e2) {
       setErr(e2?.response?.data?.detail || e2?.message || 'Upload failed');

@@ -97,6 +97,10 @@ export default function AdminConcerns() {
       }
       setEditing(null);
       await load();
+      // Tell every page (Home, Skincare, Cosmetics, hub tiles) to drop their cached
+      // /api/categories + /api/subcategories responses so the new image/name/tile
+      // shows up immediately without a hard refresh.
+      try { window.dispatchEvent(new Event('admin-data-changed')); } catch (_) { /* noop */ }
     } catch (e) {
       alert(e?.response?.data?.detail || 'Failed to save');
     }
@@ -110,6 +114,7 @@ export default function AdminConcerns() {
         : 'categories';
       await axios.delete(`${API}/api/admin/${url}/${slug}`, auth);
       await load();
+      try { window.dispatchEvent(new Event('admin-data-changed')); } catch (_) { /* noop */ }
     } catch (e) {
       alert('Failed to delete');
     }

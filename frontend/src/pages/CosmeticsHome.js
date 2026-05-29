@@ -7,6 +7,7 @@ import NicheHero from '../components/NicheHero';
 import HeroCarousel from '../components/HeroCarousel';
 import CircularCategoryStrip from '../components/CircularCategoryStrip';
 import CategoryShowcase from '../components/CategoryShowcase';
+import CosmeticsCategoryHub from '../components/CosmeticsCategoryHub';
 import { DermatologistSection, FaqSection } from '../components/NicheSections';
 import ReviewsCarousel from '../components/ReviewsCarousel';
 import TrendingLooks from '../components/TrendingLooks';
@@ -38,18 +39,18 @@ export default function CosmeticsHome() {
   // Cap at 48 — homepage only shows curated sections, never the full catalog.
   const _raw = peek(`${API}/api/products?niche=cosmetics&page=1&limit=48`) || peek(`${API}/api/products?niche=cosmetics`) || [];
   const _cp = Array.isArray(_raw) ? _raw : (_raw?.items || []);
-  const _cc = peek(`${API}/api/categories`) || [];
+  const _cc = peek(`${API}/api/categories?niche=cosmetics`) || peek(`${API}/api/categories`) || [];
   const _cs = peek(`${API}/api/site-settings`) || {};
   const _concerns = peek(`${API}/api/concerns`) || [];
   const [products, setProducts] = useState(_cp);
+  const _cosmeticsOnly = (_cc || []).filter(x => x.niche === 'cosmetics' || x.group === 'cosmetics');
   const [categories, setCategories] = useState(
-    _cc.filter(x => x.niche === 'cosmetics' || x.group === 'cosmetics')
-       .map(x => ({
-         ...x,
-         accent_from: x.accent_from || '#fce7f3',
-         accent_to: x.accent_to || '#fbcfe8',
-         accent_text: x.accent_text || '#831843',
-       }))
+    _cosmeticsOnly.map(x => ({
+      ...x,
+      accent_from: x.accent_from || '#fce7f3',
+      accent_to: x.accent_to || '#fbcfe8',
+      accent_text: x.accent_text || '#831843',
+    }))
   );
   const [concerns, setConcerns] = useState(_concerns.filter(x => x.niche === 'cosmetics'));
   const [settings, setSettings] = useState(_cs);
@@ -59,7 +60,7 @@ export default function CosmeticsHome() {
     let cancelled = false;
     Promise.all([
       cachedGet(`${API}/api/products?niche=cosmetics&page=1&limit=48`),
-      cachedGet(`${API}/api/categories`),
+      cachedGet(`${API}/api/categories?niche=cosmetics`),
       cachedGet(`${API}/api/site-settings`),
       cachedGet(`${API}/api/concerns`),
     ])
@@ -125,10 +126,10 @@ export default function CosmeticsHome() {
         <section className="bg-white border-b border-stone-100">
           <div className="max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-6">
             <CircularCategoryStrip
-              items={categories}
+              items={categories.filter(c => !c.is_parent && c.parent === 'face-makeup')}
               routePrefix="/category"
-              title={<>{(niche.category_strip_title || 'Shop by Category').split(' ').slice(0, -1).join(' ')} <span className="italic" style={{ color: accent }}>{(niche.category_strip_title || 'Shop by Category').split(' ').slice(-1)[0]}</span></>}
-              subtitle={niche.category_strip_subtitle || 'Lip · Eye · Brow · Face'}
+              title={<>{(niche.category_strip_title || 'Shop by Face').split(' ').slice(0, -1).join(' ')} <span className="italic" style={{ color: accent }}>{(niche.category_strip_title || 'Shop by Face').split(' ').slice(-1)[0]}</span></>}
+              subtitle={niche.category_strip_subtitle || 'Primer · Foundation · Concealer · Blush · Highlighter'}
               accent={accent}
               testIdPrefix="cosmetics-cat"
             />
@@ -191,6 +192,25 @@ export default function CosmeticsHome() {
         );
       })()}
 
+      {/* Shop by Category — Build your look. Placed ABOVE bestsellers so users
+          can pick a face/lips/eyes/nails category before browsing curated picks. */}
+      <CosmeticsCategoryHub
+        categories={categories}
+        virtualGroups={[
+          { slug: 'face-makeup',   name: 'Face',           children: ['face-primer', 'concealer', 'foundation', 'compact', 'contour', 'loose-powder', 'blush', 'bb-cc-cream', 'highlighter', 'setting-spray', 'makeup-remover', 'tinted-moisturizer', 'bronzer'], sort_order: 1 },
+          { slug: 'lips',          name: 'Lips',           children: ['lipstick', 'liquid-lipstick', 'lip-crayon', 'lip-gloss', 'lip-liner', 'lip-tint'], sort_order: 2 },
+          { slug: 'eyes',          name: 'Eyes',           children: ['kajal', 'eyeliner', 'mascara', 'eye-shadow', 'eye-brow', 'false-lashes'], sort_order: 3 },
+          { slug: 'nails',         name: 'Nails',          children: ['nail-polish'], sort_order: 4 },
+          { slug: 'tools-brushes', name: 'Tools & Brushes',children: ['makeup-brush', 'beauty-sponge', 'tools-accessories'], sort_order: 5 },
+          { slug: 'makeup-kits',   name: 'Kits & Combos',  children: [], sort_order: 6 },
+        ]}
+        eyebrow="Shop the full range"
+        title="Pick a category."
+        subtitle="Face · Lips · Eyes · Nails · Tools · Kits — every subcategory, every shade, in one tap."
+        accentColor={accentDark}
+        testIdPrefix="cosmetics-hub"
+      />
+
       {bs.enabled !== false && (
         <section className="max-w-7xl mx-auto px-3 sm:px-6 py-8 sm:py-12">
           <div className="flex items-end justify-between mb-4 sm:mb-6 px-1 sm:px-0">
@@ -220,22 +240,25 @@ export default function CosmeticsHome() {
         </section>
       )}
 
-      {/* Shop by Category — rich preview cards. Hidden when there's no
-          categories-with-products yet so empty merchants don't see a hole. */}
-      <CategoryShowcase
-        categories={categories}
-        products={products}
-        niche="cosmetics"
-        accent={accent}
-        accentBg="#fce7f3"
-        testIdPrefix="cosmetics-category-showcase"
-        enabled={niche.show_category_showcase !== false}
-        title={niche.category_showcase_title || 'Shop by Category'}
-        subtitle={niche.category_showcase_subtitle || "Find what you're looking for"}
-        highlight={niche.category_showcase_highlight || 'looking for'}
-        banner={niche.category_showcase_banner || null}
-        headerImage={niche.category_showcase_header_image || null}
-      />
+      {/* Shop by Category hub now rendered ABOVE bestsellers (see top section). */}
+
+      {/* Legacy category showcase kept off by default — admin can re-enable via niche.show_category_showcase=true */}
+      {niche.show_category_showcase === true && (
+        <CategoryShowcase
+          categories={categories}
+          products={products}
+          niche="cosmetics"
+          accent={accent}
+          accentBg="#fce7f3"
+          testIdPrefix="cosmetics-category-showcase"
+          enabled={true}
+          title={niche.category_showcase_title || 'Shop by Category'}
+          subtitle={niche.category_showcase_subtitle || "Find what you're looking for"}
+          highlight={niche.category_showcase_highlight || 'looking for'}
+          banner={niche.category_showcase_banner || null}
+          headerImage={niche.category_showcase_header_image || null}
+        />
+      )}
 
       {/* Trending Looks — Bridal / Everyday / Bold / Office (admin can hide) */}
       {niche.show_trending_looks === true && <TrendingLooks accent={accent} />}

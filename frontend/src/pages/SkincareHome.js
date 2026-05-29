@@ -7,6 +7,7 @@ import NicheHero from '../components/NicheHero';
 import HeroCarousel from '../components/HeroCarousel';
 import CircularCategoryStrip from '../components/CircularCategoryStrip';
 import CategoryShowcase from '../components/CategoryShowcase';
+import CosmeticsCategoryHub from '../components/CosmeticsCategoryHub';
 import { DermatologistSection, FaqSection } from '../components/NicheSections';
 import ReviewsCarousel from '../components/ReviewsCarousel';
 import IngredientSpotlight from '../components/IngredientSpotlight';
@@ -160,6 +161,26 @@ export default function SkincareHome() {
         );
       })()}
 
+      {/* Shop by Category — Build your routine. Placed ABOVE bestsellers so users
+          can pick a routine step (Cleanse → Treat → Moisturize → Protect) before
+          scrolling into curated products. */}
+      <CosmeticsCategoryHub
+        categories={categories.filter(c => c.niche === 'skincare' || c.group === 'skincare')}
+        virtualGroups={[
+          { slug: 'cleanse-prep', name: 'Cleanse & Prep', children: ['cleansers', 'exfoliators', 'toners-mists'], sort_order: 1 },
+          { slug: 'treat',        name: 'Treat',          children: ['serums-treatments', 'essences-ampoules', 'spot-treatments'], sort_order: 2 },
+          { slug: 'moisturize',   name: 'Moisturize',     children: ['moisturizers', 'face-oils', 'barrier-care'], sort_order: 3 },
+          { slug: 'protect',      name: 'Protect',        children: ['sunscreens'], sort_order: 4 },
+          { slug: 'target',       name: 'Targeted Care',  children: ['eye-care', 'lip-care', 'brightening-products', 'anti-aging-products'], sort_order: 5 },
+          { slug: 'mask-body',    name: 'Masks & Body',   children: ['masks-packs', 'body-skincare'], sort_order: 6 },
+        ]}
+        eyebrow="Build your routine"
+        title="Pick a step."
+        subtitle="Cleanse · Treat · Moisturize · Protect · Targeted Care · Masks — every product, every step."
+        accentColor={accentDark}
+        testIdPrefix="skincare-hub"
+      />
+
       {bs.enabled !== false && (
         <section className="max-w-7xl mx-auto px-3 sm:px-6 py-8 sm:py-12">
           <div className="flex items-end justify-between mb-4 sm:mb-6 px-1 sm:px-0">
@@ -189,21 +210,25 @@ export default function SkincareHome() {
         </section>
       )}
 
-      {/* Shop by Category — rich preview cards */}
-      <CategoryShowcase
-        categories={categories}
-        products={products}
-        niche="skincare"
-        accent={accent}
-        accentBg="#cffafe"
-        testIdPrefix="skincare-category-showcase"
-        enabled={niche.show_category_showcase !== false}
-        title={niche.category_showcase_title || 'Shop by Category'}
-        subtitle={niche.category_showcase_subtitle || "Find what you're looking for"}
-        highlight={niche.category_showcase_highlight || 'looking for'}
-        banner={niche.category_showcase_banner || null}
-        headerImage={niche.category_showcase_header_image || null}
-      />
+      {/* Shop by Category hub now rendered ABOVE bestsellers (see top section). */}
+
+      {/* Legacy CategoryShowcase kept off by default — admin can re-enable via niche.show_category_showcase=true. */}
+      {niche.show_category_showcase === true && (
+        <CategoryShowcase
+          categories={categories}
+          products={products}
+          niche="skincare"
+          accent={accent}
+          accentBg="#cffafe"
+          testIdPrefix="skincare-category-showcase"
+          enabled={true}
+          title={niche.category_showcase_title || 'Shop by Category'}
+          subtitle={niche.category_showcase_subtitle || "Find what you're looking for"}
+          highlight={niche.category_showcase_highlight || 'looking for'}
+          banner={niche.category_showcase_banner || null}
+          headerImage={niche.category_showcase_header_image || null}
+        />
+      )}
 
       {/* Ingredient Spotlight — Hero Actives (admin can hide) */}
       {niche.show_hero_actives === true && <IngredientSpotlight accent={accent} />}
