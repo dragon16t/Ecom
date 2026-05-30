@@ -135,4 +135,10 @@
 - **Tests:** `backend/tests/test_taxonomy_classifier.py` — 122 representative product-name cases covering every sub. **100% pass rate.**
 - **Production rollout:** User must Redeploy from Emergent Dashboard → POST `/api/admin/taxonomy/reset-canonical` (re-seeds with `is_parent=True` + bumps version) → page refresh shows correct sub counts.
 
+## Feb 2026 — Cart Page Performance Fix (P0)
+- **Backend `POST /api/cart/validate`** previously did N+1 DB lookups (one `find_one` per cart item + one per combo). Refactored to TWO batched `$in` queries (products + combos) loaded into in-memory dicts; per-item loop now reads from the dicts. ~10x speedup on typical 5-15 item carts. All shade/stock/TBL/coupon/gift-card branches preserved byte-for-byte.
+- **NEW endpoint `POST /api/products/batch`** — accepts `{slugs:[...]}` (max 200), returns the lean card projection ordered to match the input. Used by the cart page to avoid pulling the entire 7,000+ catalog just to render a handful of cards.
+- **Frontend `CartPage.js`** — removed the `GET /api/products` full-catalog fetch (~5MB). Now fetches: (a) only cart-slugs ∪ recently-viewed slugs via `POST /api/products/batch` (~30KB) and (b) a small popular slice via `GET /api/products?page=1&limit=24&sort=popular` for upsell scoring. Promise.all with defensive `.catch(()=>[])` against partial failures.
+- **Verified** end-to-end via `testing_agent_v3_fork` (iteration_8.json): 17/17 backend tests pass (1/5/15-item carts, coupons APR26/invalid, gift card, free-ship ₹999 threshold, qty cap, combo cart, empty cart, bad slug drop, batch endpoint order/cap/edge cases). Frontend cart renders in ~5s with correct totals, coupon apply, qty +/-, Proceed-to-Checkout all working. Pytest at `backend/tests/test_cart_perf_jan2026.py`.
+
 ## New admin endpoints (require X-Admin-Token)
