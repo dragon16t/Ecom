@@ -74,7 +74,8 @@ function CanonicalApplyPanel() {
     classifying: 'Step 2 — Re-classifying products through the keyword engine…',
     cleaning_empty_tiles: 'Step 3 — Hiding empty sub-tiles…',
     repairing_brands: 'Step 4 — Repairing bad brand values…',
-    flagship_guard: 'Step 5 — Enforcing Celesta-Glow-only anti-aging niche…',
+    computing_tags: 'Step 5 — Computing bestseller / luxury / trending tags…',
+    flagship_guard: 'Step 6 — Enforcing Celesta-Glow-only anti-aging niche…',
     completed: 'Done.',
     failed: 'Failed',
   };

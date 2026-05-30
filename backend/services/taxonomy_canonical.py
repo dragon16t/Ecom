@@ -1669,6 +1669,15 @@ async def reclassify_all_products(db, batch_log: int = 500,
     If `job_id` is supplied, writes progress updates to
     `db.taxonomy_jobs` so a frontend poller can render a progress bar.
     """
+    def _sanitize_keys(o):
+        """Mongo rejects None as a document key. Convert recursively. Idempotent."""
+        if isinstance(o, dict):
+            return {("__null__" if k is None else str(k)): _sanitize_keys(v)
+                    for k, v in o.items()}
+        if isinstance(o, list):
+            return [_sanitize_keys(v) for v in o]
+        return o
+
     total = await db.products.count_documents({})
     counters = {"updated": 0, "total": total,
                 "by_niche": {}, "by_category": {}, "by_subcat": {}}
@@ -1676,17 +1685,20 @@ async def reclassify_all_products(db, batch_log: int = 500,
     async def _write_progress(stage: str = "classifying"):
         if not job_id:
             return
-        await db.taxonomy_jobs.update_one(
-            {"_id": job_id},
-            {"$set": {
-                "stage": stage,
-                "processed": counters["updated"],
-                "total": total,
-                "percent": int(counters["updated"] * 100 / total) if total else 100,
-                "by_niche": counters["by_niche"],
-                "updated_at": _now(),
-            }},
-        )
+        try:
+            await db.taxonomy_jobs.update_one(
+                {"_id": job_id},
+                {"$set": _sanitize_keys({
+                    "stage": stage,
+                    "processed": counters["updated"],
+                    "total": total,
+                    "percent": int(counters["updated"] * 100 / total) if total else 100,
+                    "by_niche": counters["by_niche"],
+                    "updated_at": _now(),
+                })},
+            )
+        except Exception as e:
+            logger.warning(f"[taxonomy_canonical] progress write failed: {e}")
 
     await _write_progress("classifying")
 
@@ -1756,8 +1768,9 @@ async def reclassify_all_products(db, batch_log: int = 500,
     # AFTER classify so the classifier still sees the raw text for niche hints.
     brand_fix = await cleanup_bad_brands(db, dry_run=False)
     counters["brand_fix"] = brand_fix
-    await _write_progress("classifying")  # final tick to 100%
-    return counters
+    # Final sanitization of the entire counters payload — guarantees no
+    # downstream Mongo write can ever fail because of a None key.
+    return _sanitize_keys(counters)
 
 
 # ============================================================

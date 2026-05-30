@@ -1,6 +1,7 @@
 """
 Admin API Routes - Content Management System
 """
+import logging
 from fastapi import APIRouter, HTTPException, Depends, Header
 from pydantic import BaseModel, Field
 from typing import List, Optional
@@ -17,6 +18,7 @@ from services.admin_auth import (
 )
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+logger = logging.getLogger(__name__)
 
 
 def _admin_pw_hash() -> str:
@@ -648,33 +650,40 @@ async def admin_reset_canonical_start(admin: bool = Depends(verify_admin)):
     })
 
     async def _run():
+        def _sanitize_none_keys(o):
+            """Mongo rejects None as a document key. Convert recursively."""
+            if isinstance(o, dict):
+                return {("__null__" if k is None else str(k)): _sanitize_none_keys(v)
+                        for k, v in o.items()}
+            if isinstance(o, list):
+                return [_sanitize_none_keys(v) for v in o]
+            return o
+
+        async def _safe_set(payload: dict):
+            """Sanitized update wrapper — guarantees no None key ever reaches Mongo."""
+            try:
+                await db.taxonomy_jobs.update_one(
+                    {"_id": job_id},
+                    {"$set": _sanitize_none_keys({**payload, "updated_at": _now()})},
+                )
+            except Exception as e:
+                import traceback as _tb
+                logger.error(f"[taxonomy_job {job_id}] safe_set failed: {e}\n{_tb.format_exc()[-1000:]}")
+
         try:
-            await db.taxonomy_jobs.update_one(
-                {"_id": job_id},
-                {"$set": {"stage": "seeding", "updated_at": _now()}},
-            )
+            await _safe_set({"stage": "seeding"})
             seeded = await reset_canonical_taxonomy(db)
+            seeded = _sanitize_none_keys(seeded)
 
             classified = await reclassify_all_products(db, job_id=job_id)
-            tagged = await compute_product_tags(db)
-
-            def _sanitize_none_keys(o):
-                """Mongo rejects None as a document key. Convert recursively."""
-                if isinstance(o, dict):
-                    return {("__null__" if k is None else str(k)): _sanitize_none_keys(v)
-                            for k, v in o.items()}
-                if isinstance(o, list):
-                    return [_sanitize_none_keys(v) for v in o]
-                return o
-
             classified = _sanitize_none_keys(classified)
+
+            await _safe_set({"stage": "computing_tags"})
+            tagged = await compute_product_tags(db)
             tagged = _sanitize_none_keys(tagged)
 
             # Flagship guard sweep (same as enforce-flagship-niche).
-            await db.taxonomy_jobs.update_one(
-                {"_id": job_id},
-                {"$set": {"stage": "flagship_guard", "updated_at": _now()}},
-            )
+            await _safe_set({"stage": "flagship_guard"})
             scanned = demoted = kept = 0
             demoted_sample: list[dict] = []
             cur = db.products.find({"niche": "anti-aging"}, {
@@ -700,36 +709,35 @@ async def admin_reset_canonical_start(admin: bool = Depends(verify_admin)):
                         "name": prod.get("name"), "new_category": new_cat,
                     })
 
-            await db.taxonomy_jobs.update_one(
-                {"_id": job_id},
-                {"$set": {
-                    "stage": "completed",
-                    "percent": 100,
-                    "result": {
-                        "seeded": seeded,
-                        "classified": classified,
-                        "tagged": tagged,
-                        "flagship": {
-                            "scanned": scanned, "demoted": demoted,
-                            "kept_celesta_glow": kept,
-                            "demoted_sample": demoted_sample,
-                        },
+            await _safe_set({
+                "stage": "completed",
+                "percent": 100,
+                "result": {
+                    "seeded": seeded,
+                    "classified": classified,
+                    "tagged": tagged,
+                    "flagship": {
+                        "scanned": scanned, "demoted": demoted,
+                        "kept_celesta_glow": kept,
+                        "demoted_sample": demoted_sample,
                     },
-                    "finished_at": _now(),
-                    "updated_at": _now(),
-                }},
-            )
+                },
+                "finished_at": _now(),
+            })
         except Exception as e:
             import traceback as _tb
-            await db.taxonomy_jobs.update_one(
-                {"_id": job_id},
-                {"$set": {
-                    "stage": "failed",
-                    "error": f"{type(e).__name__}: {e}",
-                    "trace": _tb.format_exc()[-2000:],
-                    "updated_at": _now(),
-                }},
-            )
+            try:
+                await db.taxonomy_jobs.update_one(
+                    {"_id": job_id},
+                    {"$set": {
+                        "stage": "failed",
+                        "error": f"{type(e).__name__}: {e}",
+                        "trace": _tb.format_exc()[-2000:],
+                        "updated_at": _now(),
+                    }},
+                )
+            except Exception:
+                logger.exception(f"[taxonomy_job {job_id}] could not record failure")
 
     asyncio.create_task(_run())
     return {"job_id": job_id, "stage": "queued", "total": total}
