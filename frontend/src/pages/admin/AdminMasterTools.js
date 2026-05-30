@@ -60,42 +60,71 @@ export default function AdminMasterTools() {
 }
 
 // ============================================================
-// Canonical Apply Panel — one-click reset + flagship guard
+// Canonical Apply Panel — background job + live progress bar
 // ============================================================
 function CanonicalApplyPanel() {
   const [busy, setBusy] = useState(false);
-  const [step, setStep] = useState('');
-  const [result, setResult] = useState(null);
+  const [job, setJob] = useState(null);
   const [err, setErr] = useState('');
+  const pollRef = React.useRef(null);
 
-  const run = async () => {
-    setBusy(true); setErr(''); setResult(null);
-    const out = { reset: null, flagship: null };
+  const STAGE_LABELS = {
+    queued: 'Queued — waiting to start…',
+    seeding: 'Step 1 — Re-seeding canonical taxonomy…',
+    classifying: 'Step 2 — Re-classifying products through the keyword engine…',
+    cleaning_empty_tiles: 'Step 3 — Hiding empty sub-tiles…',
+    repairing_brands: 'Step 4 — Repairing bad brand values…',
+    flagship_guard: 'Step 5 — Enforcing Celesta-Glow-only anti-aging niche…',
+    completed: 'Done.',
+    failed: 'Failed',
+  };
+
+  const stopPolling = () => {
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+  };
+
+  useEffect(() => stopPolling, []);
+
+  const start = async () => {
+    setBusy(true); setErr(''); setJob(null);
     try {
-      setStep('Step 1/2 — Re-seeding canonical taxonomy + re-classifying all products…');
-      const r1 = await axios.post(
-        `${API}/admin/taxonomy/reset-canonical`, {},
-        { headers: getAdminAuthHeaders(), timeout: 300000 }
+      const { data } = await axios.post(
+        `${API}/admin/taxonomy/reset-canonical/start`, {},
+        { headers: getAdminAuthHeaders(), timeout: 30000 }
       );
-      out.reset = r1.data;
-
-      setStep('Step 2/2 — Enforcing Celesta-Glow-only anti-aging flagship niche…');
-      const r2 = await axios.post(
-        `${API}/admin/taxonomy/enforce-flagship-niche`, {},
-        { headers: getAdminAuthHeaders(), timeout: 60000 }
-      );
-      out.flagship = r2.data;
-
-      setStep('Done.');
-      setResult(out);
+      setJob({ ...data, percent: 0 });
+      // Begin polling
+      pollRef.current = setInterval(async () => {
+        try {
+          const r = await axios.get(
+            `${API}/admin/taxonomy/job/${data.job_id}`,
+            { headers: getAdminAuthHeaders(), timeout: 15000 }
+          );
+          setJob(r.data);
+          if (r.data.stage === 'completed' || r.data.stage === 'failed') {
+            stopPolling();
+            setBusy(false);
+            if (r.data.stage === 'failed') {
+              setErr(r.data.error || 'Job failed');
+            }
+          }
+        } catch (e) {
+          // Transient poll errors — keep trying
+        }
+      }, 2000);
     } catch (e) {
-      setErr(e?.response?.data?.detail || e?.message || 'Unknown error');
-    } finally {
+      stopPolling();
       setBusy(false);
+      setErr(e?.response?.data?.detail || e?.message || 'Unable to start job');
     }
   };
 
-  const cls = result?.reset?.classified || {};
+  const stage = job?.stage || '';
+  const percent = job?.percent ?? 0;
+  const processed = job?.processed ?? 0;
+  const total = job?.total ?? 0;
+  const result = job?.result;
+  const cls = result?.classified || {};
   const flag = result?.flagship || {};
 
   return (
@@ -108,7 +137,8 @@ function CanonicalApplyPanel() {
           One-click button to re-seed the canonical taxonomy
           (Skincare 16 cats + 79 subs · Cosmetics 7 cats + 56 subs · 13 concerns),
           re-classify every existing product through the keyword classifier, and
-          lock the Anti-Aging niche to Celesta&nbsp;Glow products only.
+          lock the Anti-Aging niche to Celesta&nbsp;Glow products only. Runs as a
+          background job — survives long catalogs (7k+ products).
         </p>
       </div>
 
@@ -124,16 +154,37 @@ function CanonicalApplyPanel() {
       </div>
 
       <button
-        onClick={run}
+        onClick={start}
         disabled={busy}
         data-testid="canonical-apply-btn"
         className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white font-bold text-sm transition-all shadow-md"
       >
         {busy ? <RefreshCw size={16} className="animate-spin" /> : <Zap size={16} />}
-        {busy ? 'Applying…' : 'Apply Canonical Taxonomy + Flagship Guard'}
+        {busy ? 'Running…' : 'Apply Canonical Taxonomy + Flagship Guard'}
       </button>
 
-      {step && <div className="text-sm text-gray-700">{step}</div>}
+      {job && (
+        <div className="space-y-3" data-testid="canonical-progress">
+          <div className="flex items-center justify-between text-sm">
+            <div className="font-semibold text-gray-800">
+              {STAGE_LABELS[stage] || stage}
+            </div>
+            <div className="text-gray-600 tabular-nums">
+              {processed.toLocaleString()} / {total.toLocaleString()} ({percent}%)
+            </div>
+          </div>
+          <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden border border-gray-200">
+            <div
+              className={`h-full transition-all duration-500 ${stage === 'failed' ? 'bg-red-500' : 'bg-gradient-to-r from-amber-400 to-amber-600'}`}
+              style={{ width: `${percent}%` }}
+              data-testid="canonical-progress-bar"
+            />
+          </div>
+          <div className="text-xs text-gray-500">
+            Job ID: <code className="font-mono">{job.job_id || job._id || '—'}</code>
+          </div>
+        </div>
+      )}
 
       {err && (
         <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-800 rounded-lg p-3 text-sm">

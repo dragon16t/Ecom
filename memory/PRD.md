@@ -86,7 +86,15 @@
   - Narrowed `_HAIRCARE_KW` further (added L'Oréal Excellence/Casting, Colorbar Co-Earth lines).
 - **Regression suite:** `backend/tests/test_taxonomy_classifier.py` extended to **186 cases (122 synthetic + 65 real from master list) — 100% pass.**
 
-## Feb 2026 — Flagship niche guard (anti-aging = Celesta Glow only)
+## Feb 2026 — Production deployment unblock (.env fix) + Background-job progress bar
+- **Production 502 root cause:** `backend/.env` had `SMTP_PASSWORD=aqlz jwuk uvfa udun` (unquoted, spaces). Deployment env loader treated the spaces as command arguments → `jwuk: command not found` → backend pod crashed at boot → every `/api/*` returned 502 Bad Gateway. **Fixed** by quoting the value: `SMTP_PASSWORD="aqlz jwuk uvfa udun"`.
+- **Network Error on Apply Canonical button:** The synchronous endpoint timed out on 7k+ catalogs (ingress 60s timeout). Converted to background job:
+  - **New endpoint** `POST /api/admin/taxonomy/reset-canonical/start` — returns `{job_id, stage:"queued", total}` immediately and kicks off the entire pipeline (seed → classify → cleanup empty tiles → repair brands → flagship guard) inside `asyncio.create_task`.
+  - **New endpoint** `GET /api/admin/taxonomy/job/{job_id}` — UI polls every 2s. Returns `{stage, processed, total, percent, result, error}`.
+  - **Progress is persisted to `db.taxonomy_jobs`** so the bar survives page refresh / multiple workers.
+  - `services/taxonomy_canonical.reclassify_all_products()` now accepts `job_id=` and writes a progress tick every 500 products.
+  - Frontend `CanonicalApplyPanel` (`AdminMasterTools.js`) shows: stage label · `processed / total (%)` · animated amber→orange gradient bar · Job ID. Stages: queued → seeding → classifying → cleaning_empty_tiles → repairing_brands → flagship_guard → completed. Failed jobs surface `error` text.
+- Verified end-to-end on preview — button click → progress bar fills → result card renders with all stats. No more "Network Error".
 - **Rule:** `niche=anti-aging` is RESERVED for Celesta Glow products only. No other brand may live there. Other-brand retinol / wrinkle / firming products stay in `niche=skincare` and route to the `anti-aging-products` subcategory.
 - **Classifier (`services/taxonomy_canonical.py`):**
   - Added end-of-function guard + early-return guard inside `classify_product()` — any product whose `brand` / `name` doesn't contain "Celesta Glow" but lands in `niche=anti-aging` is demoted to `niche=skincare`.

@@ -606,9 +606,9 @@ async def orders_daily_summary(admin: bool = Depends(verify_admin), days: int = 
 
 @router.post("/taxonomy/reset-canonical")
 async def admin_reset_canonical_taxonomy(admin: bool = Depends(verify_admin)):
-    """Wipe + reseed the canonical taxonomy (13 skincare concerns, 16 skincare
-    categories, 6 cosmetics categories) and re-classify ALL products. Safe to
-    re-run — fully idempotent."""
+    """SYNCHRONOUS reset — only safe for small catalogs (<500 products).
+    For production-scale catalogs (7k+), use POST /taxonomy/reset-canonical/start
+    which returns a job_id immediately and runs in the background."""
     from services.taxonomy_canonical import (
         reset_canonical_taxonomy, reclassify_all_products, compute_product_tags
     )
@@ -616,6 +616,121 @@ async def admin_reset_canonical_taxonomy(admin: bool = Depends(verify_admin)):
     classified = await reclassify_all_products(db)
     tagged = await compute_product_tags(db)
     return {"seeded": seeded, "classified": classified, "tagged": tagged}
+
+
+@router.post("/taxonomy/reset-canonical/start")
+async def admin_reset_canonical_start(admin: bool = Depends(verify_admin)):
+    """Kick off reset-canonical + reclassify + tags + flagship guard as a
+    BACKGROUND task. Returns {job_id} immediately so the UI can render a
+    progress bar by polling /taxonomy/job/{job_id}.
+
+    Avoids the 60-second gateway timeout that breaks for 7k+ product catalogs.
+    """
+    import asyncio
+    import uuid as _uuid
+    from services.taxonomy_canonical import (
+        reset_canonical_taxonomy, reclassify_all_products, compute_product_tags,
+        _now,
+    )
+
+    job_id = _uuid.uuid4().hex
+    total = await db.products.count_documents({})
+    await db.taxonomy_jobs.insert_one({
+        "_id": job_id,
+        "stage": "queued",
+        "processed": 0,
+        "total": total,
+        "percent": 0,
+        "result": None,
+        "error": None,
+        "started_at": _now(),
+        "updated_at": _now(),
+    })
+
+    async def _run():
+        try:
+            await db.taxonomy_jobs.update_one(
+                {"_id": job_id},
+                {"$set": {"stage": "seeding", "updated_at": _now()}},
+            )
+            seeded = await reset_canonical_taxonomy(db)
+
+            classified = await reclassify_all_products(db, job_id=job_id)
+            tagged = await compute_product_tags(db)
+
+            # Flagship guard sweep (same as enforce-flagship-niche).
+            await db.taxonomy_jobs.update_one(
+                {"_id": job_id},
+                {"$set": {"stage": "flagship_guard", "updated_at": _now()}},
+            )
+            scanned = demoted = kept = 0
+            demoted_sample: list[dict] = []
+            cur = db.products.find({"niche": "anti-aging"}, {
+                "_id": 0, "slug": 1, "brand": 1, "name": 1, "category": 1
+            })
+            async for prod in cur:
+                scanned += 1
+                brand_text = (prod.get("brand") or "").lower()
+                name_text = (prod.get("name") or "").lower()
+                is_celesta = "celesta glow" in brand_text or "celesta glow" in name_text
+                if is_celesta:
+                    kept += 1
+                    continue
+                new_cat = prod.get("category") or "anti-aging-products"
+                await db.products.update_one(
+                    {"slug": prod["slug"]},
+                    {"$set": {"niche": "skincare", "category": new_cat}},
+                )
+                demoted += 1
+                if len(demoted_sample) < 25:
+                    demoted_sample.append({
+                        "slug": prod["slug"], "brand": prod.get("brand"),
+                        "name": prod.get("name"), "new_category": new_cat,
+                    })
+
+            await db.taxonomy_jobs.update_one(
+                {"_id": job_id},
+                {"$set": {
+                    "stage": "completed",
+                    "percent": 100,
+                    "result": {
+                        "seeded": seeded,
+                        "classified": classified,
+                        "tagged": tagged,
+                        "flagship": {
+                            "scanned": scanned, "demoted": demoted,
+                            "kept_celesta_glow": kept,
+                            "demoted_sample": demoted_sample,
+                        },
+                    },
+                    "finished_at": _now(),
+                    "updated_at": _now(),
+                }},
+            )
+        except Exception as e:
+            import traceback as _tb
+            await db.taxonomy_jobs.update_one(
+                {"_id": job_id},
+                {"$set": {
+                    "stage": "failed",
+                    "error": f"{type(e).__name__}: {e}",
+                    "trace": _tb.format_exc()[-2000:],
+                    "updated_at": _now(),
+                }},
+            )
+
+    asyncio.create_task(_run())
+    return {"job_id": job_id, "stage": "queued", "total": total}
+
+
+@router.get("/taxonomy/job/{job_id}")
+async def admin_taxonomy_job_status(job_id: str, admin: bool = Depends(verify_admin)):
+    """Poll status of a background taxonomy job started via reset-canonical/start."""
+    doc = await db.taxonomy_jobs.find_one({"_id": job_id})
+    if not doc:
+        raise HTTPException(404, "Job not found")
+    doc["job_id"] = doc.pop("_id")
+    return doc
 
 
 @router.post("/taxonomy/reclassify-products")

@@ -1661,10 +1661,35 @@ async def reset_canonical_taxonomy(db) -> dict:
 # ============================================================
 # RECLASSIFY all products (links every product to taxonomy)
 # ============================================================
-async def reclassify_all_products(db, batch_log: int = 500) -> dict:
+async def reclassify_all_products(db, batch_log: int = 500,
+                                   job_id: Optional[str] = None) -> dict:
     """Walk all products and re-classify niche/category/subcategory/concerns
-    based on name + description + brand keywords."""
-    counters = {"updated": 0, "by_niche": {}, "by_category": {}, "by_subcat": {}}
+    based on name + description + brand keywords.
+
+    If `job_id` is supplied, writes progress updates to
+    `db.taxonomy_jobs` so a frontend poller can render a progress bar.
+    """
+    total = await db.products.count_documents({})
+    counters = {"updated": 0, "total": total,
+                "by_niche": {}, "by_category": {}, "by_subcat": {}}
+
+    async def _write_progress(stage: str = "classifying"):
+        if not job_id:
+            return
+        await db.taxonomy_jobs.update_one(
+            {"_id": job_id},
+            {"$set": {
+                "stage": stage,
+                "processed": counters["updated"],
+                "total": total,
+                "percent": int(counters["updated"] * 100 / total) if total else 100,
+                "by_niche": counters["by_niche"],
+                "updated_at": _now(),
+            }},
+        )
+
+    await _write_progress("classifying")
+
     cur = db.products.find(
         {},
         {"_id": 0, "slug": 1, "name": 1, "description": 1, "brand": 1,
@@ -1717,13 +1742,17 @@ async def reclassify_all_products(db, batch_log: int = 500) -> dict:
             counters["by_subcat"][result["subcategory"]] = counters["by_subcat"].get(result["subcategory"], 0) + 1
         if counters["updated"] % batch_log == 0:
             logger.info(f"[taxonomy_canonical] reclassified {counters['updated']} products...")
+            await _write_progress("classifying")
+    await _write_progress("cleaning_empty_tiles")
     # Auto-deactivate empty (sub)categories so the hub UI doesn't show empty tiles.
     cleanup = await cleanup_empty_taxonomy(db)
     counters["cleanup"] = cleanup
+    await _write_progress("repairing_brands")
     # Repair bad brand values (sheet names, blanks, numeric strings) — runs
     # AFTER classify so the classifier still sees the raw text for niche hints.
     brand_fix = await cleanup_bad_brands(db, dry_run=False)
     counters["brand_fix"] = brand_fix
+    await _write_progress("classifying")  # final tick to 100%
     return counters
 
 
