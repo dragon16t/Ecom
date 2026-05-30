@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { Upload, Layers, Percent, FileDown, RefreshCw, AlertTriangle, CheckCircle, Truck, Edit2, X, Sparkles, Link as LinkIcon } from 'lucide-react';
+import { Upload, Layers, Percent, FileDown, RefreshCw, AlertTriangle, CheckCircle, Truck, Edit2, X, Sparkles, Link as LinkIcon, Zap, Shield } from 'lucide-react';
 import { getAdminToken } from '../../utils/adminAuth';
 
 const API = process.env.REACT_APP_BACKEND_URL + '/api';
@@ -24,6 +24,7 @@ export default function AdminMasterTools() {
       <div className="flex gap-2 mb-6 border-b border-gray-200 overflow-x-auto">
         {[
           { id: 'upload', icon: Upload, label: 'Master Upload' },
+          { id: 'canonical', icon: Zap, label: 'Apply Canonical Taxonomy' },
           { id: 'audit', icon: Sparkles, label: 'AI Taxonomy Audit' },
           { id: 'ai-fill', icon: Sparkles, label: 'Bulk AI Fill' },
           { id: 'groups', icon: Layers, label: 'Product Groups' },
@@ -47,12 +48,138 @@ export default function AdminMasterTools() {
       </div>
 
       {tab === 'upload' && <MasterUploadPanel />}
+      {tab === 'canonical' && <CanonicalApplyPanel />}
       {tab === 'audit' && <AITaxonomyAuditPanel />}
       {tab === 'ai-fill' && <BulkAIFillPanel />}
       {tab === 'groups' && <ProductGroupsPanel />}
       {tab === 'margin' && <MarginBulkPanel />}
       {tab === 'orders' && <OrderExportPanel />}
       {tab === 'delhivery' && <DelhiverySyncPanel />}
+    </div>
+  );
+}
+
+// ============================================================
+// Canonical Apply Panel — one-click reset + flagship guard
+// ============================================================
+function CanonicalApplyPanel() {
+  const [busy, setBusy] = useState(false);
+  const [step, setStep] = useState('');
+  const [result, setResult] = useState(null);
+  const [err, setErr] = useState('');
+
+  const run = async () => {
+    setBusy(true); setErr(''); setResult(null);
+    const out = { reset: null, flagship: null };
+    try {
+      setStep('Step 1/2 — Re-seeding canonical taxonomy + re-classifying all products…');
+      const r1 = await axios.post(
+        `${API}/admin/taxonomy/reset-canonical`, {},
+        { headers: getAdminAuthHeaders(), timeout: 300000 }
+      );
+      out.reset = r1.data;
+
+      setStep('Step 2/2 — Enforcing Celesta-Glow-only anti-aging flagship niche…');
+      const r2 = await axios.post(
+        `${API}/admin/taxonomy/enforce-flagship-niche`, {},
+        { headers: getAdminAuthHeaders(), timeout: 60000 }
+      );
+      out.flagship = r2.data;
+
+      setStep('Done.');
+      setResult(out);
+    } catch (e) {
+      setErr(e?.response?.data?.detail || e?.message || 'Unknown error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const cls = result?.reset?.classified || {};
+  const flag = result?.flagship || {};
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-2xl p-6 space-y-5" data-testid="canonical-apply-panel">
+      <div>
+        <h2 className="text-lg font-bold flex items-center gap-2">
+          <Zap size={20} className="text-amber-500" /> Apply Canonical Taxonomy
+        </h2>
+        <p className="text-sm text-gray-600 mt-1">
+          One-click button to re-seed the canonical taxonomy
+          (Skincare 16 cats + 79 subs · Cosmetics 7 cats + 56 subs · 13 concerns),
+          re-classify every existing product through the keyword classifier, and
+          lock the Anti-Aging niche to Celesta&nbsp;Glow products only.
+        </p>
+      </div>
+
+      <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-900">
+        <b>What this does (idempotent — safe to re-run):</b>
+        <ol className="list-decimal pl-5 mt-2 space-y-1">
+          <li>Wipes &amp; re-seeds the categories / subcategories / concerns collections from the canonical spec.</li>
+          <li>Re-classifies every product (name + description) into the new niche / category / subcategory / concerns.</li>
+          <li>Auto-deactivates sub-tiles that end up with 0 products (clean hub UI).</li>
+          <li>Repairs any bad brand values (sheet-names, blanks, &quot;nan&quot; etc.).</li>
+          <li>Demotes any non-Celesta-Glow product currently sitting in the flagship anti-aging niche back to skincare.</li>
+        </ol>
+      </div>
+
+      <button
+        onClick={run}
+        disabled={busy}
+        data-testid="canonical-apply-btn"
+        className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white font-bold text-sm transition-all shadow-md"
+      >
+        {busy ? <RefreshCw size={16} className="animate-spin" /> : <Zap size={16} />}
+        {busy ? 'Applying…' : 'Apply Canonical Taxonomy + Flagship Guard'}
+      </button>
+
+      {step && <div className="text-sm text-gray-700">{step}</div>}
+
+      {err && (
+        <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-800 rounded-lg p-3 text-sm">
+          <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" />
+          <div><b>Failed:</b> {err}</div>
+        </div>
+      )}
+
+      {result && (
+        <div className="space-y-3">
+          <div className="flex items-start gap-2 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-lg p-4 text-sm" data-testid="canonical-result">
+            <CheckCircle size={18} className="mt-0.5 flex-shrink-0" />
+            <div className="space-y-2 flex-1">
+              <div className="font-bold">Canonical taxonomy applied successfully.</div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                <Stat label="Reclassified" value={cls.updated ?? 0} />
+                <Stat label="Skincare" value={cls.by_niche?.skincare ?? 0} />
+                <Stat label="Cosmetics" value={cls.by_niche?.cosmetics ?? 0} />
+                <Stat label="Anti-Aging (CG)" value={cls.by_niche?.['anti-aging'] ?? 0} />
+                <Stat label="Haircare" value={cls.by_niche?.haircare ?? 0} />
+                <Stat label="Sub-tiles filled" value={Object.keys(cls.by_subcat || {}).length} />
+                <Stat label="Empty tiles hidden" value={cls.cleanup?.deactivated ?? 0} />
+                <Stat label="Bad brands fixed" value={cls.brand_fix?.updated ?? 0} />
+              </div>
+              <div className="pt-2 border-t border-emerald-200 grid grid-cols-3 gap-2 text-xs">
+                <Stat label="Flagship scanned" value={flag.scanned ?? 0} />
+                <Stat label="Foreign brands demoted" value={flag.demoted ?? 0} />
+                <Stat label="Celesta SKUs kept" value={flag.kept_celesta_glow ?? 0} />
+              </div>
+            </div>
+          </div>
+
+          {flag?.demoted_sample?.length > 0 && (
+            <details className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs">
+              <summary className="cursor-pointer font-semibold">Demoted from anti-aging ({flag.demoted_sample.length} sample)</summary>
+              <ul className="mt-2 space-y-1 max-h-48 overflow-y-auto">
+                {flag.demoted_sample.map(s => (
+                  <li key={s.slug} className="text-gray-700">
+                    <b>{s.brand}</b> — {s.name} <span className="text-gray-400">→ skincare / {s.new_category}</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </div>
+      )}
     </div>
   );
 }
