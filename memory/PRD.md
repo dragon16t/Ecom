@@ -141,4 +141,21 @@
 - **Frontend `CartPage.js`** — removed the `GET /api/products` full-catalog fetch (~5MB). Now fetches: (a) only cart-slugs ∪ recently-viewed slugs via `POST /api/products/batch` (~30KB) and (b) a small popular slice via `GET /api/products?page=1&limit=24&sort=popular` for upsell scoring. Promise.all with defensive `.catch(()=>[])` against partial failures.
 - **Verified** end-to-end via `testing_agent_v3_fork` (iteration_8.json): 17/17 backend tests pass (1/5/15-item carts, coupons APR26/invalid, gift card, free-ship ₹999 threshold, qty cap, combo cart, empty cart, bad slug drop, batch endpoint order/cap/edge cases). Frontend cart renders in ~5s with correct totals, coupon apply, qty +/-, Proceed-to-Checkout all working. Pytest at `backend/tests/test_cart_perf_jan2026.py`.
 
+## Feb 2026 — Cart UX & Tiered Margin Fix (P0)
+- **Cart qty/badge sync bug** — `/api/cart/validate` silently drops TBL / inactive / out-of-stock items from the response, but the frontend kept those items in `localStorage`, so the navbar cart badge (reads localStorage) drifted from the cart page (renders server response). Fixed in `CartPage.js`: after each `validateCart()`, prune `localStorage.cart.items` to match the server's filtered list AND mirror server-resolved quantities back (handles stock cap). Navbar + cart page now always match.
+- **Optimistic qty +/- update** — `updateQuantity()` and `removeItem()` now mutate `cartData.items[i].quantity` and `line_total` locally before the async `validateCart()` POST resolves. Eliminates the visible "qty 4 → server returns → qty 3" lag.
+- **Cart item → PDP link** — wrapped the cart item image and title in `<Link to="/product/{slug}">` (conditionally — combos with no slug stay as `div`). Qty +/- and trash buttons live outside the link wrappers so they don't trigger navigation. New testids: `cart-item-image-link-N`, `cart-item-title-link-N`, `cart-qty-minus-N`, `cart-qty-plus-N`, `cart-qty-value-N`, `cart-remove-N`.
+- **Tiered delivery + tax structure** — replaced the binary "FREE delivery + 50% OFF taxes @ ₹999" rule with five profitability-tuned bands (per user spec):
+  | Subtotal | Delivery | Taxes (base ₹99) |
+  |---|---|---|
+  | < ₹1000 | ₹49 | ₹99 (0% off) |
+  | ≥ ₹1000 | ₹39 | ₹69 (30% off) |
+  | ≥ ₹1500 | ₹29 | ₹64 (35% off) |
+  | ≥ ₹2000 | ₹29 | ₹59 (40% off) |
+  | ≥ ₹2500 | ₹19 | ₹59 (40% off) |
+  | ≥ ₹5000 | ₹19 | ₹50 (50% off) |
+- **Response fields added** (`/api/cart/validate`): `delivery_fee_original`, `tax_reduction_label` ("30% OFF" / "35% OFF" / …), `tax_reduction_pct`, and `next_tier` ({threshold, spend_more, next_tax_charges, next_delivery_fee, next_tax_pct_off, label}) so the UI can always show the next savings target.
+- **Frontend summary UI** — strike-through original delivery fee when discounted, "30/35/40/50% OFF" pill next to taxes, "Add ₹X more to unlock Y% OFF taxes + ₹Z delivery" nudge banner whenever the customer is below the next band, and a qualified banner above ₹1000 summarising current savings.
+- **Tested** end-to-end via `testing_agent_v3_fork` (iteration_9.json): 13/13 backend + 14/14 frontend pass. Regression pytest at `backend/tests/test_cart_tiers_jan2026.py`. All 6 tier bands verified at exact spec values; qty/badge sync working without lag; PDP navigation from cart items confirmed.
+
 ## New admin endpoints (require X-Admin-Token)
