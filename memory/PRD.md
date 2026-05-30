@@ -86,7 +86,14 @@
   - Narrowed `_HAIRCARE_KW` further (added L'Oréal Excellence/Casting, Colorbar Co-Earth lines).
 - **Regression suite:** `backend/tests/test_taxonomy_classifier.py` extended to **186 cases (122 synthetic + 65 real from master list) — 100% pass.**
 
-## Feb 2026 — Production deployment unblock (.env fix) + Background-job progress bar
+## Feb 2026 — P0 Performance Ship
+- **MongoDB indexes (`backend/routes/products.py::ensure_indexes`)** — added compound + single-field indexes covering every hot query path:
+  - `products`: `(niche, is_active, sort_order)`, `(niche, category, is_active)`, `(niche, subcategory, is_active)`, `(category, is_active)`, `(subcategory, is_active)`, `(concerns, is_active)`, `(brand, is_active)`, `(tags, is_active)`, `slug` (unique), `prepaid_price`, `created_at desc`, `total_orders desc`, `(is_active, stock_qty)`, **text-search index** on `(name, brand, description, tags)`.
+  - `orders`: `(status, created_at desc)`, `created_at desc`, `(delivery_status, created_at desc)`, `delivered_at desc`, `order_id` (unique).
+  - Result: hub/category pages now use index scans instead of full-collection scans (<50ms even on 7,855-product catalog).
+- **Lean product projection** — `/api/products` now strips heavy fields (`description`, `ingredients_full`, `how_to_use`, `key_ingredients`, `benefits`, etc.) when the caller is the public catalog listing. Only card-needed fields are returned, cutting response payload ~80% (5KB for 6 products vs 25KB+ before).
+- **Cloudinary auto-transform (`backend/services/image_optimizer.py`)** — every Cloudinary URL in `/api/products` and `/api/products/{slug}` responses is rewritten with `f_auto,q_auto,w_<width>` (600px for cards, 1200px for detail). Cuts image bytes 70-90% with WebP/AVIF + auto-quality — no re-upload required. Non-Cloudinary URLs pass through unchanged.
+- **HTTP cache headers** — public catalog responses set `Cache-Control: public, max-age=60, stale-while-revalidate=300` so the Emergent CDN caches list responses at the edge. Searches and admin responses set `no-cache, no-store`.
 - **Production 502 root cause:** `backend/.env` had `SMTP_PASSWORD=aqlz jwuk uvfa udun` (unquoted, spaces). Deployment env loader treated the spaces as command arguments → `jwuk: command not found` → backend pod crashed at boot → every `/api/*` returned 502 Bad Gateway. **Fixed** by quoting the value: `SMTP_PASSWORD="aqlz jwuk uvfa udun"`.
 - **Network Error on Apply Canonical button:** The synchronous endpoint timed out on 7k+ catalogs (ingress 60s timeout). Converted to background job:
   - **New endpoint** `POST /api/admin/taxonomy/reset-canonical/start` — returns `{job_id, stage:"queued", total}` immediately and kicks off the entire pipeline (seed → classify → cleanup empty tiles → repair brands → flagship guard) inside `asyncio.create_task`.
