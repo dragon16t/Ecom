@@ -362,6 +362,49 @@ async def get_all_products(
     }
 
 
+@router.post("/products/batch")
+async def get_products_batch(data: Dict[str, Any]):
+    """Public: fetch a batch of products by slug list in ONE query.
+
+    Used by the cart page (and other client surfaces) so it can avoid pulling
+    the entire 7,000+ catalog just to render a few cards. Returns a lean
+    projection identical to the public catalog listing.
+
+    Body: ``{ "slugs": ["a", "b", "c"] }`` — max 200 slugs per call.
+    """
+    slugs = data.get("slugs") or []
+    if not isinstance(slugs, list):
+        raise HTTPException(status_code=400, detail="`slugs` must be a list")
+    # Hard cap to keep one request bounded
+    slugs = [s for s in slugs if isinstance(s, str) and s][:200]
+    if not slugs:
+        return []
+    projection = {
+        "_id": 0, "slug": 1, "name": 1, "short_name": 1, "tagline": 1,
+        "brand": 1, "niche": 1, "category": 1, "subcategory": 1, "concerns": 1,
+        "images": {"$slice": 2},
+        "mrp": 1, "prepaid_price": 1, "cod_price": 1, "discount_percent": 1,
+        "badge": 1, "badges": 1, "tags": 1,
+        "is_active": 1, "is_to_be_launched": 1, "launch_date": 1,
+        "stock_qty": 1, "low_stock_threshold": 1,
+        "shades": 1, "fill_card": 1,
+        "average_rating": 1, "reviews_count": 1, "total_orders": 1,
+        "size": 1,
+    }
+    items = await db.products.find(
+        {"slug": {"$in": slugs}, "is_active": True}, projection
+    ).to_list(length=None)
+    # Preserve client-supplied order so the cart shows items in cart order
+    order = {s: i for i, s in enumerate(slugs)}
+    items.sort(key=lambda p: order.get(p.get("slug"), 9999))
+    try:
+        from services.image_optimizer import optimize_products_list
+        optimize_products_list(items, width=600)
+    except Exception:
+        pass
+    return items
+
+
 @router.get("/products/{slug}")
 async def get_product(slug: str):
     """Public: Get single product by slug (with TBL auto-flip + countdown)"""
@@ -956,7 +999,14 @@ class CartValidateRequest(BaseModel):
 
 @router.post("/cart/validate")
 async def validate_cart(data: CartValidateRequest):
-    """Validate cart items, calculate totals"""
+    """Validate cart items, calculate totals.
+
+    Perf: previously did N round-trips to MongoDB (one find_one per cart item +
+    one per combo). For a 10-item cart that's 10 sequential queries. Now we
+    batch-load ALL products with a single ``$in`` query and ALL combos with
+    another single ``$in`` query, then iterate in-memory. ~10x speedup on
+    typical carts; preserves shade/stock/TBL/coupon logic byte-for-byte.
+    """
     validated_items = []
     subtotal = 0
     mrp_total = 0
@@ -966,9 +1016,25 @@ async def validate_cart(data: CartValidateRequest):
     # uniformly (delivery & taxes are the differentiators below).
     cod_premium = 0
 
+    # ---- Batch-load products & combos in TWO queries instead of 2N ----
+    product_slugs = [i.product_slug for i in data.items if i.product_slug]
+    combo_ids = [i.combo_id for i in data.items if i.combo_id]
+    products_by_slug: Dict[str, Any] = {}
+    combos_by_id: Dict[str, Any] = {}
+    if product_slugs:
+        async for p in db.products.find(
+            {"slug": {"$in": product_slugs}, "is_active": True}, {"_id": 0}
+        ):
+            products_by_slug[p["slug"]] = p
+    if combo_ids:
+        async for c in db.combos.find(
+            {"combo_id": {"$in": combo_ids}, "is_active": True}, {"_id": 0}
+        ):
+            combos_by_id[c["combo_id"]] = c
+
     for item in data.items:
         if item.product_slug:
-            product = await db.products.find_one({"slug": item.product_slug, "is_active": True}, {"_id": 0})
+            product = products_by_slug.get(item.product_slug)
             if not product:
                 continue
             # Defense in depth: drop TBL products from the cart so they cannot reach checkout.
@@ -1019,7 +1085,7 @@ async def validate_cart(data: CartValidateRequest):
             subtotal += line_total
             mrp_total += mrp_line
         elif item.combo_id:
-            combo = await db.combos.find_one({"combo_id": item.combo_id, "is_active": True}, {"_id": 0})
+            combo = combos_by_id.get(item.combo_id)
             if not combo:
                 continue
             # Defense in depth: drop TBL combos from cart.

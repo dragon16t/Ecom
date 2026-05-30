@@ -49,67 +49,77 @@ function CartPage() {
         setGiftCardError('');
       }
       if (initialLoadRef.current) {
-        // Use cache first — these endpoints rarely change so we keep them for 5 mins
-        const [allProds, comboRes] = await Promise.all([
-          cachedGet(`${API}/api/products`).then(r => ({ data: r.data })),
-          cachedGet(`${API}/api/combos`, { ttl: 60_000 }).then(r => ({ data: r.data })),
-        ]);
+        // Cart-page perf: previously we fetched the ENTIRE 7,000+ product
+        // catalog here just to compute upsell & recently-viewed. That single
+        // request was ~5MB and the dominant slowdown on the cart page. Now we:
+        //   1) batch-fetch ONLY the slugs the cart + recently-viewed need
+        //      (~10 products = ~30KB), and
+        //   2) fetch a small popular-products slice (24 items) as the upsell
+        //      candidate pool — also lean & CDN-cached.
         const cartSlugs = new Set(cart.items.map(i => i.product_slug).filter(Boolean));
         const cartCombos = cart.items.map(i => i.combo_id).filter(Boolean);
 
-        // Determine attributes of products currently in the cart
-        const cartProducts = [...cartSlugs]
-          .map(slug => allProds.data.find(p => p.slug === slug))
-          .filter(Boolean);
-        const cartNiches = new Set(cartProducts.map(p => p.niche).filter(Boolean));
-        const cartConcerns = new Set(cartProducts.flatMap(p => p.concerns || []).filter(Boolean));
-        const cartCategories = new Set(cartProducts.map(p => p.category).filter(Boolean));
-
-        // Add recently viewed product slugs (from sessionStorage, set by ProductDetailPage)
         let recentlyViewed = [];
         try { recentlyViewed = JSON.parse(sessionStorage.getItem('recentlyViewed') || '[]'); } catch (e) {}
         const recentSet = new Set(recentlyViewed);
 
-        // Dedicated "Recently viewed" list (preserves view order, excludes items in cart and any TBL items)
+        // Slugs we need full product objects for = cart slugs ∪ recently-viewed slugs.
+        const neededSlugs = Array.from(new Set([...cartSlugs, ...recentlyViewed])).slice(0, 200);
+
+        const [batchRes, popularRes, comboRes] = await Promise.all([
+          neededSlugs.length
+            ? axios.post(`${API}/api/products/batch`, { slugs: neededSlugs }).then(r => r.data).catch(() => [])
+            : Promise.resolve([]),
+          cachedGet(`${API}/api/products?page=1&limit=24&sort=popular`, { ttl: 120_000 })
+            .then(r => Array.isArray(r.data) ? r.data : (r.data.items || []))
+            .catch(() => []),
+          cachedGet(`${API}/api/combos`, { ttl: 60_000 }).then(r => r.data).catch(() => []),
+        ]);
+
+        const bySlug = new Map(batchRes.map(p => [p.slug, p]));
+        const cartProducts = [...cartSlugs].map(slug => bySlug.get(slug)).filter(Boolean);
+        const cartNiches = new Set(cartProducts.map(p => p.niche).filter(Boolean));
+        const cartConcerns = new Set(cartProducts.flatMap(p => p.concerns || []).filter(Boolean));
+        const cartCategories = new Set(cartProducts.map(p => p.category).filter(Boolean));
+
+        // Dedicated "Recently viewed" list (preserves view order, excludes items in cart & TBL)
         const recentlyViewedList = recentlyViewed
           .filter(slug => !cartSlugs.has(slug))
-          .map(slug => allProds.data.find(p => p.slug === slug))
+          .map(slug => bySlug.get(slug))
           .filter(Boolean)
           .filter(p => !p.is_to_be_launched)
           .slice(0, 6);
         setRecentlyViewedProducts(recentlyViewedList);
 
-        // Score each non-cart, non-TBL product on relevance
-        const scored = allProds.data
+        // Score the small popular pool for upsell relevance
+        const scored = popularRes
           .filter(p => !cartSlugs.has(p.slug) && !p.is_to_be_launched)
           .map(p => {
             let score = 0;
-            if (cartCategories.has(p.category)) score += 4;          // same product type
-            if ((p.concerns || []).some(c => cartConcerns.has(c))) score += 3;  // shared concern
-            if (cartNiches.has(p.niche)) score += 2;                 // same niche
-            if (recentSet.has(p.slug)) score += 5;                   // strong nudge for recently viewed
+            if (cartCategories.has(p.category)) score += 4;
+            if ((p.concerns || []).some(c => cartConcerns.has(c))) score += 3;
+            if (cartNiches.has(p.niche)) score += 2;
+            if (recentSet.has(p.slug)) score += 5;
             return { p, score };
           })
-          .filter(x => x.score > 0)
           .sort((a, b) => b.score - a.score || (b.p.reviews_count || 0) - (a.p.reviews_count || 0))
           .map(x => x.p);
 
-        // Fallback: if no relevance match, fall back to same-niche bestsellers (still no TBL)
-        let upsell = scored;
+        // Fallback chain: relevance → same-niche bestsellers → overall most-reviewed
+        let upsell = scored.filter(p => p);
         if (!upsell.length && cartNiches.size) {
-          upsell = allProds.data
+          upsell = popularRes
             .filter(p => !cartSlugs.has(p.slug) && !p.is_to_be_launched && cartNiches.has(p.niche))
             .sort((a, b) => (b.reviews_count || 0) - (a.reviews_count || 0));
         }
-        // Final fallback: most-reviewed overall (still no TBL)
         if (!upsell.length) {
-          upsell = [...allProds.data]
+          upsell = [...popularRes]
             .filter(p => !cartSlugs.has(p.slug) && !p.is_to_be_launched)
             .sort((a, b) => (b.reviews_count || 0) - (a.reviews_count || 0));
         }
 
         setUpsellProducts(upsell.slice(0, 8));
-        setCombos(comboRes.data.filter(c => !cartCombos.includes(c.combo_id)));
+        setCombos((comboRes || []).filter(c => !cartCombos.includes(c.combo_id)));
       }
     } catch (err) { console.error(err); }
     setLoading(false);

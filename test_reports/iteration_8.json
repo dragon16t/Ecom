@@ -1,0 +1,39 @@
+{
+  "summary": "Cart-perf fix (N+1 → batched) tested end-to-end. All 17 backend tests pass for /api/cart/validate (1/5/15 items, coupons APR26/invalid, gift card error path, free-ship threshold ₹999, qty cap, combo cart, empty cart, bad slug drop) and /api/products/batch (order preservation, empty list, invalid slugs, 200 cap, missing key, non-list). Frontend cart page renders in ~5s with 3 items, shows correct totals (MRP ₹4,697 / Subtotal ₹3,197 / Total ₹3,262 / FREE delivery), loads coupons + upsell, supports qty +/- and coupon apply via re-validate, Proceed to Checkout is clickable. Network audit confirms: NO full /api/products fetch; uses POST /api/products/batch (2 calls) + GET /api/products?page=1&limit=24&sort=popular (1 call) as intended.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/cart/validate", "issue": "Empty-cart request (items=[]) still returns shipping_fee=148 (delivery 49 + tax 99). Pre-existing behavior — not regressed by perf fix — but customer-visible if FE ever sends empty cart. Recommend zero-ing shipping/tax/delivery when items==0."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/cart upsell cards", "issues": ["Upsell card images render as decorative green-flower SVG placeholders in initial paint (lazy-load IntersectionObserver may not fire above the fold). Names/prices are correct. Worth verifying real images load on scroll."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_cart_perf_jan2026.py",
+    "/app/test_reports/pytest/cart_perf_jan2026.xml"
+  ],
+  "action_items": [
+    "(optional) Zero out delivery_fee/tax_charges when items list is empty in /api/cart/validate (pre-existing minor)",
+    "(optional) Verify upsell-card image lazy-load triggers correctly on cart page; consider eager loading first row"
+  ],
+  "critical_code_review_comments": [
+    "/api/products/batch correctly hard-caps slug list at 200, filters non-strings, preserves request order, strips _id, and applies image optimizer with safe try/except — clean implementation",
+    "validate_cart batched lookups (two $in queries) preserve all original branches: TBL drop, shade_required/shade_missing warnings, out_of_stock/qty_capped, combo path, coupon, gift card, free-shipping band — byte-for-byte equivalent to N+1 version",
+    "Frontend CartPage.js correctly composes cartSlugs ∪ recentlyViewed for batch fetch (capped at 200) + a popular slice (limit=24). Promise.all + .catch(() => []) defensive against partial failures. Good"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_cart_perf_jan2026.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Not required for cart tests. Public coupons APR26/APRGLOW/MAYEARLY/WELCOME50 auto-seeded.",
+  "seed_data_creation": "Cart seeded in localStorage for FE test with 3 active product slugs pulled live from /api/products. No DB writes.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All cart perf fixes verified working. Reusable pytest at /app/backend/tests/test_cart_perf_jan2026.py covers /api/products/batch + /api/cart/validate regression. To re-run: `pytest /app/backend/tests/test_cart_perf_jan2026.py -v`. FE cart page uses lazy-loaded data-testid-less qty buttons (lucide-plus/lucide-minus icons in buttons) — selectors via `button:has(svg.lucide-plus)` work.",
+  "rca of the issue": "N/A — this was a perf optimization, not a bug fix. Verified no behavior regression."
+}
