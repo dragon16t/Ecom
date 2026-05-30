@@ -72,9 +72,27 @@
 
 ## Backlog
 - **P0:** Send the ~9.7k product CSV/Excel — current DB has 7,863; new import will auto-classify + auto-cleanup on the way in.
-- **P0:** ~2,439 products still classified with `category=null` (mostly brand-line cosmetics like "Lakme True Wear", "Elle 18 Color Pops") — keyword coverage can be expanded incrementally; admin-curate via `needs_review` flag in the meantime.
 - **P1:** Frontend — render Featured Nav strip + 3 Promo Sections on `/cosmetics`. Backend ready; UI not yet wired.
 - **P1:** Hook reclassifier into `bulk_import_service` so future imports auto-classify on insert.
 - **P2:** Razorpay / Cloudinary / SendGrid / Delhivery / WhatsApp API keys.
+
+## Feb 2026 — Granular subcategory routing (v5)
+- **`_CATEGORY_SUBCATEGORY_KW` dict** added to `services/taxonomy_canonical.py`. After category is resolved, this priority-ordered keyword dict (most-specific → most-generic) picks the SUBCATEGORY. Solves the "Cleansers / Serums / Toners parent shows 0 items" UX bug by routing products into granular sub tiles:
+  - **Cleansers:** Gel / Foam / Cream / Oil / Cleansing Balm / Micellar Water / Face Wash
+  - **Exfoliators:** AHA / BHA / Chemical / Enzyme Peel / Peeling Solution / Face Scrub
+  - **Toners & Mists:** Hydrating Mist / Face Mist / Exfoliating Toner / Toner
+  - **Serums & Treatments:** Vitamin C / Hyaluronic / Niacinamide / Retinol / Salicylic / Peptide / Brightening / Anti-Acne (each by active ingredient)
+  - **Moisturizers:** Barrier Repair / Night Cream / Gel / Cream / Lotion
+  - **Sunscreens:** Stick / Spray / Mineral / Tinted / Gel / Cream
+  - **Masks-Packs / Spot Treatments / Eye Care / Lip Care / Face Oils / Essences / Barrier Care / Brightening / Anti-Aging / Body Skincare** — full coverage
+  - **Cosmetics:** Face / Lips / Eyes / Nails / Tools-Brushes / Multi-Palettes / Makeup-Kits — granular keyword priority per sub
+- **`_PRIMARY_CAT_KW` decisive list** — definitive product-form markers ("cleanser", "sunscreen", "toner", "moisturizer", "lipstick", "nail polish", …) override the previous longest-keyword tie-breaker. Solves cases like "Hydrating Cream Cleanser" (was → moisturizers, now → cleansers).
+- **`is_parent=True`** fix for skincare main categories so parent tiles render aggregate `product_count` on the hub.
+- **`cleanup_empty_taxonomy`** now sums children counts into parent `product_count` so "Cleansers (45 items)" tile shows correct total.
+- **`_HAIRCARE_KW`** narrowed — removed bare "conditioner" (was false-triggering on "Cuticle Conditioner" / "Skin Conditioner"). Now requires "hair conditioner" / "hair shampoo" / etc.
+- **`_DEFINITE_COSMETICS_KW`** expanded — `nail care`, `nail strengthener`, `nail hardener`, `cuticle oil`, `cuticle conditioner`, `nail polish remover`.
+- **Sentinel:** `taxonomy_canonical_version = "2026-02-granular-subs-v5"`.
+- **Tests:** `backend/tests/test_taxonomy_classifier.py` — 122 representative product-name cases covering every sub. **100% pass rate.**
+- **Production rollout:** User must Redeploy from Emergent Dashboard → POST `/api/admin/taxonomy/reset-canonical` (re-seeds with `is_parent=True` + bumps version) → page refresh shows correct sub counts.
 
 ## New admin endpoints (require X-Admin-Token)

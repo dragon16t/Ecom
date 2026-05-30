@@ -561,6 +561,8 @@ _DEFINITE_COSMETICS_KW = [
     "eyebrow pencil", "brow pencil", "brow gel", "brow powder", "brow enhancer",
     "false lash", "false eyelash", "fake lash",
     "nail polish", "nail enamel", "nail lacquer", "nail paint", "nail art",
+    "nail color", "nail colour", "nail care", "nail strengthener",
+    "nail hardener", "cuticle oil", "cuticle conditioner", "nail polish remover",
     "sindoor", "bb cream", "cc cream", "9to5", "9 to 5", "9-5", "9 5",
     "setting spray", "fixer spray", "makeup fixer", "makeup remover",
     "make-up remover", "make up remover",
@@ -591,11 +593,12 @@ _DEFINITE_SKINCARE_KW = [
 ]
 
 _HAIRCARE_KW = [
-    "shampoo", "conditioner", "hair oil", "hair serum", "hair spray",
+    "shampoo", "hair oil", "hair serum", "hair spray",
     "hair mask", "hair gel", "hair color", "hair colour", "hair dye",
     "hair pack", "hair fall", "hair growth", "hair tonic", "hair cream",
     "hair tool", "hair brush", "hair wax", "scalp", "anti-dandruff",
-    "anti dandruff",
+    "anti dandruff", "hair conditioner", "hair-conditioner",
+    "hair shampoo", "hair&shampoo", "hair styling",
 ]
 
 # Niche detection — used when product name alone is ambiguous
@@ -629,6 +632,301 @@ _COSMETICS_BRANDS = {
     "chambor", "mamaearth makeup",
 }
 
+# ============================================================
+# GRANULAR SUBCATEGORY KEYWORDS — priority ordered (first match wins)
+# ------------------------------------------------------------
+# After classify_product picks the category, this dict drives the
+# SUBCATEGORY selection so products land on the right specific tile
+# (Gel Cleanser, Foam Cleanser, Niacinamide Serum, etc.) instead of
+# all bunching under the generic "face-wash"/null subcategory.
+# Each list is ordered MOST SPECIFIC -> MOST GENERIC. The first
+# phrase that matches the product text wins.
+# ============================================================
+_CATEGORY_SUBCATEGORY_KW: dict[str, list[tuple[str, list[str]]]] = {
+    # ----- SKINCARE -----
+    "cleansers": [
+        ("micellar-water", ["micellar water", "micellar"]),
+        ("cleansing-balm", ["cleansing balm", "balm cleanser", "balm to oil"]),
+        ("oil-cleanser", ["oil cleanser", "cleansing oil", "oil cleansing", "oil based cleanser"]),
+        ("foam-cleanser", ["foam cleanser", "foaming cleanser", "foaming face wash",
+                            "foaming wash", "foam wash", "facial foam", "foaming gentle",
+                            "mousse cleanser", "whipped cleanser", "whip cleanser"]),
+        ("gel-cleanser", ["gel cleanser", "gel face wash", "gel wash", "wash gel",
+                          "gel cleansing", "jelly cleanser"]),
+        ("cream-cleanser", ["cream cleanser", "creamy cleanser", "milk cleanser",
+                             "cleansing milk", "milky cleanser", "lotion cleanser"]),
+        ("face-wash", ["face wash", "facewash", "facial wash", "purifying wash",
+                       "purifying cleanser", "deep cleanser", "gentle cleanser",
+                       "cleansing wash", "ubtan wash", "face cleanser", "facial cleanser",
+                       "cleanser", "cleansing"]),
+    ],
+    "exfoliators": [
+        ("enzyme-peel", ["enzyme peel", "enzyme mask", "papaya peel", "pineapple peel",
+                          "fruit enzyme"]),
+        ("peeling-solution", ["peeling solution", "peeling toner", "peeling pad",
+                               "peel pad", "exfoliating pad", "ordinary peeling"]),
+        ("aha-exfoliant", ["aha exfoliant", "aha toner", "aha peel", "aha serum",
+                            "glycolic exfoliant", "glycolic peel", "lactic exfoliant",
+                            "mandelic exfoliant", "alpha hydroxy"]),
+        ("bha-exfoliant", ["bha exfoliant", "bha toner", "bha peel", "bha serum",
+                            "salicylic exfoliant", "salicylic peel", "beta hydroxy",
+                            " bha "]),
+        ("chemical-exfoliant", ["chemical exfoliant", "chemical peel",
+                                 "exfoliating treatment", "exfoliating essence",
+                                 "polishing treatment", "resurfacing serum",
+                                 "exfoliator serum", "exfoliating toner",
+                                 "glow peel", "exfoliant", "exfoliator"]),
+        ("face-scrub", ["face scrub", "facial scrub", "polishing scrub",
+                         "exfoliating scrub", "skin polisher", "walnut scrub",
+                         "coffee scrub face", "sugar scrub face", "scrub"]),
+    ],
+    "toners-mists": [
+        ("hydrating-mist", ["hydrating mist", "hydration mist", "rose mist",
+                             "rosewater spray", "rose water spray", "rosewater mist",
+                             "rose water mist", "aloe mist"]),
+        ("exfoliating-toner", ["exfoliating toner", "exfoliant toner", "glow toner",
+                                "aha toner", "bha toner", "exfoliator toner"]),
+        ("face-mist", ["face mist", "facial mist", "mist spray", "skin mist",
+                       "setting mist"]),
+        ("toner", ["toner", "tonic", "astringent", "skin tonic", "ph balanced toner"]),
+    ],
+    "serums-treatments": [
+        ("vitamin-c-serum", ["vitamin c serum", "vit c serum", "vit-c serum",
+                              "ascorbic serum", "vitamin-c serum"]),
+        ("hyaluronic-acid-serum", ["hyaluronic acid serum", "hyaluronic serum",
+                                    "ha serum", "hyaluronic acid"]),
+        ("niacinamide-serum", ["niacinamide serum", "niacinamide", "nicotinamide serum",
+                                "nicotinamide", "vitamin b3 serum"]),
+        ("retinol-serum", ["retinol serum", "retinal serum", "retinoid serum",
+                            "bakuchiol serum"]),
+        ("salicylic-acid-serum", ["salicylic acid serum", "salicylic serum",
+                                   "bha serum", "salicylic acid"]),
+        ("peptide-serum", ["peptide serum", "peptide complex serum", "peptide booster",
+                            "peptide concentrate"]),
+        ("brightening-serum", ["brightening serum", "glow serum", "radiance serum",
+                                "luminous serum", "kojic serum", "alpha arbutin serum"]),
+        ("anti-acne-serum", ["anti-acne serum", "anti acne serum", "acne serum",
+                              "blemish serum", "spot serum"]),
+        # Generic ingredient fallbacks (no "serum" word required)
+        ("vitamin-c-serum", ["vitamin c", "vit c", "vit-c", "ascorbic"]),
+        ("hyaluronic-acid-serum", ["hyaluronic"]),
+        ("retinol-serum", ["retinol", "retinal", "retinoid"]),
+        ("salicylic-acid-serum", ["salicylic"]),
+        ("peptide-serum", ["peptide"]),
+        ("brightening-serum", ["brightening", "ferulic", "alpha arbutin", "kojic", "tranexamic"]),
+    ],
+    "moisturizers": [
+        ("barrier-repair-cream", ["barrier repair", "barrier cream",
+                                   "barrier-repair cream", "recovery moisturizer"]),
+        ("night-cream", ["night cream", "night creme", "night moisturizer",
+                          "night moisturiser", "overnight cream", "sleeping cream",
+                          "night lotion"]),
+        ("gel-moisturizer", ["gel moisturizer", "gel moisturiser", "gel cream",
+                              "gel-cream", "water cream", "aqua gel", "aqua cream",
+                              "oil-free gel", "water gel"]),
+        ("cream-moisturizer", ["cream moisturizer", "cream moisturiser", "face cream",
+                                "day cream", "day creme", "rich cream", "nourishing cream",
+                                "matte cream", "hydrating cream", "moisture cream",
+                                "moisturizer", "moisturiser"]),
+        ("lotion", ["face lotion", "facial lotion", "emulsion", "facial emulsion",
+                    "day lotion", "lotion"]),
+    ],
+    "sunscreens": [
+        ("stick-sunscreen", ["sun stick", "stick sunscreen", "sunscreen stick",
+                              "spf stick"]),
+        ("spray-sunscreen", ["spray sunscreen", "sun spray", "sunscreen spray",
+                              "spf spray"]),
+        ("mineral-sunscreen", ["mineral sunscreen", "mineral spf", "zinc oxide sunscreen",
+                                "physical sunscreen", "mineral sun"]),
+        ("tinted-sunscreen", ["tinted sunscreen", "tinted spf", "tinted sun"]),
+        ("gel-sunscreen", ["gel sunscreen", "sun gel", "sunscreen gel"]),
+        ("cream-sunscreen", ["cream sunscreen", "sun cream", "sunscreen cream",
+                              "sunblock cream", "sunscreen lotion", "sun lotion",
+                              "sunblock", "sunscreen", "spf"]),
+    ],
+    "masks-packs": [
+        ("sheet-mask", ["sheet mask"]),
+        ("clay-mask", ["clay mask", "kaolin mask", "rose clay", "clay pack"]),
+        ("mud-mask", ["mud mask", "bentonite mask", "mud pack"]),
+        ("sleeping-mask", ["sleeping mask", "overnight mask", "night mask"]),
+        ("peel-off-mask", ["peel-off mask", "peel off mask", "peeloff mask"]),
+        ("hydrating-mask", ["hydrating mask", "hydration mask", "moisture mask",
+                             "wash-off mask", "wash off mask"]),
+    ],
+    "spot-treatments": [
+        ("acne-patch", ["acne patch", "pimple patch", "hydrocolloid patch",
+                         "zit patch", "pimple master", "spot patch",
+                         "blemish patch"]),
+        ("pimple-gel", ["pimple gel", "anti-acne gel", "anti acne gel",
+                         "blemish gel", "acne control gel"]),
+        ("scar-treatment", ["scar gel", "scar cream", "scar treatment",
+                             "scar serum", "scar fade"]),
+        ("spot-corrector", ["spot corrector", "spot control", "spot gel",
+                             "spot eraser", "spot remover", "spot treatment",
+                             "dark spot remover", "anti-acne spot"]),
+    ],
+    "eye-care": [
+        ("under-eye-patch", ["under eye patch", "eye patch", "under-eye patch",
+                              "eye mask patch", "eye gel patch"]),
+        ("eye-gel", ["eye gel"]),
+        ("eye-cream", ["eye cream", "eye balm", "eye treatment", "eye serum",
+                       "under eye cream", "under-eye cream"]),
+    ],
+    "lip-care": [
+        ("lip-oil", ["lip oil"]),
+        ("lip-scrub", ["lip scrub"]),
+        ("lip-mask", ["lip mask", "lip sleeping mask"]),
+        ("lip-balm", ["lip balm", "lip butter", "lip therapy", "lip moisturiz",
+                      "lip hydrat", "tinted lip balm"]),
+    ],
+    "face-oils": [
+        ("overnight-oil", ["overnight oil", "night oil", "night face oil"]),
+        ("glow-oil", ["glow oil", "luminous oil", "radiance oil"]),
+        ("facial-oil", ["facial oil", "face oil", "elixir oil", "rosehip oil",
+                         "jojoba oil face", "argan oil face"]),
+    ],
+    "essences-ampoules": [
+        ("ampoule", ["ampoule"]),
+        ("booster", ["booster", "skin booster"]),
+        ("essence", ["essence", "ferment essence", "treatment essence"]),
+    ],
+    "barrier-care": [
+        ("recovery-balm", ["recovery balm", "rescue balm", "repair balm"]),
+        ("ceramide-cream", ["ceramide cream", "ceramide moisturizer", "ceramide"]),
+        ("cica-cream", ["cica cream", "cica gel", "centella cream", "panthenol cream"]),
+    ],
+    "brightening-products": [
+        ("dark-spot-corrector", ["dark spot corrector", "dark spot cream",
+                                  "dark spot remover", "spot correcting cream"]),
+        ("glow-cream", ["glow cream", "radiance cream", "luminous cream",
+                         "luminizing cream", "glow moisturizer"]),
+        ("pigmentation-cream", ["pigmentation cream", "anti-pigmentation",
+                                 "anti pigmentation", "melasma cream",
+                                 "whitening cream", "fairness cream",
+                                 "skin lightening cream"]),
+    ],
+    "anti-aging-products": [
+        ("retinol-cream", ["retinol cream", "retinal cream", "bakuchiol cream"]),
+        ("firming-cream", ["firming cream", "lifting cream", "tightening cream",
+                            "collagen cream", "neck cream", "neck firming"]),
+        ("wrinkle-treatment", ["wrinkle cream", "anti-wrinkle", "anti wrinkle",
+                                "wrinkle treatment", "age-defying", "age defying"]),
+    ],
+    "body-skincare": [
+        ("foot-cream", ["foot cream", "foot lotion", "heel balm", "heel cream"]),
+        ("hand-cream", ["hand cream", "hand lotion"]),
+        ("body-butter", ["body butter"]),
+        ("body-oil", ["body oil"]),
+        ("body-scrub", ["body scrub"]),
+        ("body-wash", ["body wash", "shower gel", "shower oil", "bubble bath",
+                       "shower foam"]),
+        ("body-lotion", ["body lotion", "body cream", "body milk", "body mist",
+                          "body moisturizer"]),
+    ],
+    # ----- COSMETICS -----
+    "face-makeup": [
+        ("setting-spray", ["setting spray", "fixer spray", "makeup fixer",
+                            "fixing spray", "setting mist"]),
+        ("makeup-remover", ["makeup remover", "make-up remover", "make up remover"]),
+        ("face-primer", ["face primer", "primer base", "makeup primer", "blur primer",
+                          "pore primer"]),
+        ("concealer", ["concealer"]),
+        ("bb-cc-cream", ["bb cream", "cc cream", "bb mousse", "cc mousse",
+                          " bb ", " cc ", "bb & cc", "bb&cc"]),
+        ("tinted-moisturizer", ["tinted moisturizer", "tinted moisturiser",
+                                 "tinted moisturiz", "skin tint"]),
+        ("highlighters", ["highlighter", "highlighting", "illuminator"]),
+        ("bronzer", ["bronzer", "rouge"]),
+        ("blush", ["blush", "cheek color", "cheek colour"]),
+        ("contour", ["contour"]),
+        ("loose-powder", ["loose powder", "setting powder", "banana powder",
+                           "translucent powder", "finishing powder", "blur powder",
+                           "bake powder", "bake and blur"]),
+        ("compact", ["compact powder", "pressed powder", "powder compact",
+                      "compact"]),
+        ("sindoor", ["sindoor"]),
+        ("foundation", ["foundation", "fndtn", "fndn", " fdn ", "9to5", "9-to-5",
+                         "9 to 5", "skin foundation"]),
+    ],
+    "lips": [
+        ("lip-liner", ["lip liner", "lip pencil"]),
+        ("lip-primer", ["lip primer"]),
+        ("lip-plumper", ["lip plumper", "plumping lip", "plump and shine",
+                          "plump & shine"]),
+        ("lip-crayon", ["lip crayon", "crayon lipstick", "lipstick crayon"]),
+        ("liquid-lipstick", ["liquid lipstick", "liquid lip", "matte liquid lip",
+                              "liquid matte"]),
+        ("lip-gloss", ["lip gloss", "lipgloss"]),
+        ("lip-tint", ["lip tint", "lip stain", "lip oil tint", "lip & cheek tint",
+                      "lip-cheek tint", "lip and cheek tint", "cheek tint"]),
+        ("lipstick", ["lipstick", "lipstik", "matte lipstick", "lip color",
+                       "lip colour", "lipcolor", "lipclr", "lip bullet",
+                       "powder bullet", "powder bullett",
+                       "lippy", "lippie", "color pops", "colour pops", "color crush",
+                       "colour crush", "true wear"]),
+    ],
+    "eyes": [
+        ("under-eye-concealer", ["under eye concealer", "under-eye concealer"]),
+        ("eye-makeup-remover", ["eye makeup remover", "eye make-up remover",
+                                 "eye make up remover"]),
+        ("contact-lenses", ["contact lens"]),
+        ("false-eyelashes", ["false lash", "false eyelash", "fake lash",
+                              "fake eyelash"]),
+        ("eye-primer", ["eye primer"]),
+        ("eyebrow-enhancers", ["eyebrow", "eye brow", "brow pencil", "brow gel",
+                                "brow powder", "brow enhancer"]),
+        ("eye-shadow", ["eye shadow", "eyeshadow"]),
+        ("mascara", ["mascara", "eye drama"]),
+        ("eyeliner", ["eyeliner", "eye liner", "shine line", "gloss artist"]),
+        ("kajal", ["kajal", "kohl", "eyeconic"]),
+    ],
+    "nails": [
+        ("nail-remover", ["nail polish remover", "nail color remover",
+                           "nail colour remover", "nail enamel remover",
+                           "nail remover"]),
+        ("cuticle-oil", ["cuticle oil", "cuticle conditioner", "cuticle"]),
+        ("nail-strengthener", ["nail strengthener", "nail hardener"]),
+        ("nail-art", ["nail art", "nail sticker", "nail decal"]),
+        ("nail-care", ["nail care", "nail treatment"]),
+        ("nail-enamel", ["nail enamel"]),
+        ("nail-polish", ["nail polish", "nail lacquer", "nail color", "nail colour",
+                          "nail paint"]),
+    ],
+    "tools-brushes": [
+        ("makeup-pouches", ["makeup pouch", "makeup bag", "cosmetics pouch",
+                             "cosmetic pouch"]),
+        ("mirrors", ["compact mirror", "makeup mirror"]),
+        ("sharpeners", ["sharpener", "sharpner"]),
+        ("tweezers", ["tweezer"]),
+        ("eyelash-curlers", ["eyelash curler", "lash curler"]),
+        ("sponges-applicators", ["beauty sponge", "makeup sponge", "puff",
+                                  "blender", "applicator", "powder puff"]),
+        ("brush-cleaners", ["brush cleaner"]),
+        ("brush-sets", ["brush set"]),
+        ("lip-brush", ["lip brush"]),
+        ("eye-brush", ["eye brush"]),
+        ("face-brush", ["face brush", "makeup brush", "powder brush",
+                         "foundation brush", "contour brush", "blush brush"]),
+    ],
+    "multi-palettes": [
+        ("eye-shadow-palette", ["eye shadow palette", "eyeshadow palette"]),
+        ("face-palette", ["face palette"]),
+        ("lip-palette", ["lip palette"]),
+        ("cheek-palette", ["cheek palette", "blush palette",
+                            "highlighting palette", "highlighter palette",
+                            "contour palette"]),
+        ("all-in-one-palette", ["all-in-one palette", "all in one palette",
+                                 "multi-use palette", "multi use palette",
+                                 "palette"]),
+    ],
+    "makeup-kits": [
+        ("bridal-kit", ["bridal kit", "bridal makeup", "bridal set"]),
+        ("travel-kit", ["travel kit", "travel size", "mini kit", "mini makeup"]),
+        ("starter-kit", ["starter kit", "beginner kit"]),
+        ("gift-set", ["gift set", "gift box", "gift pack"]),
+        ("combo-set", ["combo set", "combo pack", "makeup kit", "makeup set"]),
+    ],
+}
 _SKINCARE_HARD_KW = [
     "serum", "moisturiz", "moisturis", "moistrsr", "moistrsr",
     "day creme", "night creme", "creme moistrsr",
@@ -713,16 +1011,147 @@ def classify_product(name: str, description: str = "", brand: str = "",
         elif niche not in ("skincare", "cosmetics"):
             niche = niche if niche == "anti-aging" else "skincare"
 
-    # 2. Category match (only within the resolved niche)
+    # 2. Category match — definitive markers first, then longest-keyword.
+    #
+    # Some products contain keywords from multiple categories (e.g. "Hydrating
+    # Cream Cleanser" hits both moisturizers ("hydrating cream") and cleansers
+    # ("cleanser")). The PRIMARY_CATEGORY_KW dict below acts as a decisive tier
+    # so that the product form word wins over an ingredient/description word.
     cat_pool = COSMETICS_CATEGORIES if niche == "cosmetics" else SKINCARE_CATEGORIES
     best_cat = None
-    best_cat_score = 0
-    for cat in cat_pool:
-        for kw in cat.get("keywords") or []:
-            if kw in full:
-                if len(kw) > best_cat_score:
-                    best_cat_score = len(kw)
-                    best_cat = cat
+
+    # 2a. Definitive product-form markers (highest priority — first match wins).
+    if niche == "skincare":
+        _PRIMARY_CAT_KW: list[tuple[str, list[str]]] = [
+            ("cleansers", ["cleanser", "face wash", "facewash", "facial wash",
+                            "facial cleanser", "facial foam", "cleansing balm",
+                            "cleansing oil", "cleansing milk", "cleansing water",
+                            "micellar water", "micellar", "make-up remover wash",
+                            "purifying wash", "ubtan wash"]),
+            ("sunscreens", ["sunscreen", "sunblock", " spf ", "spf 30", "spf 40",
+                             "spf 50", "sun lotion", "sun stick", "sun spray",
+                             "sun cream", "sun gel"]),
+            ("masks-packs", ["sheet mask", "clay mask", "mud mask",
+                              "sleeping mask", "peel-off mask", "peel off mask",
+                              "face mask", "face pack", "overnight mask",
+                              "hydrating mask"]),
+            ("exfoliators", ["face scrub", "facial scrub", "body scrub",
+                              "exfoliant", "exfoliator", "peeling solution",
+                              "peeling toner", "enzyme peel", "chemical peel",
+                              "polishing scrub", "skin polisher", "glow peel"]),
+            ("toners-mists", ["toner", "face mist", "facial mist",
+                               "hydrating mist", "rose water mist", "rosewater mist",
+                               "rose mist", "tonic", "astringent"]),
+            ("spot-treatments", ["acne patch", "pimple patch", "pimple gel",
+                                  "anti-acne gel", "spot corrector", "spot gel",
+                                  "scar gel", "scar cream", "scar treatment",
+                                  "pimple master", "blemish gel"]),
+            ("face-oils", ["facial oil", "face oil", "overnight oil", "glow oil",
+                            "elixir oil"]),
+            ("eye-care", ["eye cream", "eye gel", "eye serum", "eye balm",
+                           "under eye cream", "under-eye cream", "under eye patch",
+                           "eye patch"]),
+            ("lip-care", ["lip balm", "lip mask", "lip scrub", "lip oil",
+                           "lip butter"]),
+            ("essences-ampoules", ["essence", "ampoule"]),
+            ("barrier-care", ["cica cream", "cica gel", "ceramide cream",
+                               "ceramide moisturiz", "recovery balm",
+                               "barrier repair", "barrier cream",
+                               "ceramide", "cica ", "centella", "panthenol"]),
+            ("body-skincare", ["body lotion", "body butter", "body wash",
+                                "body scrub", "body oil", "body cream",
+                                "body milk", "shower gel", "shower oil",
+                                "hand cream", "hand lotion", "foot cream",
+                                "foot lotion", "heel balm"]),
+            ("brightening-products", ["pigmentation cream", "dark spot corrector",
+                                       "dark spot cream", "whitening cream",
+                                       "fairness cream", "luminizing cream"]),
+            ("anti-aging-products", ["retinol cream", "anti-wrinkle",
+                                      "anti wrinkle", "wrinkle cream",
+                                      "wrinkle treatment", "firming cream",
+                                      "lifting cream", "neck cream",
+                                      "neck firming", "collagen cream",
+                                      "age-defying", "age defying"]),
+            ("serums-treatments", ["face serum", "treatment serum",
+                                    "skin booster serum", "anti-aging serum",
+                                    "anti aging serum", "anti-acne serum"]),
+            ("moisturizers", ["moisturizer", "moisturiser", "face cream",
+                               "day cream", "night cream", "face lotion",
+                               "facial lotion", "facial emulsion", "emulsion",
+                               "gel cream", "water cream", "aqua gel",
+                               "aqua cream", "water gel"]),
+        ]
+    else:  # cosmetics
+        _PRIMARY_CAT_KW = [
+            ("makeup-kits", ["bridal kit", "bridal makeup", "bridal set",
+                              "travel kit", "starter kit", "beginner kit",
+                              "gift set", "gift box", "gift pack",
+                              "combo set", "combo pack", "makeup kit",
+                              "makeup set", "mini kit"]),
+            ("multi-palettes", ["eye shadow palette", "eyeshadow palette",
+                                 "face palette", "lip palette",
+                                 "cheek palette", "blush palette",
+                                 "highlighting palette", "highlighter palette",
+                                 "contour palette", "all-in-one palette",
+                                 "all in one palette", "multi-use palette",
+                                 "palette"]),
+            ("nails", ["nail polish", "nail enamel", "nail lacquer",
+                        "nail color", "nail colour", "nail paint", "nail art",
+                        "nail care", "nail treatment", "nail strengthener",
+                        "nail hardener", "nail polish remover", "nail remover",
+                        "cuticle oil", "cuticle conditioner"]),
+            ("lips", ["lipstick", "lipstik", "liquid lipstick", "matte lipstick",
+                       "liquid lip", "lip crayon", "lip gloss", "lipgloss",
+                       "lip liner", "lip pencil", "lip primer", "lip plumper",
+                       "lip tint", "lip stain", "lip & cheek", "lip and cheek",
+                       "lip-cheek", "lip color", "lip colour", "lipcolor",
+                       "lippy", "lippie", "lip bullet", "powder bullet",
+                       "color pops", "colour pops", "color crush", "colour crush",
+                       "true wear", "plump and shine", "plump & shine"]),
+            ("eyes", ["kajal", "kohl", "eyeliner", "eye liner", "mascara",
+                       "eye shadow", "eyeshadow", "eyebrow pencil", "brow pencil",
+                       "brow gel", "brow powder", "brow enhancer",
+                       "false lash", "false eyelash", "fake lash",
+                       "eye primer", "eye makeup remover", "under eye concealer",
+                       "contact lens", "eyeconic"]),
+            ("tools-brushes", ["makeup brush", "face brush", "eye brush",
+                                "lip brush", "brush set", "brush cleaner",
+                                "beauty sponge", "makeup sponge", "powder puff",
+                                "eyelash curler", "lash curler", "tweezer",
+                                "sharpener", "sharpner", "makeup mirror",
+                                "compact mirror", "makeup pouch", "makeup bag"]),
+            ("face-makeup", ["foundation", "concealer", "compact powder",
+                              "compact", "blush", "bronzer", "highlighter",
+                              "highlighting", "contour", "setting spray",
+                              "fixer spray", "makeup fixer", "makeup remover",
+                              "tinted moisturiz", "bb cream", "cc cream",
+                              "face primer", "loose powder", "setting powder",
+                              "banana powder", "translucent powder",
+                              "finishing powder", "color corrector",
+                              "colour corrector", "sindoor",
+                              "9to5", "9 to 5"]),
+        ]
+
+    # Special override: an "eye shadow palette" should land in multi-palettes,
+    # but "eye shadow" alone should land in eyes. The primary-cat list above
+    # already handles this since multi-palettes is listed before eyes.
+
+    # Search primary list — first category whose ANY keyword matches wins.
+    for cat_slug, kws in _PRIMARY_CAT_KW:
+        if any(k in full for k in kws):
+            best_cat = next((c for c in cat_pool if c["slug"] == cat_slug), None)
+            if best_cat:
+                break
+
+    # 2b. Fallback — longest-keyword match over the category `keywords` field.
+    if best_cat is None:
+        best_cat_score = 0
+        for cat in cat_pool:
+            for kw in cat.get("keywords") or []:
+                if kw in full:
+                    if len(kw) > best_cat_score:
+                        best_cat_score = len(kw)
+                        best_cat = cat
     if best_cat is None:
         # No keyword matched. Leave category as NULL so unmatched products
         # don't pollute a fallback bucket. They'll be browsable via the niche
@@ -736,41 +1165,53 @@ def classify_product(name: str, description: str = "", brand: str = "",
         }
     unclassified = False
 
-    # 3. Subcategory — pick a sub whose name-words are present in full text.
-    # Composite names like "BB & CC Cream" are split into individual phrases
-    # ("bb cream", "cc cream") so partial matches still work. Also strips
-    # trailing "s" so "Highlighters" sub matches products saying "highlighter".
+    # 3. Subcategory — Use the granular priority-ordered keyword dict for the
+    # resolved category (first specific match wins). This guarantees products
+    # land on Gel Cleanser / Foam Cleanser / Niacinamide Serum / etc. tiles
+    # instead of all defaulting to the most generic sub.
     best_sub_slug = None
-    best_sub_score = 0
-    for sub_slug, sub_name in best_cat.get("subs", []):
-        phrases = {sub_name.lower(), sub_slug.replace("-", " ")}
-        # Singular form (strip plural-s)
-        if sub_name.lower().endswith("s"):
-            phrases.add(sub_name.lower().rstrip("s"))
-        sub_slug_words = sub_slug.replace("-", " ")
-        if sub_slug_words.endswith("s"):
-            phrases.add(sub_slug_words.rstrip("s"))
-        # Split on "&" or "/" — try each piece + the suffix word.
-        if "&" in sub_name or "/" in sub_name:
-            parts = re.split(r"\s*[&/]\s*", sub_name)
-            if len(parts) >= 2:
-                suffix = parts[-1].strip().split()[-1].lower()
-                for p in parts[:-1]:
-                    p_clean = p.strip().lower()
-                    if p_clean:
-                        phrases.add(f"{p_clean} {suffix}")
-                        phrases.add(p_clean)
-        # First word of sub name (e.g. "Eye Shadow Palette" → "eye")
-        first_word = sub_name.lower().split()[0]
-        if len(first_word) >= 4:  # avoid noise like "eye" matching too broadly
-            phrases.add(first_word)
-
-        for phrase in phrases:
-            if len(phrase) < 3:
-                continue
-            if phrase in full and len(phrase) > best_sub_score:
-                best_sub_score = len(phrase)
+    sub_kw_list = _CATEGORY_SUBCATEGORY_KW.get(best_cat["slug"], [])
+    for sub_slug, phrases in sub_kw_list:
+        for ph in phrases:
+            if ph in full:
                 best_sub_slug = sub_slug
+                break
+        if best_sub_slug:
+            break
+
+    # Fallback: original name-token phrase matching (handles edge cases the
+    # priority dict might miss — e.g., composite "BB & CC Cream" sub name).
+    if not best_sub_slug:
+        best_sub_score = 0
+        for sub_slug, sub_name in best_cat.get("subs", []):
+            phrases = {sub_name.lower(), sub_slug.replace("-", " ")}
+            # Singular form (strip plural-s)
+            if sub_name.lower().endswith("s"):
+                phrases.add(sub_name.lower().rstrip("s"))
+            sub_slug_words = sub_slug.replace("-", " ")
+            if sub_slug_words.endswith("s"):
+                phrases.add(sub_slug_words.rstrip("s"))
+            # Split on "&" or "/" — try each piece + the suffix word.
+            if "&" in sub_name or "/" in sub_name:
+                parts = re.split(r"\s*[&/]\s*", sub_name)
+                if len(parts) >= 2:
+                    suffix = parts[-1].strip().split()[-1].lower()
+                    for p in parts[:-1]:
+                        p_clean = p.strip().lower()
+                        if p_clean:
+                            phrases.add(f"{p_clean} {suffix}")
+                            phrases.add(p_clean)
+            # First word of sub name (e.g. "Eye Shadow Palette" → "eye")
+            first_word = sub_name.lower().split()[0]
+            if len(first_word) >= 4:  # avoid noise like "eye" matching too broadly
+                phrases.add(first_word)
+
+            for phrase in phrases:
+                if len(phrase) < 3:
+                    continue
+                if phrase in full and len(phrase) > best_sub_score:
+                    best_sub_score = len(phrase)
+                    best_sub_slug = sub_slug
 
     # 4. Concerns (skincare only) — collect up to 3
     concerns: list[str] = []
@@ -950,7 +1391,7 @@ async def reset_canonical_taxonomy(db) -> dict:
     for cat in SKINCARE_CATEGORIES:
         cat_docs.append({
             "slug": cat["slug"], "name": cat["name"], "icon": cat["icon"],
-            "niche": "skincare", "group": "skincare", "is_parent": False,
+            "niche": "skincare", "group": "skincare", "is_parent": True,
             "subs": [s[1] for s in cat["subs"]],
             "sort_order": cat["sort_order"], "is_active": True,
             "created_at": now, "updated_at": now,
@@ -1010,7 +1451,7 @@ async def reset_canonical_taxonomy(db) -> dict:
         {"_id": "main"},
         {"$set": {
             "taxonomy_canonical_applied": True,
-            "taxonomy_canonical_version": "2026-01-cosmetics-v4",
+            "taxonomy_canonical_version": "2026-02-granular-subs-v5",
             "taxonomy_canonical_applied_at": now,
             "cosmetics_featured_nav": COSMETICS_FEATURED_NAV,
             "cosmetics_promo_sections": COSMETICS_PROMO_SECTIONS,
@@ -1238,17 +1679,27 @@ async def cleanup_empty_taxonomy(db) -> dict:
                 )
 
     # 2b. Toggle parents — deactivate parent only if ALL children are empty AND parent itself is empty.
+    # Parent product_count = own + sum of children (aggregate display on hub tiles).
     for p in parents:
         parent_own = counts_by_slug.get(p["slug"], 0)
         kids = children_by_parent.get(p["slug"], [])
+        kids_total = sum(counts_by_slug.get(k["slug"], 0) for k in kids)
+        # Use max() so we don't double-count when products already store
+        # category=parent_slug (which makes parent_own ≈ kids_total).
+        total = max(parent_own, kids_total)
         any_kid_has = any(counts_by_slug.get(k["slug"], 0) > 0 for k in kids)
         want_active = parent_own > 0 or any_kid_has
         if want_active != p.get("is_active", True):
             await db.categories.update_one(
                 {"slug": p["slug"], "niche": p["niche"]},
-                {"$set": {"is_active": want_active, "product_count": parent_own}}
+                {"$set": {"is_active": want_active, "product_count": total}}
             )
             (reactivated if want_active else deactivated).append(p["slug"])
+        else:
+            await db.categories.update_one(
+                {"slug": p["slug"], "niche": p["niche"]},
+                {"$set": {"product_count": total}}
+            )
 
     # 3. Mirror to db.subcategories collection.
     sub_cur = db.subcategories.find(
