@@ -234,6 +234,87 @@ HAIRCARE_CASES = [
 # ============================================================
 # Run all
 # ============================================================
+# ============================================================
+# Real product names from ULTRA_GRANULAR_MASTER_LIST.xlsx
+# (regression cases — these MUST keep working after future edits)
+# ============================================================
+MASTER_LIST_CASES = [
+    # Skincare cleansers
+    ("LAKME 9TO5 MATTE MOIST CLAY FACE WASH", "cleansers", "face-wash"),
+    ("LAKME MICELLAR PURE FACE WASH", "cleansers", "micellar-water"),
+    ("LAKME PURE MICELLAR WATER", "cleansers", "micellar-water"),
+    ("LAKME 9TO5 VIT C FACIAL FOAM", "cleansers", "foam-cleanser"),
+    ("THE FACE SHOP RICE WATER BRIGHT FOAMING CLENSER", "cleansers", "foam-cleanser"),
+    # Sunscreens
+    ("LAKME SUN EXPERT SUNSCRN 5+1", "sunscreens", "cream-sunscreen"),
+    ("LAKME SUN EXPERT TINTED SUNSCRN 18ML", "sunscreens", "tinted-sunscreen"),
+    # Moisturizers (Lakme Peach Milk / Complexion Care lines)
+    ("LAKME PEACH MILK CRM MOISTURE 60GM", "moisturizers", "cream-moisturizer"),
+    ("LAKME COMPLEXION CARE CREAM BRONZE 9G", "moisturizers", "cream-moisturizer"),
+    ("LAKME DEWY GLAZE GEL CREME", "moisturizers", "gel-moisturizer"),
+    ("LAKME LUMI SKIN CREAM 299", "moisturizers", "cream-moisturizer"),
+    # Cosmetics — Eyes
+    ("LAKME EYECONIC KAJAL. 0.35G", "eyes", "kajal"),
+    ("ML COLOSSAL KAJAL SUPER BLACK", "eyes", "kajal"),
+    ("ML SKY HIGH LASH SENSATIONAL MASCARA", "eyes", "mascara"),
+    ("LAK ABS EYESHADOW PALETTE-CORAL SUNSET", "multi-palettes", "eye-shadow-palette"),
+    ("MAYBELLINE LINE TATTOO HIGH IMPACT LINER BK", "eyes", "eyeliner"),
+    ("ML TATTOO LINER 48H DIP IN", "eyes", "eyeliner"),
+    ("SUGAR ARCH ARRIVAL BROW DEFINER 04", "eyes", "eyebrow-enhancers"),
+    ("F52 TWINKLE STAR GLITTER NG032", "eyes", "eye-shadow"),
+    ("F52 STARDUST GLITTER - SG002", "eyes", "eye-shadow"),
+    ("LAKME AB GEL STYLIST CORALRUSH 12ML", "nails", "nail-polish"),
+    # Cosmetics — Face
+    ("ML FIT ME FDT MAT PORE PUMP 332 ASJP", "face-makeup", "foundation"),
+    ("ML FIT ME PWD MAT+PORE 222", "face-makeup", "compact"),
+    ("FIT ME LOOSE PWD 15 LIGHT", "face-makeup", "loose-powder"),
+    ("FIT ME CNCLR SPOT RESCUE-45", "face-makeup", "concealer"),
+    ("ML FIT ME BB NUDE - 50", "face-makeup", "bb-cc-cream"),
+    ("ESTEE LAUDER DOUBLE WEAR 1N1 IVORY NUDE", "face-makeup", "foundation"),
+    ("KRYOLAN TV PAINT STICK FS45", "face-makeup", "foundation"),
+    ("KRYOLAN CAKE MAKE-UP FS29", "face-makeup", "foundation"),
+    ("LAKME XTRAORDNARY MATTREAL MOUSSE BEIGE HONEY", "face-makeup", "foundation"),
+    ("MASTER CHROME HIGHLIGHTER 100", "face-makeup", "highlighters"),
+    ("KAY BEAUTY ILLUMINATING HIGHLITER-ROSY DEW", "face-makeup", "highlighters"),
+    ("FIT ME MATTE SETTING SPRAY", "face-makeup", "setting-spray"),
+    ("SS DOUBLE FIXER SPRAY", "face-makeup", "setting-spray"),
+    ("CB PRO RANGE STAY THE DAY FNSHING MIST 100ML", "face-makeup", "setting-spray"),
+    # Cosmetics — Lips
+    ("LAKME ULTIMATE GLAM LIQ LIP 13NUDE PINK", "lips", "liquid-lipstick"),
+    ("NYKAA MATTE LUXE LIPSTIC STAYCATION", "lips", "lipstick"),
+    ("SUGAR MATTE AS HELL CRAYON LIPSITICK 15 STEPHANIE PLUM 799", "lips", "lipstick"),
+    ("MAYBELLINE SUPERSTAY CRAYON 50 AS", "lips", "lip-crayon"),
+    ("SUPERSTAY MATTE INK SEEKER", "lips", "liquid-lipstick"),
+    ("F52 STOPPER LIQUID MATTE SHW006", "lips", "liquid-lipstick"),
+    ("F52 SENSATIONAL LIP 12", "lips", "lipstick"),
+    ("ML LIFTER GLOSS 003 MOON", "lips", "lip-gloss"),
+    ("LAKME GLITTERATI LIP GLAZE 204 FROSTED ROSE", "lips", "lip-gloss"),
+    ("RENEE COLOR LOCK TRANSFER NOT CRAYON-DAZE", "lips", "lip-crayon"),
+    ("FOREVER52 IM UNLIMITED LPSTK IML006", "lips", "lipstick"),
+    ("CB TAKE ME AS I AM VEGAN CRM LIPSTK REFILL BARE DARE 003", "lips", "lipstick"),
+    ("KAY BEAUTY INFINTE LIP PEN-VIVID", "lips", "lip-liner"),
+    ("LAKME LIP LOVE CARAMEL", "lips", "lipstick"),
+    ("ELLE18 LIP&CHEEK TINT TROPICANA", "lips", "lip-tint"),
+    ("ML SS TEDDY TINT - 35 JULY FOREVER", "lips", "lip-tint"),
+    ("MAYBELLINE FIT ME FRESH TINT SHADE 03", "lips", "lip-tint"),
+    ("ML BABY LIPS PINK", "lips", "lipstick"),
+    # Cosmetics — Nails
+    ("NYKAA NAILPOLISH LAVENDERBUTTERCREAM-54 179", "nails", "nail-polish"),
+    ("ELLE 18 NAIL POPS 156", "nails", "nail-polish"),
+    ("LAKME ULTIMATE GLAM CHROME NAIL CH7", "nails", "nail-polish"),
+    ("LAKME NAIL ENAM. REMOVER BOTT 27ML", "nails", "nail-remover"),
+    ("RENEE STICK ON NAILS-BN 02", "nails", "nail-art"),
+    ("CB NAIL LUXE NAIL LAQUER 89", "nails", "nail-polish"),
+    # Skincare — Body
+    ("PLUM BODY LOVIN DEO ROLLON HAWAIIAN RUMBA", "body-skincare", "body-lotion"),
+    # Haircare niche (no category)
+    ("MAMAEARTH ONION HAIR OIL", "haircare", "_skip_sub_"),
+    ("LOREAL EXCELLENCE CREME 3.16 249", "haircare", "_skip_sub_"),
+    ("COLORBAR CO-EARTH ARGAN HAIR SERUM", "haircare", "_skip_sub_"),
+    ("MINIMALIST HAIR GROWTH ACTIVES 18% HAIR SERUM", "haircare", "_skip_sub_"),
+]
+
+
 ALL_CASES = [
     ("CLEANSERS", CLEANSER_CASES),
     ("EXFOLIATORS", EXFOLIATOR_CASES),
@@ -249,6 +330,7 @@ ALL_CASES = [
     ("COSMETICS NAILS", COSMETICS_NAIL_CASES),
     ("COSMETICS TOOLS", COSMETICS_TOOLS_CASES),
     ("HAIRCARE", HAIRCARE_CASES),
+    ("MASTER LIST", MASTER_LIST_CASES),
 ]
 
 

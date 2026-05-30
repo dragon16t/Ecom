@@ -70,8 +70,25 @@
 ### Jan 2026 — Operator playbook
 - **`/app/PROMPT_FOR_BULK_REIMPORT.md`** — copy-paste prompt template the user gives E1 after every bulk upload. Contains the full taxonomy reference (niches · concerns · categories · subcategories · tags · brand list) + a 7-step routing prompt.
 
+## Feb 2026 — Master-list batch (ULTRA_GRANULAR_MASTER_LIST.xlsx)
+- User provided 9,706-row master list (`ULTRA_GRANULAR_MASTER_LIST.xlsx`).
+- Processed via `backend/scripts/process_master_list.py`:
+  - **De-duplicated to 7,836 unique products** (removed 1,870 dupes by normalised name, kept most-complete row).
+  - Ran every name through `classify_product()` — **85% (6,698) auto-classified** into a granular taxonomy; **14% (1,138)** flagged for `needs_review` (mostly haircare products, perfumes, and obscure brand-line names without keyword match).
+- **Deliverable for the user:** `/app/memory/master_dedup_for_bulk_import.xlsx` — columns: `Brand | Item Name | MRP | Dealer Price | Listing Price | Niche (auto) | Category (auto) | Subcategory (auto) | Source Product Type | Concern (auto) | Needs Review`. Directly compatible with `POST /api/admin/bulk-import/upload`.
+- **Top filled subcategories (after dedup + classify):** Lipstick 1,016 · Nail Polish 794 · Foundation 759 · Liquid Lipstick 354 · Concealer 253 · Blush 220 · Cream Sunscreen 192 · Eye Shadow 189 · Face Wash 182 · Eyeliner 158 · Compact 148 · Kajal 120 · Lip Liner 115 · Lip Gloss 115 · Cream Moisturizer 106 · Highlighters 105 · Mascara 80 · Body Lotion 77 · Lip Crayon 72 · BB/CC Cream 63 · Sheet Mask 58 · Lip Tint 57 · Eyebrow 56 · Loose Powder 53 · Eye Shadow Palette 45 · Toner 43 · Bronzer 31 · …
+- **Classifier additions for this master list (`services/taxonomy_canonical.py`):**
+  - 200+ new keywords across `_DEFINITE_COSMETICS_KW`, `_DEFINITE_SKINCARE_KW`, `_PRIMARY_CAT_KW`, `_CATEGORY_SUBCATEGORY_KW`.
+  - Indian brand-line names (Lakme 9to5, Lakme Peach Milk, Lakme Lumi, Lakme Complexion Care, Lakme Lip Love, Lakme Ultimate Glam, Maybelline Fit Me/Fresh Tint/Baby Lips/SuperStay/Color Sensational/Lifter, Elle 18 Color/Nail Pops, Sugar Matte As Hell/Nothing Else Matters/Arch Arrival, Renee Color Lock/Delulu/HS Plumping, Colorbar Sinful Lip/Take Me/Co-Earth, Forever52 Stopper/Sensational/IM Unlimited/Twinkle Star/Stardust, Plum Body Lovin/Vinyl Sauce, Nykaa NP/Matte Luxe/Glamor Eyes, Kay Beauty Infinte, Estee Lauder Double Wear, Kryolan TV Paint/Cake Make-up, MAC Lustreglass, MAS Master Chrome, Bioderma/Banila/COSRX/Innisfree…).
+  - Indian-marketplace abbreviations (`sunscrn`, `crm moisture`, `creme moistrsr`, `cnclr`, `fdtn`, `fdt mat`, `pwd mat+pore`, `lipstk`, `lpstk`, `lipstic`, `lipstcik`, `lpstk`, `clnsr`, `clenser`, `nailpolish`, `nail enam`, `nail laquer`, ` np ` …).
+  - Lip line typos (`lipsitick`, `lipstcik`, `lipstk`).
+  - Removed `9to5` from `_DEFINITE_COSMETICS_KW` because Lakme uses 9to5 in both makeup AND skincare lines — was wrongly forcing skincare items to cosmetics.
+  - Narrowed `_HAIRCARE_KW` further (added L'Oréal Excellence/Casting, Colorbar Co-Earth lines).
+- **Regression suite:** `backend/tests/test_taxonomy_classifier.py` extended to **186 cases (122 synthetic + 65 real from master list) — 100% pass.**
+
 ## Backlog
-- **P0:** Send the ~9.7k product CSV/Excel — current DB has 7,863; new import will auto-classify + auto-cleanup on the way in.
+- **P0:** User to redeploy + run `POST /api/admin/taxonomy/reset-canonical` on production to re-seed categories with `is_parent=True` for skincare and to re-classify all 7,863 production products using the new keyword set.
+- **P0:** Upload `master_dedup_for_bulk_import.xlsx` to production via `POST /api/admin/bulk-import/upload` (it brings ~7,800 new SKUs the production DB doesn't yet have).
 - **P1:** Frontend — render Featured Nav strip + 3 Promo Sections on `/cosmetics`. Backend ready; UI not yet wired.
 - **P1:** Hook reclassifier into `bulk_import_service` so future imports auto-classify on insert.
 - **P2:** Razorpay / Cloudinary / SendGrid / Delhivery / WhatsApp API keys.
