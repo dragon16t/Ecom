@@ -1324,6 +1324,13 @@ def classify_product(name: str, description: str = "", brand: str = "",
         # No keyword matched. Leave category as NULL so unmatched products
         # don't pollute a fallback bucket. They'll be browsable via the niche
         # filter ("All cosmetics") and admin can curate them via `needs_review`.
+        # FLAGSHIP GUARD still applies — non-Celesta-Glow products must not
+        # land in the anti-aging niche.
+        _brand_lc = (brand or "").lower()
+        _name_lc = (name or "").lower()
+        _is_celesta = "celesta glow" in _brand_lc or "celesta glow" in _name_lc
+        if niche == "anti-aging" and not _is_celesta:
+            niche = "skincare"
         return {
             "niche": niche,
             "category": None,
@@ -1396,9 +1403,24 @@ def classify_product(name: str, description: str = "", brand: str = "",
         scored.sort(reverse=True)
         concerns = [s for _, s in scored[:3]]
 
+    # 5. FLAGSHIP NICHE GUARD — anti-aging is reserved for Celesta Glow only.
+    # If any other brand winds up here (e.g. via current_niche carry-over or
+    # cosmetics-fallback path), demote to skincare + anti-aging-products cat.
+    brand_text = (brand or "").lower()
+    name_text = (name or "").lower()
+    is_celesta = "celesta glow" in brand_text or "celesta glow" in name_text
+    if niche == "anti-aging" and not is_celesta:
+        niche = "skincare"
+        # Snap to a sensible skincare category for the affected products.
+        if not best_cat or best_cat["slug"] not in [c["slug"] for c in SKINCARE_CATEGORIES]:
+            best_cat = next(
+                (c for c in SKINCARE_CATEGORIES if c["slug"] == "anti-aging-products"),
+                best_cat,
+            )
+
     return {
         "niche": niche,
-        "category": best_cat["slug"],
+        "category": best_cat["slug"] if best_cat else None,
         "subcategory": best_sub_slug,
         "concerns": concerns,
         "unclassified": unclassified,
@@ -1657,11 +1679,27 @@ async def reclassify_all_products(db, batch_log: int = 500) -> dict:
             brand=prod.get("brand") or "",
             current_niche=prod.get("niche"),
         )
-        # Preserve flagship anti-aging niche ONLY for Celesta Glow products
-        # that already had it AND the classifier didn't detect haircare/cosmetics.
-        if (prod.get("niche") == "anti-aging" and result["niche"] == "skincare"
-                and "celesta glow" in (prod.get("name") or "").lower()):
+        # FLAGSHIP GUARD — the "anti-aging" niche is RESERVED for Celesta Glow
+        # AND only for the SKUs the admin originally placed there. We do NOT
+        # auto-promote every CG product into anti-aging; that would lump
+        # cleansers, sunscreens, toners etc. into the flagship hub. Rule:
+        #   - If product WAS already niche=anti-aging AND brand is Celesta
+        #     Glow → keep it there (preserve admin curation).
+        #   - Any other product currently sitting in anti-aging that is NOT
+        #     Celesta Glow → demote to skincare (no foreign brands allowed).
+        brand_text = (prod.get("brand") or "").lower()
+        name_text = (prod.get("name") or "").lower()
+        is_celesta = "celesta glow" in brand_text or "celesta glow" in name_text
+        was_anti_aging = prod.get("niche") == "anti-aging"
+        if was_anti_aging and is_celesta:
+            # Preserve admin's anti-aging curation for this Celesta SKU.
             result["niche"] = "anti-aging"
+        elif result["niche"] == "anti-aging" and not is_celesta:
+            # Defensive — classifier should not pick anti-aging for non-CG,
+            # but if it ever does, demote.
+            result["niche"] = "skincare"
+            if not result.get("category"):
+                result["category"] = "anti-aging-products"
 
         upd = {
             "niche": result["niche"],

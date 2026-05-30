@@ -86,6 +86,14 @@
   - Narrowed `_HAIRCARE_KW` further (added L'Oréal Excellence/Casting, Colorbar Co-Earth lines).
 - **Regression suite:** `backend/tests/test_taxonomy_classifier.py` extended to **186 cases (122 synthetic + 65 real from master list) — 100% pass.**
 
+## Feb 2026 — Flagship niche guard (anti-aging = Celesta Glow only)
+- **Rule:** `niche=anti-aging` is RESERVED for Celesta Glow products only. No other brand may live there. Other-brand retinol / wrinkle / firming products stay in `niche=skincare` and route to the `anti-aging-products` subcategory.
+- **Classifier (`services/taxonomy_canonical.py`):**
+  - Added end-of-function guard + early-return guard inside `classify_product()` — any product whose `brand` / `name` doesn't contain "Celesta Glow" but lands in `niche=anti-aging` is demoted to `niche=skincare`.
+  - Refined `reclassify_all_products()` to NOT auto-promote every CG product into anti-aging. Rule: keep anti-aging niche ONLY for CG products that the admin already placed there. (Otherwise CG cleansers, sunscreens, lip balms etc. would all get pulled into the flagship hub.)
+- **New endpoint:** `POST /api/admin/taxonomy/enforce-flagship-niche` — one-shot demotion of any foreign-brand product currently sitting in `niche=anti-aging`. Returns `{scanned, demoted, kept_celesta_glow, demoted_sample[]}`. Idempotent.
+- **Local verification:** anti-aging niche has exactly **5 Celesta Glow SKUs** (Advanced Face Serum · Advanced Retinoid Night Cream · Caffeine Under Eye Cream · Gentle Cleanser · SPF 50 PA+++ Sunscreen). Other CG products (Brightening Serum, Niacinamide, Hyaluronic Toner, Body Lotion, …) correctly stayed in `niche=skincare`.
+
 ## Backlog
 - **P0:** User to redeploy + run `POST /api/admin/taxonomy/reset-canonical` on production to re-seed categories with `is_parent=True` for skincare and to re-classify all 7,863 production products using the new keyword set.
 - **P0:** Upload `master_dedup_for_bulk_import.xlsx` to production via `POST /api/admin/bulk-import/upload` (it brings ~7,800 new SKUs the production DB doesn't yet have).

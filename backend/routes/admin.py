@@ -658,3 +658,48 @@ async def admin_dedupe_products(dry_run: bool = False, admin: bool = Depends(ver
     rating) and deactivate the rest. Pass `dry_run=true` to preview only."""
     from services.taxonomy_canonical import dedupe_products
     return await dedupe_products(db, dry_run=dry_run)
+
+
+@router.post("/taxonomy/enforce-flagship-niche")
+async def admin_enforce_flagship_niche(admin: bool = Depends(verify_admin)):
+    """Anti-aging is the flagship Celesta Glow niche. This endpoint ENFORCES
+    that rule on existing data:
+      - Any product currently in `niche=anti-aging` whose brand is NOT
+        'Celesta Glow' is demoted to `niche=skincare` and routed to the
+        `anti-aging-products` category if it doesn't already have one.
+      - Idempotent — safe to re-run any time.
+    Returns: { scanned, demoted, kept, demoted_sample[] }
+    """
+    cur = db.products.find({"niche": "anti-aging"}, {
+        "_id": 0, "slug": 1, "brand": 1, "name": 1, "category": 1
+    })
+    scanned = 0
+    demoted = 0
+    kept = 0
+    sample: list[dict] = []
+    async for prod in cur:
+        scanned += 1
+        brand_text = (prod.get("brand") or "").lower()
+        name_text = (prod.get("name") or "").lower()
+        is_celesta = "celesta glow" in brand_text or "celesta glow" in name_text
+        if is_celesta:
+            kept += 1
+            continue
+        new_cat = prod.get("category") or "anti-aging-products"
+        await db.products.update_one(
+            {"slug": prod["slug"]},
+            {"$set": {"niche": "skincare", "category": new_cat}},
+        )
+        demoted += 1
+        if len(sample) < 25:
+            sample.append({
+                "slug": prod["slug"], "brand": prod.get("brand"),
+                "name": prod.get("name"), "new_category": new_cat,
+            })
+    # Refresh category product_count after the moves.
+    from services.taxonomy_canonical import cleanup_empty_taxonomy
+    cleanup = await cleanup_empty_taxonomy(db)
+    return {
+        "scanned": scanned, "demoted": demoted, "kept_celesta_glow": kept,
+        "demoted_sample": sample, "cleanup": cleanup,
+    }
