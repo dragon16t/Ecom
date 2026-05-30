@@ -368,17 +368,19 @@ function PromoRibbon({ cfg }) {
       data-testid="hub-ribbon"
     >
       <div className="absolute inset-0 opacity-30" style={{ background: 'radial-gradient(circle at 20% 20%, rgba(255,255,255,0.5), transparent 60%), radial-gradient(circle at 80% 80%, rgba(255,255,255,0.3), transparent 50%)' }} />
-      <div className="relative flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <p className="text-[10px] sm:text-xs font-black tracking-[0.32em] uppercase opacity-80 mb-1">LIMITED TIME</p>
-          <p className="text-base sm:text-2xl font-black leading-tight">
-            {cfg.text}{' '}
-            {cfg.code && (
-              <span className="ml-1 px-2.5 py-1 rounded-lg text-sm sm:text-base font-mono font-black bg-white/95 text-stone-900">{cfg.code}</span>
-            )}
+      <div className="relative flex items-center justify-between gap-5 flex-wrap">
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] sm:text-xs font-black tracking-[0.32em] uppercase opacity-80 mb-1.5">LIMITED TIME</p>
+          <p className="text-base sm:text-2xl font-black leading-snug">
+            {cfg.text}
           </p>
+          {cfg.code && (
+            <span className="inline-flex items-center mt-2 px-3 py-1.5 rounded-lg text-sm sm:text-base font-mono font-black bg-white/95 text-stone-900 tracking-wider shadow-sm">
+              {cfg.code}
+            </span>
+          )}
         </div>
-        <span className="inline-flex items-center gap-2 px-5 py-3 rounded-full bg-white text-stone-900 text-xs font-black tracking-wider uppercase shadow-md">
+        <span className="shrink-0 inline-flex items-center gap-2 px-5 py-3 rounded-full bg-white text-stone-900 text-xs font-black tracking-wider uppercase shadow-md">
           {cfg.cta_label || 'Shop now'} <ArrowRight size={14} />
         </span>
       </div>
