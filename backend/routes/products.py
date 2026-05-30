@@ -1126,25 +1126,53 @@ async def validate_cart(data: CartValidateRequest):
     volume_discount_percent = 0
     settings_doc = await db.site_settings.find_one({"_id": "main"}, {"_id": 0})
 
-    # Band Margin Strategy: free shipping ≥₹999, ₹49 delivery below, MOQ ₹300.
-    # Plus: psychological pricing charges shown to customer.
-    #   • Packaging fee: ₹10 always (covers eco-packaging)
-    #   • Taxes & charges: ₹99 if < ₹999, else ₹49 (50% off — incentive to hit ₹999)
-    #   • Delivery: ₹49 if < ₹999, else FREE
-    free_shipping_threshold = float((settings_doc or {}).get("free_shipping_threshold") or 999)
+    # Band Margin Strategy (Feb 2026 — tiered for profitability):
+    #   Delivery fee:
+    #     < ₹1000  → ₹49
+    #     ≥ ₹1000  → ₹39
+    #     ≥ ₹1500  → ₹29
+    #     ≥ ₹2500  → ₹19
+    #   Tax & charges reduction (base ₹99):
+    #     < ₹1000  → 0%  (full ₹99)
+    #     ≥ ₹1000  → 30% off
+    #     ≥ ₹1500  → 35% off
+    #     ≥ ₹2000  → 40% off
+    #     ≥ ₹5000  → 50% off
     delivery_fee_amount = float((settings_doc or {}).get("delivery_fee") or 49)
     tax_charges_full = float((settings_doc or {}).get("tax_charges") or 99)
-    # ₹15 = ₹10 eco packaging + ₹5 platform fee (merged for simpler UI per Jan-2026 spec)
     packaging_fee_amount = float((settings_doc or {}).get("packaging_fee") or 15)
     moq_amount = float((settings_doc or {}).get("moq_amount") or 300)
     pre_ship_total = max(total - volume_discount, 0)
 
-    qualifies_999 = pre_ship_total >= free_shipping_threshold
-    delivery_fee = 0 if qualifies_999 else delivery_fee_amount
-    tax_charges = round(tax_charges_full * 0.5) if qualifies_999 else tax_charges_full
+    # ---- Tiered delivery fee ----
+    if pre_ship_total >= 2500:
+        delivery_fee = 19
+    elif pre_ship_total >= 1500:
+        delivery_fee = 29
+    elif pre_ship_total >= 1000:
+        delivery_fee = 39
+    else:
+        delivery_fee = delivery_fee_amount
+
+    # ---- Tiered tax reduction ----
+    if pre_ship_total >= 5000:
+        tax_reduction_pct = 0.50
+    elif pre_ship_total >= 2000:
+        tax_reduction_pct = 0.40
+    elif pre_ship_total >= 1500:
+        tax_reduction_pct = 0.35
+    elif pre_ship_total >= 1000:
+        tax_reduction_pct = 0.30
+    else:
+        tax_reduction_pct = 0.0
+    tax_charges = round(tax_charges_full * (1 - tax_reduction_pct))
+
+    qualifies_999 = pre_ship_total >= 1000  # any tier discount = unlock badge
+    free_shipping_threshold = 1000  # legacy field; first discount tier
     packaging_fee = packaging_fee_amount if pre_ship_total > 0 else 0
-    # Savings on charges (50% off framing)
-    charges_savings = (delivery_fee_amount + round(tax_charges_full * 0.5)) if qualifies_999 else 0
+    # Savings on charges = (full delivery − tier delivery) + (tax_full − tier tax)
+    charges_savings = (delivery_fee_amount - delivery_fee) + (tax_charges_full - tax_charges) if pre_ship_total >= 1000 else 0
+    tax_reduction_label = f"{int(tax_reduction_pct * 100)}% OFF" if tax_reduction_pct > 0 else None
 
     free_shipping_remaining = max(0, free_shipping_threshold - pre_ship_total)
     moq_remaining = max(0, moq_amount - pre_ship_total) if pre_ship_total > 0 else 0
@@ -1176,6 +1204,28 @@ async def validate_cart(data: CartValidateRequest):
         else:
             gift_card_info = {"error": gc_res.get("message", "Invalid gift card")}
     
+    # Compute next tier hint so the cart UI can say "Spend ₹X more to save ₹Y"
+    next_tier = None
+    tier_thresholds = [
+        (1000, 30, 39),
+        (1500, 35, 29),
+        (2000, 40, 29),
+        (2500, 40, 19),
+        (5000, 50, 19),
+    ]
+    for thr, pct, dlv in tier_thresholds:
+        if pre_ship_total < thr:
+            tier_tax = round(tax_charges_full * (1 - pct / 100))
+            next_tier = {
+                "threshold": thr,
+                "spend_more": int(round(thr - pre_ship_total)),
+                "next_tax_charges": int(tier_tax),
+                "next_delivery_fee": int(dlv),
+                "next_tax_pct_off": pct,
+                "label": f"Spend ₹{int(round(thr - pre_ship_total))} more to unlock {pct}% OFF taxes" + (f" + ₹{dlv} delivery" if dlv != delivery_fee else ""),
+            }
+            break
+
     return {
         "items": validated_items,
         "mrp_total": int(round(mrp_total)),
@@ -1186,8 +1236,11 @@ async def validate_cart(data: CartValidateRequest):
         "cod_premium": int(round(cod_premium)),
         "shipping_fee": int(round(shipping_fee)),
         "delivery_fee": int(round(delivery_fee)),
+        "delivery_fee_original": int(round(delivery_fee_amount)),
         "tax_charges": int(round(tax_charges)),
         "tax_charges_original": int(round(tax_charges_full)),
+        "tax_reduction_label": tax_reduction_label,
+        "tax_reduction_pct": int(tax_reduction_pct * 100),
         "packaging_fee": int(round(packaging_fee)),
         "charges_savings": int(round(charges_savings)),
         "free_shipping_threshold": int(round(free_shipping_threshold)),
@@ -1203,6 +1256,7 @@ async def validate_cart(data: CartValidateRequest):
         "item_count": total_items,
         "prepaid_savings_hint": int(round(cod_premium)),
         "stock_warnings": stock_warnings,
+        "next_tier": next_tier,
     }
 
 

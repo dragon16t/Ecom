@@ -40,6 +40,27 @@ function CartPage() {
     try {
       const res = await axios.post(`${API}/api/cart/validate`, { items: cart.items, coupon_code: couponCodeToUse, gift_card_code: giftCardToUse, payment_method: 'prepaid' });
       setCartData(res.data);
+      // ---- Sync localStorage with server-validated items ----
+      // The server silently drops TBL / inactive / out-of-stock items. If we
+      // leave them in localStorage, the navbar cart badge counts them while
+      // the cart page renders only the server's list — that's the "navbar
+      // shows 3 but cart page shows 4" mismatch users were hitting.
+      try {
+        const serverItems = res.data.items || [];
+        const validKeys = new Set(serverItems.map(si => si.type === 'combo' ? `c:${si.combo_id}` : `p:${si.slug}`));
+        const pruned = cart.items.filter(ci => validKeys.has(ci.combo_id ? `c:${ci.combo_id}` : `p:${ci.product_slug}`));
+        // Mirror server-resolved quantities back so navbar count stays accurate
+        // (e.g. when the server caps qty due to stock).
+        const qtyByKey = {};
+        serverItems.forEach(si => { qtyByKey[si.type === 'combo' ? `c:${si.combo_id}` : `p:${si.slug}`] = si.quantity; });
+        pruned.forEach(pi => {
+          const key = pi.combo_id ? `c:${pi.combo_id}` : `p:${pi.product_slug}`;
+          if (qtyByKey[key] != null) pi.quantity = qtyByKey[key];
+        });
+        if (pruned.length !== cart.items.length || pruned.some((pi, idx) => pi.quantity !== cart.items[idx]?.quantity)) {
+          saveCart({ ...cart, items: pruned });
+        }
+      } catch (_) { /* non-fatal */ }
       // Sync applied gift card state with server validation
       if (res.data.gift_card?.error) {
         setGiftCardError(res.data.gift_card.error);
@@ -180,8 +201,28 @@ function CartPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appliedCoupon, cartData?.subtotal]);
 
-  const updateQuantity = (index, delta) => { const cart = getCart(); cart.items[index].quantity = Math.max(1, (cart.items[index].quantity || 1) + delta); saveCart(cart); validateCart(); };
-  const removeItem = (index) => { const cart = getCart(); cart.items.splice(index, 1); saveCart(cart); validateCart(); };
+  const updateQuantity = (index, delta) => {
+    const cart = getCart();
+    cart.items[index].quantity = Math.max(1, (cart.items[index].quantity || 1) + delta);
+    saveCart(cart);
+    // Optimistic UI — mutate the displayed qty + line total instantly so the
+    // input doesn't lag behind the navbar badge while /cart/validate is in flight.
+    setCartData(prev => {
+      if (!prev?.items) return prev;
+      const items = prev.items.map((it, i) => i === index
+        ? { ...it, quantity: cart.items[index].quantity, line_total: (it.price || 0) * cart.items[index].quantity }
+        : it);
+      return { ...prev, items };
+    });
+    validateCart();
+  };
+  const removeItem = (index) => {
+    const cart = getCart();
+    cart.items.splice(index, 1);
+    saveCart(cart);
+    setCartData(prev => prev?.items ? { ...prev, items: prev.items.filter((_, i) => i !== index) } : prev);
+    validateCart();
+  };
   const addUpsellToCart = (slug) => { const cart = getCart(); const e = cart.items.find(i => i.product_slug === slug); if (e) e.quantity += 1; else cart.items.push({ product_slug: slug, quantity: 1 }); saveCart(cart); validateCart(); };
 
   const applyCouponCode = async (code) => {
@@ -307,13 +348,21 @@ function CartPage() {
             )}
 
             {/* Items */}
-            {cartData.items.map((item, index) => (
+            {cartData.items.map((item, index) => {
+              const detailHref = item.type === 'combo' ? null : (item.slug ? `/product/${item.slug}` : null);
+              const ImageWrap = detailHref ? Link : 'div';
+              const imgWrapProps = detailHref ? { to: detailHref, 'data-testid': `cart-item-image-link-${index}` } : {};
+              const TitleWrap = detailHref ? Link : 'div';
+              const titleWrapProps = detailHref ? { to: detailHref, className: 'block hover:text-green-700', 'data-testid': `cart-item-title-link-${index}` } : {};
+              return (
               <div key={index} className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm flex gap-3.5" data-testid={`cart-item-${index}`}>
-                <div className="w-16 h-16 sm:w-20 sm:h-20 bg-stone-50 rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden">
+                <ImageWrap {...imgWrapProps} className="w-16 h-16 sm:w-20 sm:h-20 bg-stone-50 rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden">
                   {item.image ? <img src={item.image} alt="" className="w-14 h-14 sm:w-16 sm:h-16 object-contain" /> : <Package size={20} className="text-green-300" />}
-                </div>
+                </ImageWrap>
                 <div className="flex-1 min-w-0">
-                  <h3 className="font-bold text-gray-900 text-sm leading-tight">{item.type === 'combo' ? item.name : item.short_name || item.name}</h3>
+                  <TitleWrap {...titleWrapProps}>
+                    <h3 className="font-bold text-gray-900 text-sm leading-tight">{item.type === 'combo' ? item.name : item.short_name || item.name}</h3>
+                  </TitleWrap>
                   {item.type === 'combo' && <p className="text-xs text-green-600 font-medium">{item.product_slugs?.length} products included</p>}
                   {item.shade_name && (
                     <p className="text-[11px] text-gray-500 mt-0.5 flex items-center gap-1.5">
@@ -327,16 +376,17 @@ function CartPage() {
                   </div>
                   <div className="flex items-center gap-3 mt-2">
                     <div className="flex items-center border border-gray-200 rounded-lg bg-white shadow-sm">
-                      <button onClick={() => updateQuantity(index, -1)} className="px-2.5 py-1.5 text-gray-400 hover:text-gray-900"><Minus size={14} /></button>
-                      <span className="w-7 text-center text-xs font-bold">{item.quantity}</span>
-                      <button onClick={() => updateQuantity(index, 1)} className="px-2.5 py-1.5 text-gray-400 hover:text-gray-900"><Plus size={14} /></button>
+                      <button onClick={() => updateQuantity(index, -1)} className="px-2.5 py-1.5 text-gray-400 hover:text-gray-900" data-testid={`cart-qty-minus-${index}`}><Minus size={14} /></button>
+                      <span className="w-7 text-center text-xs font-bold" data-testid={`cart-qty-value-${index}`}>{item.quantity}</span>
+                      <button onClick={() => updateQuantity(index, 1)} className="px-2.5 py-1.5 text-gray-400 hover:text-gray-900" data-testid={`cart-qty-plus-${index}`}><Plus size={14} /></button>
                     </div>
-                    <button onClick={() => removeItem(index)} className="text-gray-300 hover:text-red-500 transition-colors"><Trash2 size={14} /></button>
+                    <button onClick={() => removeItem(index)} className="text-gray-300 hover:text-red-500 transition-colors" data-testid={`cart-remove-${index}`}><Trash2 size={14} /></button>
                     <span className="ml-auto font-bold text-gray-900">₹{item.line_total}</span>
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
 
             {/* Bundle Push */}
             {kit && (
@@ -533,13 +583,13 @@ function CartPage() {
                   </div>
                 )}
                 {/* Volume discount removed — no buy-more nudge on the cart summary */}
-                {/* Taxes & charges — psychological pricing with 50% off framing at ₹999 */}
+                {/* Taxes & charges — tiered reduction (Feb 2026) */}
                 {cartData.tax_charges > 0 && (
                   <div className="flex justify-between text-gray-700" data-testid="tax-charges-row">
                     <span className="flex items-center gap-1.5">
                       Taxes &amp; Charges
-                      {cartData.tax_charges_original > cartData.tax_charges && (
-                        <span className="bg-green-100 text-green-700 text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-wider">50% OFF</span>
+                      {cartData.tax_reduction_label && (
+                        <span className="bg-green-100 text-green-700 text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-wider">{cartData.tax_reduction_label}</span>
                       )}
                     </span>
                     <span className="font-medium text-gray-900">
@@ -550,12 +600,15 @@ function CartPage() {
                     </span>
                   </div>
                 )}
-                {/* Delivery */}
+                {/* Delivery — tiered (₹49 → ₹39 → ₹29 → ₹19) */}
                 <div className="flex justify-between text-gray-700">
                   <span>Delivery</span>
-                  {cartData.delivery_fee > 0
-                    ? <span className="font-medium text-orange-600" data-testid="delivery-fee">₹{cartData.delivery_fee}</span>
-                    : <span className="text-green-600 font-medium" data-testid="delivery-free">FREE</span>}
+                  <span className="font-medium text-gray-900" data-testid="delivery-fee">
+                    {cartData.delivery_fee_original > cartData.delivery_fee && cartData.delivery_fee > 0 && (
+                      <span className="text-gray-400 line-through mr-1.5">₹{cartData.delivery_fee_original}</span>
+                    )}
+                    {cartData.delivery_fee > 0 ? <span className="text-orange-600">₹{cartData.delivery_fee}</span> : <span className="text-green-600">FREE</span>}
+                  </span>
                 </div>
                 {/* Eco packaging */}
                 {cartData.packaging_fee > 0 && (
@@ -564,15 +617,15 @@ function CartPage() {
                     <span>₹{cartData.packaging_fee}</span>
                   </div>
                 )}
-                {/* Nudge banner — show only when cart < ₹999 */}
-                {cartData.free_shipping_remaining > 0 && (
-                  <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-lg p-2.5 text-[11px] text-amber-900 leading-snug" data-testid="free-shipping-nudge">
-                    🎁 Add <span className="font-bold">₹{Math.ceil(cartData.free_shipping_remaining)}</span> more to unlock <span className="font-semibold">FREE delivery</span> + <span className="font-semibold">50% OFF taxes</span> — save up to ₹{(cartData.delivery_fee || 0) + Math.round((cartData.tax_charges_original || 0) / 2)}
+                {/* Next-tier upsell nudge — shows for every band so customers always see the next save */}
+                {cartData.next_tier && (
+                  <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-lg p-2.5 text-[11px] text-amber-900 leading-snug" data-testid="next-tier-nudge">
+                    🎁 Add <span className="font-bold">₹{cartData.next_tier.spend_more}</span> more to unlock <span className="font-semibold">{cartData.next_tier.next_tax_pct_off}% OFF taxes</span>{cartData.next_tier.next_delivery_fee < cartData.delivery_fee && (<> + delivery drops to <span className="font-semibold">₹{cartData.next_tier.next_delivery_fee}</span></>)}
                   </div>
                 )}
                 {cartData.charges_savings > 0 && (
                   <div className="bg-green-50 border border-green-200 rounded-lg p-2 text-[11px] text-green-800 leading-snug" data-testid="qualified-banner">
-                    🎉 You unlocked <span className="font-bold">FREE delivery</span> + <span className="font-bold">50% OFF taxes</span> — saving ₹{cartData.charges_savings}!
+                    🎉 You're saving ₹{cartData.charges_savings} on this order — {cartData.tax_reduction_label || 'discounted'} taxes + ₹{cartData.delivery_fee} delivery!
                   </div>
                 )}
                 {cartData.moq_block && (
