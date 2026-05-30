@@ -1736,8 +1736,12 @@ async def reclassify_all_products(db, batch_log: int = 500,
         }
         await db.products.update_one({"slug": prod["slug"]}, {"$set": upd})
         counters["updated"] += 1
-        counters["by_niche"][result["niche"]] = counters["by_niche"].get(result["niche"], 0) + 1
-        counters["by_category"][result["category"]] = counters["by_category"].get(result["category"], 0) + 1
+        # Convert None to a string sentinel so the dict can be persisted in
+        # MongoDB (which rejects None as a document key). Same goes for niche.
+        niche_key = result["niche"] or "__null__"
+        cat_key = result["category"] or "__null__"
+        counters["by_niche"][niche_key] = counters["by_niche"].get(niche_key, 0) + 1
+        counters["by_category"][cat_key] = counters["by_category"].get(cat_key, 0) + 1
         if result["subcategory"]:
             counters["by_subcat"][result["subcategory"]] = counters["by_subcat"].get(result["subcategory"], 0) + 1
         if counters["updated"] % batch_log == 0:

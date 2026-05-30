@@ -658,6 +658,18 @@ async def admin_reset_canonical_start(admin: bool = Depends(verify_admin)):
             classified = await reclassify_all_products(db, job_id=job_id)
             tagged = await compute_product_tags(db)
 
+            def _sanitize_none_keys(o):
+                """Mongo rejects None as a document key. Convert recursively."""
+                if isinstance(o, dict):
+                    return {("__null__" if k is None else str(k)): _sanitize_none_keys(v)
+                            for k, v in o.items()}
+                if isinstance(o, list):
+                    return [_sanitize_none_keys(v) for v in o]
+                return o
+
+            classified = _sanitize_none_keys(classified)
+            tagged = _sanitize_none_keys(tagged)
+
             # Flagship guard sweep (same as enforce-flagship-niche).
             await db.taxonomy_jobs.update_one(
                 {"_id": job_id},
