@@ -3225,6 +3225,15 @@ app.include_router(bulk_import_routes.router)
 app.include_router(master_import_routes.router)
 app.include_router(gift_cards_routes.router)
 
+# P1: Admin Revenue (Feb 2026) — day/month revenue, two-line split (placed vs delivered),
+# Delhivery sync, full-fields export.
+from routes import admin_revenue as _admin_revenue  # noqa: E402
+app.include_router(_admin_revenue.router, prefix="/api")
+
+# P2: Admin brand grouping, brand-wise pricing, public order tracking, user journey
+from routes import admin_brands as _admin_brands  # noqa: E402
+app.include_router(_admin_brands.router, prefix="/api")
+
 # Email service (Gmail → SendGrid auto-failover at 250 emails/day IST)
 from services import email_service as _email_service
 _email_service.set_db(db)

@@ -98,7 +98,13 @@ async def visitor_ping(payload: PingPayload, request: Request):
 
     await _db.visitor_pings.update_one(
         {"session_id": payload.session_id},
-        {"$set": set_doc, "$setOnInsert": on_insert, "$inc": {"ping_count": 1}},
+        {"$set": set_doc,
+         "$setOnInsert": on_insert,
+         "$inc": {"ping_count": 1},
+         "$push": {"recent_pages": {
+             "$each": [{"path": safe_path, "title": safe_title, "at": now.isoformat()}],
+             "$slice": -25,  # keep last 25 page views per session
+         }}},
         upsert=True,
     )
     return {"success": True}

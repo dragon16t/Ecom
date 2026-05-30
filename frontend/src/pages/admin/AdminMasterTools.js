@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { Upload, Layers, Percent, FileDown, RefreshCw, AlertTriangle, CheckCircle, Truck, Edit2, X, Sparkles, Link as LinkIcon, Zap, Shield } from 'lucide-react';
+import { Upload, Layers, Percent, FileDown, RefreshCw, AlertTriangle, CheckCircle, Truck, Edit2, X, Sparkles, Link as LinkIcon, Zap, Shield, TrendingUp, Tag } from 'lucide-react';
 import { getAdminToken } from '../../utils/adminAuth';
 
 const API = process.env.REACT_APP_BACKEND_URL + '/api';
@@ -25,6 +25,8 @@ export default function AdminMasterTools() {
         {[
           { id: 'upload', icon: Upload, label: 'Master Upload' },
           { id: 'canonical', icon: Zap, label: 'Apply Canonical Taxonomy' },
+          { id: 'revenue', icon: TrendingUp, label: 'Revenue & Orders' },
+          { id: 'brands', icon: Tag, label: 'Brand Manager' },
           { id: 'audit', icon: Sparkles, label: 'AI Taxonomy Audit' },
           { id: 'ai-fill', icon: Sparkles, label: 'Bulk AI Fill' },
           { id: 'groups', icon: Layers, label: 'Product Groups' },
@@ -49,6 +51,8 @@ export default function AdminMasterTools() {
 
       {tab === 'upload' && <MasterUploadPanel />}
       {tab === 'canonical' && <CanonicalApplyPanel />}
+      {tab === 'revenue' && <RevenuePanel />}
+      {tab === 'brands' && <BrandManagerPanel />}
       {tab === 'audit' && <AITaxonomyAuditPanel />}
       {tab === 'ai-fill' && <BulkAIFillPanel />}
       {tab === 'groups' && <ProductGroupsPanel />}
@@ -230,6 +234,314 @@ function CanonicalApplyPanel() {
               </ul>
             </details>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// Revenue Panel — Orders Placed vs Delivered Revenue split
+// ============================================================
+function RevenuePanel() {
+  const [period, setPeriod] = useState('month');
+  const [data, setData] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [synBusy, setSynBusy] = useState(false);
+  const [synMsg, setSynMsg] = useState('');
+
+  const load = async () => {
+    setBusy(true); setErr('');
+    try {
+      const { data: d } = await axios.get(
+        `${API}/admin/revenue/summary?period=${period}`,
+        { headers: getAdminAuthHeaders() },
+      );
+      setData(d);
+    } catch (e) {
+      setErr(e?.response?.data?.detail || e?.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [period]);
+
+  const sync = async () => {
+    setSynBusy(true); setSynMsg('');
+    try {
+      const { data: r } = await axios.post(
+        `${API}/admin/revenue/delhivery/sync?limit=200`, {},
+        { headers: getAdminAuthHeaders(), timeout: 120000 },
+      );
+      setSynMsg(`Checked ${r.checked} AWBs, updated ${r.updated} order statuses.`);
+      load();
+    } catch (e) {
+      setSynMsg(`Sync failed: ${e?.response?.data?.detail || e?.message}`);
+    } finally {
+      setSynBusy(false);
+    }
+  };
+
+  const downloadExport = (fmt) => {
+    const url = `${API}/admin/revenue/export-full?fmt=${fmt}`;
+    fetch(url, { headers: getAdminAuthHeaders() }).then(r => r.blob()).then(b => {
+      const u = URL.createObjectURL(b);
+      const a = document.createElement('a');
+      a.href = u; a.download = `celesta-orders-full.${fmt}`;
+      a.click(); URL.revokeObjectURL(u);
+    });
+  };
+
+  const t = data?.totals || {};
+  const series = data?.series || [];
+  return (
+    <div className="space-y-5" data-testid="revenue-panel">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-bold flex items-center gap-2">
+          <TrendingUp size={20} className="text-emerald-600" /> Revenue & Orders
+        </h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={period}
+            onChange={(e) => setPeriod(e.target.value)}
+            data-testid="rev-period-select"
+            className="text-sm px-3 py-2 rounded-lg border border-gray-300"
+          >
+            <option value="today">Today</option>
+            <option value="yesterday">Yesterday</option>
+            <option value="week">Last 7 days</option>
+            <option value="month">This Month</option>
+            <option value="ytd">Year to Date</option>
+            <option value="year">Last 12 months</option>
+          </select>
+          <button onClick={load} disabled={busy}
+            data-testid="rev-refresh-btn"
+            className="text-sm px-3 py-2 rounded-lg border border-gray-300 hover:bg-gray-50">
+            {busy ? <RefreshCw size={14} className="animate-spin"/> : 'Refresh'}
+          </button>
+          <button onClick={sync} disabled={synBusy}
+            data-testid="rev-sync-btn"
+            className="text-sm px-3 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
+            {synBusy ? 'Syncing…' : 'Sync Delhivery Statuses'}
+          </button>
+          <button onClick={() => downloadExport('xlsx')}
+            data-testid="rev-export-xlsx-btn"
+            className="text-sm px-3 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700">
+            Export XLSX
+          </button>
+        </div>
+      </div>
+
+      {synMsg && <div className="text-xs text-gray-700">{synMsg}</div>}
+      {err && <div className="text-sm text-red-700">{err}</div>}
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Stat label="Orders Placed" value={t.orders_placed ?? 0} />
+        <Stat label="Placed Revenue (₹)" value={t.placed_revenue ?? 0} />
+        <Stat label="Orders Delivered" value={t.orders_delivered ?? 0} />
+        <Stat label="Delivered Revenue (₹)" value={t.delivered_revenue ?? 0} />
+        <Stat label="Placed AOV (₹)" value={t.placed_aov ?? 0} />
+        <Stat label="Delivered AOV (₹)" value={t.delivered_aov ?? 0} />
+        <Stat label="Returns" value={t.orders_returned ?? 0} />
+        <Stat label="Returned Value (₹)" value={t.returned_value ?? 0} />
+        <Stat label="COD orders" value={t.cod_count ?? 0} />
+        <Stat label="Prepaid orders" value={t.prepaid_count ?? 0} />
+        <Stat label="Delivery rate" value={`${t.delivery_rate ?? 0}%`} />
+        <Stat label="Window bucket" value={data?.window?.bucket ?? '-'} />
+      </div>
+
+      {series.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-xl p-4">
+          <div className="text-sm font-semibold mb-3 text-gray-700">
+            {data?.window?.bucket === 'month' ? 'Monthly' : 'Daily'} breakdown
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-gray-500">
+                  <th className="py-2 pr-3">Date</th>
+                  <th className="py-2 pr-3 text-right">Placed</th>
+                  <th className="py-2 pr-3 text-right">Placed ₹</th>
+                  <th className="py-2 pr-3 text-right">Delivered</th>
+                  <th className="py-2 pr-3 text-right">Delivered ₹</th>
+                </tr>
+              </thead>
+              <tbody>
+                {series.slice(-30).map(s => (
+                  <tr key={s.label} className="border-t border-gray-100">
+                    <td className="py-1.5 pr-3 font-mono">{s.label}</td>
+                    <td className="py-1.5 pr-3 text-right">{s.orders_placed}</td>
+                    <td className="py-1.5 pr-3 text-right tabular-nums">{s.placed_revenue}</td>
+                    <td className="py-1.5 pr-3 text-right">{s.orders_delivered}</td>
+                    <td className="py-1.5 pr-3 text-right tabular-nums text-emerald-700 font-semibold">{s.delivered_revenue}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// Brand Manager Panel — group by niche, price-bulk per brand
+// ============================================================
+function BrandManagerPanel() {
+  const [data, setData] = useState(null);
+  const [openBrand, setOpenBrand] = useState(null);
+  const [brandPage, setBrandPage] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [priceMode, setPriceMode] = useState('discount_percent');
+  const [priceValue, setPriceValue] = useState('');
+  const [priceMsg, setPriceMsg] = useState('');
+
+  const load = async () => {
+    setBusy(true);
+    try {
+      const { data: d } = await axios.get(
+        `${API}/admin/brands/by-niche`,
+        { headers: getAdminAuthHeaders() },
+      );
+      setData(d);
+    } finally { setBusy(false); }
+  };
+  useEffect(() => { load(); }, []);
+
+  const openBrandPanel = async (brand) => {
+    setOpenBrand(brand); setBrandPage(null); setPriceMsg('');
+    try {
+      const { data: d } = await axios.get(
+        `${API}/admin/brands/${encodeURIComponent(brand)}/products?limit=200`,
+        { headers: getAdminAuthHeaders() },
+      );
+      setBrandPage(d);
+    } catch {}
+  };
+
+  const applyBulkPrice = async (dryRun) => {
+    if (!openBrand || !priceValue) return;
+    setPriceMsg('Applying…');
+    try {
+      const v = parseFloat(priceValue);
+      const params = new URLSearchParams({ [priceMode]: String(v), dry_run: String(!!dryRun) });
+      const { data: r } = await axios.post(
+        `${API}/admin/brands/${encodeURIComponent(openBrand)}/price-bulk?${params}`, {},
+        { headers: getAdminAuthHeaders() },
+      );
+      setPriceMsg(`${dryRun ? 'Would update' : 'Updated'} ${dryRun ? r.would_update : r.updated} products. Sample: ${(r.preview_sample || []).slice(0,3).map(p => `${p.slug}: ${p.old_listing}→${p.new_listing}`).join(' | ')}`);
+      if (!dryRun) openBrandPanel(openBrand);
+    } catch (e) {
+      setPriceMsg('Failed: ' + (e?.response?.data?.detail || e?.message));
+    }
+  };
+
+  return (
+    <div className="space-y-5" data-testid="brand-manager-panel">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-bold flex items-center gap-2">
+          <Tag size={20} className="text-purple-600" /> Brand Manager — by Niche
+        </h2>
+        <button onClick={load} disabled={busy} className="text-sm px-3 py-2 rounded-lg border border-gray-300 hover:bg-gray-50">
+          {busy ? <RefreshCw size={14} className="animate-spin"/> : 'Refresh'}
+        </button>
+      </div>
+
+      {(data?.niches || []).map(n => (
+        <div key={n.niche} className="bg-white border border-gray-200 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-base font-bold capitalize">{n.niche}</h3>
+            <div className="text-xs text-gray-500">{n.brand_count} brands · {n.total_products} products</div>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+            {n.brands.map(b => (
+              <button
+                key={b.brand}
+                onClick={() => openBrandPanel(b.brand)}
+                data-testid={`brand-${b.brand}`}
+                className="text-left p-3 rounded-lg border border-gray-200 hover:border-emerald-400 hover:bg-emerald-50/30 transition-all"
+              >
+                <div className="font-bold text-sm truncate">{b.brand}</div>
+                <div className="text-xs text-gray-500">{b.count} products · {b.categories.length} cats</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      {openBrand && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setOpenBrand(null)}>
+          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[85vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-4 sticky top-0 bg-white pb-2 border-b">
+              <h3 className="text-lg font-bold">{openBrand}</h3>
+              <button onClick={() => setOpenBrand(null)} className="p-1 hover:bg-gray-100 rounded">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4 space-y-2">
+              <div className="font-semibold text-sm">Bulk price update for this brand</div>
+              <div className="flex flex-wrap items-center gap-2">
+                <select value={priceMode} onChange={(e) => setPriceMode(e.target.value)}
+                  className="text-sm px-3 py-2 rounded-lg border border-gray-300">
+                  <option value="discount_percent">Discount % (off MRP → listing)</option>
+                  <option value="markup_percent">Listing % markup (+ / -)</option>
+                  <option value="set_mrp_multiplier">MRP multiplier (e.g. 1.25)</option>
+                  <option value="fixed_listing_price">Fixed listing price ₹</option>
+                </select>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={priceValue}
+                  onChange={(e) => setPriceValue(e.target.value)}
+                  placeholder="Value"
+                  className="w-32 text-sm px-3 py-2 rounded-lg border border-gray-300"
+                  data-testid="brand-price-input"
+                />
+                <button onClick={() => applyBulkPrice(true)}
+                  data-testid="brand-price-preview"
+                  className="text-sm px-3 py-2 rounded-lg border border-gray-300 hover:bg-gray-50">
+                  Preview
+                </button>
+                <button onClick={() => applyBulkPrice(false)}
+                  data-testid="brand-price-apply"
+                  className="text-sm px-4 py-2 rounded-lg bg-amber-500 text-white font-semibold hover:bg-amber-600">
+                  Apply to all
+                </button>
+              </div>
+              {priceMsg && <div className="text-xs text-gray-700 pt-1">{priceMsg}</div>}
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-gray-50 sticky top-12">
+                  <tr className="text-left text-gray-600">
+                    <th className="py-2 px-2">Name</th>
+                    <th className="py-2 px-2">Category</th>
+                    <th className="py-2 px-2 text-right">MRP</th>
+                    <th className="py-2 px-2 text-right">Listing</th>
+                    <th className="py-2 px-2 text-right">Stock</th>
+                    <th className="py-2 px-2 text-right">Shades</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(brandPage?.items || []).map(p => (
+                    <tr key={p.slug} className="border-t border-gray-100">
+                      <td className="py-1.5 px-2 truncate max-w-xs">{p.name}</td>
+                      <td className="py-1.5 px-2 text-gray-500">{p.subcategory || p.category}</td>
+                      <td className="py-1.5 px-2 text-right tabular-nums">{p.mrp}</td>
+                      <td className="py-1.5 px-2 text-right tabular-nums font-semibold">{p.prepaid_price}</td>
+                      <td className="py-1.5 px-2 text-right tabular-nums">{p.stock_qty}</td>
+                      <td className="py-1.5 px-2 text-right">{(p.shades || []).length || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="text-xs text-gray-500 mt-2">Total {brandPage?.total ?? 0} products</div>
+          </div>
         </div>
       )}
     </div>

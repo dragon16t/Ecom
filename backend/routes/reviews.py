@@ -320,7 +320,8 @@ async def admin_ai_moderate(review_id: str, x_admin_token: str = Header(None, al
                 system_message="You are a cosmetics product review moderator. Output strict JSON only.",
             ).with_model("openai", "gpt-4o-mini")
             resp = await chat.send_message(UserMessage(text=prompt))
-            import re as _re, json as _json
+            import re as _re
+            import json as _json
             m = _re.search(r"\{.*\}", resp, _re.DOTALL)
             if m:
                 parsed = _json.loads(m.group(0))
