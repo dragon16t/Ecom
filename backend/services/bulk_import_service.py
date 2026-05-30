@@ -337,10 +337,36 @@ def _compose_product_doc(row: dict, enriched: dict, scraped: dict, image_info: O
       • Each newly imported product gets a randomized realistic rating (4.3-4.9★)
         and review count (80-450). These are SEED values only; real reviews
         replace these later when customers leave feedback.
+
+    Canonical taxonomy enforcement (Feb 2026):
+      • The LLM step returns coarse niche/category values from a legacy list.
+        We OVERRIDE them by re-running the canonical classifier
+        (services.taxonomy_canonical.classify_product) which uses the same
+        keyword rules as the live hub. This guarantees imported products land
+        on the correct granular sub-tile (Gel Cleanser, Niacinamide Serum,
+        Lip Liner, etc.) and respects the Celesta-Glow flagship niche guard.
     """
+    from services.taxonomy_canonical import classify_product  # local import to avoid circular
+
     name = row["name"].title()
     brand = row["brand"].strip().title()
     slug = _slugify(f"{row['brand']}-{row['name']}")[:120]
+
+    # Re-classify through canonical taxonomy. We pass the LLM's niche as a hint
+    # but let the keyword classifier have final say. Description + scraped
+    # context give the keyword matcher more signal.
+    canon = classify_product(
+        name=name,
+        description=(enriched.get("description") or "") + " " + (scraped.get("title") or ""),
+        brand=brand,
+        current_niche=enriched.get("niche"),
+    )
+    canon_niche = canon["niche"] or enriched.get("niche") or "skincare"
+    canon_category = canon["category"] or ""
+    canon_subcategory = canon["subcategory"] or ""
+    canon_concerns = canon["concerns"] or enriched.get("concerns") or []
+    needs_review = canon.get("unclassified", False)
+
     # ROUND to int — no decimals anywhere in pricing
     mrp = int(round(float(row.get("mrp") or 0)))
     listing = int(round(float(row.get("listing_price") or 0)))
@@ -371,10 +397,12 @@ def _compose_product_doc(row: dict, enriched: dict, scraped: dict, image_info: O
         "short_name": name[:50],
         "tagline": "",
         "description": enriched["description"],
-        "category": enriched["category"],
-        "subcategory": "",
-        "concerns": enriched["concerns"],
-        "niche": enriched["niche"],
+        "category": canon_category,
+        "subcategory": canon_subcategory,
+        "concerns": canon_concerns,
+        "niche": canon_niche,
+        "needs_review": needs_review,
+        "taxonomy_classified_at": now,
         "key_ingredients": enriched["key_ingredients"],
         "ingredients_full": scraped.get("ingredients", "") or enriched["key_ingredients"],
         "benefits": enriched["benefits"],
