@@ -161,15 +161,7 @@ function CircleItem({ item: it, routePrefix, fromColor, toColor, accent, testIdP
         <p className={`text-[10px] sm:text-[11px] md:text-[12px] font-bold leading-tight line-clamp-2 min-h-[28px] ${isActive ? '' : 'text-gray-800 group-hover:text-gray-900'}`} style={isActive ? { color: accent } : undefined}>
           {it.name}
         </p>
-        {/* product_count comes from the concern-page mapper. Shown only when present
-            to keep the strip clean on /skincare & /cosmetics hubs where counts
-            are already shown elsewhere. */}
-        {typeof it.product_count === 'number' && (
-          <p className="text-[9px] sm:text-[10px] font-bold mt-0.5" style={{ color: accent, opacity: 0.85 }}>
-            {it.product_count} {it.product_count === 1 ? 'item' : 'items'}
-          </p>
-        )}
-        {it.tagline && !it.product_count && (
+        {it.tagline && (
           <p className="text-[9px] sm:text-[10px] text-gray-400 line-clamp-1 mt-0.5 hidden sm:block">
             {it.tagline}
           </p>
