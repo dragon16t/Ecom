@@ -4,6 +4,7 @@ import axios from 'axios';
 import { ArrowLeft, Plus, Trash2, Save, Edit, Sparkles, Package, Image as ImageIcon, Layers } from 'lucide-react';
 import { getAdminToken, clearAdminToken } from '../../utils/adminAuth';
 import QuickImageEditor from '../../components/admin/QuickImageEditor';
+import BannerImageDropzone from '../../components/admin/BannerImageDropzone';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -240,28 +241,31 @@ export default function AdminConcerns() {
               })
               .map(c => (
               <div key={c.slug} className="bg-white ring-1 ring-gray-200 rounded-2xl overflow-hidden hover:ring-pink-300 transition-all" data-testid={`concern-card-${c.slug}`}>
-                <div className="aspect-[16/9] relative overflow-hidden" style={{ background: `linear-gradient(135deg, ${c.accent_from} 0%, ${c.accent_to} 100%)` }}>
-                  {c.image && <img src={c.image} alt={c.name} className="absolute inset-0 w-full h-full object-cover opacity-70" />}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
-                  <div className="absolute top-2 left-2 bg-white/90 backdrop-blur w-8 h-8 rounded-full flex items-center justify-center text-base">{c.icon}</div>
-                  <div className="absolute bottom-2 left-3 right-3">
-                    <h3 className="text-white font-black text-base leading-tight">{c.name}</h3>
-                    <p className="text-[11px] text-white/80 line-clamp-1">{c.tagline}</p>
-                  </div>
-                  <div className="absolute top-2 right-2 flex gap-1">
+                <BannerImageDropzone
+                  currentImage={c.image}
+                  resourceType="concern"
+                  slug={c.slug}
+                  token={token}
+                  onUpdated={() => load()}
+                  gradient={`linear-gradient(135deg, ${c.accent_from || '#dcfce7'} 0%, ${c.accent_to || '#bbf7d0'} 100%)`}
+                  alt={c.name}
+                  className="aspect-[16/9]"
+                >
+                  {c.image && <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />}
+                  <div className="absolute top-2 left-2 bg-white/90 backdrop-blur w-8 h-8 rounded-full flex items-center justify-center text-base z-10">{c.icon}</div>
+                  {c.image && (
+                    <div className="absolute bottom-2 left-3 right-16 z-10">
+                      <h3 className="text-white font-black text-base leading-tight">{c.name}</h3>
+                      <p className="text-[11px] text-white/80 line-clamp-1">{c.tagline}</p>
+                    </div>
+                  )}
+                  <div className="absolute top-2 right-2 flex gap-1 z-10">
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${c.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-600'}`}>{c.is_active ? 'Active' : 'Off'}</span>
                   </div>
-                </div>
+                </BannerImageDropzone>
                 <div className="p-3 flex items-center justify-between">
                   <span className="text-[11px] text-gray-500 font-mono truncate">/{c.slug}</span>
                   <div className="flex gap-1 items-center">
-                    <QuickImageEditor
-                      currentImage={c.image}
-                      resourceType="concern"
-                      slug={c.slug}
-                      token={token}
-                      onUpdated={() => load()}
-                    />
                     <button onClick={() => setEditing({ type: 'concern', data: { ...c }, isNew: false })} className="text-blue-600 hover:bg-blue-50 p-1.5 rounded" data-testid={`edit-concern-${c.slug}`}>
                       <Edit size={14} />
                     </button>
@@ -294,13 +298,20 @@ export default function AdminConcerns() {
               return tab === 'cosmetics' ? n === 'cosmetics' : n === 'skincare';
             }).map(c => (
               <div key={c.slug} className="bg-white ring-1 ring-gray-200 rounded-2xl overflow-hidden hover:ring-green-300 transition-all" data-testid={`category-card-${c.slug}`}>
-                <div className="aspect-[16/9] relative overflow-hidden bg-gradient-to-br from-green-50 via-white to-stone-50">
-                  {c.image && <img src={c.image} alt={c.name} className="absolute inset-0 w-full h-full object-cover" />}
-                  <div className="absolute top-2 right-2 flex gap-1">
+                <BannerImageDropzone
+                  currentImage={c.image}
+                  resourceType="category"
+                  slug={c.slug}
+                  token={token}
+                  onUpdated={() => load()}
+                  alt={c.name}
+                  className="aspect-[16/9]"
+                >
+                  <div className="absolute top-2 right-2 flex gap-1 z-10">
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${(c.niche || c.group) === 'cosmetics' ? 'bg-rose-100 text-rose-800' : 'bg-green-100 text-green-800'}`}>{c.niche || c.group}</span>
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${c.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-600'}`}>{c.is_active ? 'Active' : 'Off'}</span>
                   </div>
-                </div>
+                </BannerImageDropzone>
                 <div className="p-3.5">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-xl">{c.icon}</span>
@@ -310,13 +321,6 @@ export default function AdminConcerns() {
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] text-gray-500 font-mono truncate">/{c.slug}</span>
                     <div className="flex gap-1 items-center">
-                      <QuickImageEditor
-                        currentImage={c.image}
-                        resourceType="category"
-                        slug={c.slug}
-                        token={token}
-                        onUpdated={() => load()}
-                      />
                       <button onClick={() => setEditing({ type: 'category', data: { ...c }, isNew: false })} className="text-blue-600 hover:bg-blue-50 p-1.5 rounded" data-testid={`edit-category-${c.slug}`}>
                         <Edit size={14} />
                       </button>
@@ -399,13 +403,21 @@ export default function AdminConcerns() {
                   const parent = categories.find(c => c.slug === s.parent_category);
                   return (
                     <div key={s.slug} className="bg-white ring-1 ring-stone-200 rounded-2xl overflow-hidden hover:ring-green-300 transition-all" data-testid={`subcategory-card-${s.slug}`}>
-                      <div className="aspect-[16/9] relative overflow-hidden bg-gradient-to-br from-amber-50 via-white to-stone-50">
-                        {s.image && <img src={s.image} alt={s.name} className="absolute inset-0 w-full h-full object-cover" />}
-                        <div className="absolute top-2 right-2 flex gap-1">
+                      <BannerImageDropzone
+                        currentImage={s.image}
+                        resourceType="subcategory"
+                        slug={s.slug}
+                        token={token}
+                        onUpdated={() => load()}
+                        gradient="linear-gradient(135deg, #fef3c7 0%, #fdf2f8 100%)"
+                        alt={s.name}
+                        className="aspect-[16/9]"
+                      >
+                        <div className="absolute top-2 right-2 flex gap-1 z-10">
                           <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${s.niche === 'cosmetics' ? 'bg-rose-100 text-rose-800' : 'bg-green-100 text-green-800'}`}>{s.niche}</span>
                           <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${s.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-600'}`}>{s.is_active ? 'Active' : 'Off'}</span>
                         </div>
-                      </div>
+                      </BannerImageDropzone>
                       <div className="p-3.5">
                         <div className="flex items-center gap-2 mb-1">
                           <span className="text-xl">{s.icon}</span>
@@ -416,13 +428,6 @@ export default function AdminConcerns() {
                         <div className="flex items-center justify-between">
                           <span className="text-[11px] text-gray-500 font-mono truncate">/{s.slug}</span>
                           <div className="flex gap-1 items-center">
-                            <QuickImageEditor
-                              currentImage={s.image}
-                              resourceType="subcategory"
-                              slug={s.slug}
-                              token={token}
-                              onUpdated={() => load()}
-                            />
                             <button onClick={() => setEditing({ type: 'subcategory', data: { ...s }, isNew: false })} className="text-blue-600 hover:bg-blue-50 p-1.5 rounded" data-testid={`edit-subcategory-${s.slug}`}>
                               <Edit size={14} />
                             </button>
