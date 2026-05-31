@@ -209,14 +209,16 @@ export default function ConcernCategoryPage({ mode = 'concern' }) {
       <section className="bg-white border-b border-stone-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-5">
           {(() => {
-            // Branch the "Back to ..." link based on the concern's own niche.
-            // Cosmetic concerns send users back to /cosmetics; everything else
-            // (skincare + anti-aging + categories) defaults to /skincare —
-            // which matches the existing flow.
-            const isCosmetic = (mode === 'concern' && head?.niche === 'cosmetics') || mode === 'category-cosmetics';
+            // Branch the "Back to ..." link based on the page's actual niche.
+            // For BOTH concern and category modes we read `head.niche` (the
+            // canonical taxonomy niche stored on the document). Previously
+            // category mode always fell back to cosmetics → bug when a user
+            // landed on a skincare subcategory like "Chemical Exfoliants".
+            const niche = head?.niche || (mode === 'category-cosmetics' ? 'cosmetics' : 'skincare');
+            const isCosmetic = niche === 'cosmetics';
             const backTo = isCosmetic
               ? { path: '/cosmetics', label: 'Cosmetics' }
-              : (mode === 'concern' ? { path: '/skincare', label: 'Skincare' } : { path: '/cosmetics', label: 'Cosmetics' });
+              : { path: '/skincare', label: 'Skincare' };
             return (
               <Link
                 to={backTo.path}

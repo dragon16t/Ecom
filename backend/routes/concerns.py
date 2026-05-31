@@ -405,6 +405,50 @@ async def update_subcategory(slug: str, data: SubcategoryUpsert, x_admin_token: 
     return {"success": True}
 
 
+class ImagePatch(BaseModel):
+    image: str
+
+
+@router.patch("/admin/subcategories/{slug}/image")
+async def patch_subcategory_image(slug: str, data: ImagePatch, x_admin_token: str = Header(None, alias="X-Admin-Token")):
+    """One-shot image update — bypasses full-doc validation so QuickImageEditor
+    can replace a banner without re-sending every accent colour / tagline / icon.
+    Used by `/admin/concerns` (subcategory cards) and similar quick-edit flows.
+    """
+    verify_admin(x_admin_token)
+    result = await db.subcategories.update_one(
+        {"slug": slug},
+        {"$set": {"image": data.image, "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Subcategory not found")
+    return {"success": True, "image": data.image}
+
+
+@router.patch("/admin/categories/{slug}/image")
+async def patch_category_image(slug: str, data: ImagePatch, x_admin_token: str = Header(None, alias="X-Admin-Token")):
+    verify_admin(x_admin_token)
+    result = await db.categories.update_one(
+        {"slug": slug},
+        {"$set": {"image": data.image, "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Category not found")
+    return {"success": True, "image": data.image}
+
+
+@router.patch("/admin/concerns/{slug}/image")
+async def patch_concern_image(slug: str, data: ImagePatch, x_admin_token: str = Header(None, alias="X-Admin-Token")):
+    verify_admin(x_admin_token)
+    result = await db.concerns.update_one(
+        {"slug": slug},
+        {"$set": {"image": data.image, "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Concern not found")
+    return {"success": True, "image": data.image}
+
+
 @router.delete("/admin/subcategories/{slug}")
 async def delete_subcategory(slug: str, x_admin_token: str = Header(None, alias="X-Admin-Token")):
     verify_admin(x_admin_token)

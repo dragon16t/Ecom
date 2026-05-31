@@ -43,22 +43,35 @@ export default function QuickImageEditor({ currentImage, resourceType, slug, onU
     }
     setBusy(true); setErr(''); setOk(false);
     try {
-      // 1. Upload to Cloudinary via existing endpoint
+      // 1. Upload to Cloudinary (persistent CDN — survives redeploys).
+      //    Fall back to the legacy local-disk uploader if Cloudinary isn't
+      //    configured (503), so the editor still works on dev / first boot.
       const fd = new FormData();
       fd.append('file', file);
-      const up = await axios.post(`${API}/api/admin/upload-image`, fd, auth);
-      const newUrl = up.data?.url;
+      fd.append('folder', `celesta-glow/${resourceType}`);
+      let newUrl = null;
+      try {
+        const up = await axios.post(`${API}/api/admin/cloudinary/upload`, fd, auth);
+        newUrl = up.data?.url || up.data?.secure_url;
+      } catch (e1) {
+        // Fallback to legacy uploader on 503 (Cloudinary not configured)
+        if (e1?.response?.status === 503) {
+          const up2 = await axios.post(`${API}/api/admin/upload-image`, fd, auth);
+          newUrl = up2.data?.url;
+        } else {
+          throw e1;
+        }
+      }
       if (!newUrl) throw new Error('Upload succeeded but no URL returned');
 
-      // 2. Patch only the `image` field on the entity
-      const endpoint = `${API}/api/admin/${resourceType === 'category' ? 'categories' : resourceType === 'subcategory' ? 'subcategories' : 'concerns'}/${slug}`;
-      // Fetch existing record so we can submit the whole object back
-      // (most admin PUT endpoints replace the doc rather than $set a single field)
-      const existing = await axios.get(`${API}/api/admin/${resourceType === 'category' ? 'categories' : resourceType === 'subcategory' ? 'subcategories' : 'concerns'}`, auth);
-      const list = existing.data || [];
-      const me = list.find(x => x.slug === slug);
-      if (!me) throw new Error('Could not locate the record to update');
-      await axios.put(endpoint, { ...me, image: newUrl }, auth);
+      // 2. PATCH only the `image` field. The dedicated /image endpoint bypasses
+      //    full-doc validation so legacy records with null accent colours /
+      //    missing fields still update cleanly. This is the fix for the
+      //    "subcategory image upload failing" bug on production.
+      const resourcePath = resourceType === 'category' ? 'categories'
+        : resourceType === 'subcategory' ? 'subcategories'
+        : 'concerns';
+      await axios.patch(`${API}/api/admin/${resourcePath}/${slug}/image`, { image: newUrl }, auth);
 
       setOk(true);
       onUpdated?.(newUrl);
