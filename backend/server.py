@@ -401,134 +401,59 @@ async def create_order(order_input: OrderCreate):
                 raise HTTPException(status_code=400, detail=f"Out of stock: {prod.get('name', slug)} (only {available} left)")
 
     # ===== SERVER-SIDE AMOUNT RECALCULATION (S1/S2 fix) =====
-    # NEVER trust client-sent amount. Recalculate from authoritative product prices.
-    computed_subtotal = 0.0
-    payment_method_normalised = (order_input.payment_method or "").upper()
-    use_prepaid_price = payment_method_normalised != "COD"
+    # NEVER trust client-sent amount. To guarantee parity with the cart UI math
+    # (tiered delivery + tax bands + coupon + gift card + stock caps), we delegate
+    # the entire calculation to `/api/cart/validate` so the two endpoints can never
+    # drift. Anything that changed in cart/validate is auto-mirrored here.
+    from routes.products import validate_cart as _validate_cart, CartValidateRequest as _CartReq, CartItem as _CartItem
 
+    _cart_items_in: list = []
     for it in (order_input.items or []):
         slug = it.get('slug') or it.get('product_slug')
+        c_id = it.get('combo_id')
         qty = int(it.get('quantity') or 1)
-        if not slug:
-            continue
-        prod = await db.products.find_one(
-            {"slug": slug},
-            {"_id": 0, "prepaid_price": 1, "cod_price": 1, "price": 1, "mrp": 1, "name": 1}
-        )
-        if not prod:
-            continue
-        unit = (prod.get("prepaid_price") if use_prepaid_price else prod.get("cod_price")) or prod.get("price") or prod.get("mrp") or 0
-        computed_subtotal += float(unit) * qty
+        if slug:
+            _cart_items_in.append(_CartItem(product_slug=slug, quantity=qty, shade_id=it.get('shade_id')))
+        elif c_id:
+            _cart_items_in.append(_CartItem(combo_id=c_id, quantity=qty))
+    if order_input.combo_id and not any(getattr(c, 'combo_id', None) == order_input.combo_id for c in _cart_items_in):
+        _cart_items_in.append(_CartItem(combo_id=order_input.combo_id, quantity=1))
 
-    if order_input.combo_id:
-        combo_doc = await db.combos.find_one(
-            {"combo_id": order_input.combo_id},
-            {"_id": 0, "prepaid_price": 1, "cod_price": 1, "price": 1, "mrp": 1}
-        )
-        if combo_doc:
-            combo_unit = (combo_doc.get("prepaid_price") if use_prepaid_price else combo_doc.get("cod_price")) or combo_doc.get("price") or combo_doc.get("mrp") or 0
-            computed_subtotal += float(combo_unit)
+    cart_calc = await _validate_cart(_CartReq(
+        items=_cart_items_in,
+        coupon_code=order_input.coupon_code,
+        gift_card_code=order_input.gift_card_code,
+        payment_method=(order_input.payment_method or "prepaid"),
+    ))
 
-    # Validate + recalculate coupon discount server-side
-    server_coupon_discount = 0.0
-    server_coupon_code = None
-    if order_input.coupon_code:
-        coupon = await db.coupons.find_one(
-            {"code": order_input.coupon_code.upper(), "is_active": True},
-            {"_id": 0}
-        )
-        if coupon:
-            # expiry + max-uses + min-order all enforced server-side
-            now_dt = datetime.now(timezone.utc)
-            expired = False
-            if coupon.get("expiry_date"):
-                try:
-                    if datetime.fromisoformat(coupon["expiry_date"]) < now_dt:
-                        expired = True
-                except Exception:
-                    pass
-            exhausted = bool(coupon.get("max_uses") and coupon.get("used_count", 0) >= coupon["max_uses"])
-            meets_min = computed_subtotal >= coupon.get("min_order_amount", 0)
-            if not expired and not exhausted and meets_min:
-                if coupon.get("discount_type") == "percentage":
-                    server_coupon_discount = round(computed_subtotal * coupon["discount_value"] / 100, 2)
-                else:
-                    server_coupon_discount = float(coupon["discount_value"])
-                server_coupon_code = order_input.coupon_code.upper()
-
-    # Validate + recalculate referral discount server-side
-    server_referral_discount = 0.0
-    if order_input.referral_code:
-        ref = await db.referrals.find_one({"referral_code": order_input.referral_code}, {"_id": 0}) if hasattr(db, 'referrals') else None
-        try:
-            ref = await db.referrals.find_one({"referral_code": order_input.referral_code}, {"_id": 0})
-        except Exception:
-            ref = None
-        if ref:
-            # ₹50 friend discount on referred orders (matches client-side default)
-            server_referral_discount = min(float(order_input.referral_discount or 50), 50.0)
-
-    server_amount_before_shipping = max(0.0, computed_subtotal - server_coupon_discount - server_referral_discount)
-    # Band Margin Pricing — TIERED (Feb 2026). Must match cart/validate exactly,
-    # otherwise checkout fails with "Amount mismatch".
-    #   Delivery: <₹1000 → ₹49, ≥₹1000 → ₹39, ≥₹1500 → ₹29, ≥₹2500 → ₹19
-    #   Tax (base ₹99): 0% / 30% / 35% / 40% / 50% off at ₹1000/1500/2000/5000
-    #   Packaging: ₹15 (eco + platform combined)
-    #   MOQ: ₹300
-    if server_amount_before_shipping > 0 and server_amount_before_shipping < 300:
+    # MOQ enforcement (cart/validate only flags; we hard-block at checkout)
+    if cart_calc.get("moq_block"):
+        moq_amt = cart_calc.get("moq_amount", 300)
         raise HTTPException(
             status_code=400,
-            detail=f"Minimum order amount is ₹300. Add more items to your cart. (current: ₹{server_amount_before_shipping:.0f})"
+            detail=f"Minimum order amount is ₹{moq_amt}. Add more items to your cart."
         )
-    if server_amount_before_shipping >= 2500:
-        server_delivery_fee = 19.0
-    elif server_amount_before_shipping >= 1500:
-        server_delivery_fee = 29.0
-    elif server_amount_before_shipping >= 1000:
-        server_delivery_fee = 39.0
-    elif server_amount_before_shipping > 0:
-        server_delivery_fee = 49.0
-    else:
-        server_delivery_fee = 0.0
+    # If gift card was sent but rejected by cart_validate, fail loudly
+    gc_info = cart_calc.get("gift_card") or {}
+    if order_input.gift_card_code and gc_info.get("error"):
+        raise HTTPException(status_code=400, detail=f"Gift card: {gc_info.get('error')}")
 
-    tax_full = 99.0
-    if server_amount_before_shipping >= 5000:
-        tax_pct_off = 0.50
-    elif server_amount_before_shipping >= 2000:
-        tax_pct_off = 0.40
-    elif server_amount_before_shipping >= 1500:
-        tax_pct_off = 0.35
-    elif server_amount_before_shipping >= 1000:
-        tax_pct_off = 0.30
-    else:
-        tax_pct_off = 0.0
-    server_tax_charges = round(tax_full * (1 - tax_pct_off)) if server_amount_before_shipping > 0 else 0.0
-
-    server_packaging = 15.0 if server_amount_before_shipping > 0 else 0.0
-    qualifies_999 = server_amount_before_shipping >= 1000  # kept for downstream UI flags
-    server_shipping = server_delivery_fee + server_tax_charges + server_packaging
-    server_total_with_charges = round(server_amount_before_shipping + server_shipping, 2)
-
-    # Server-side gift card redemption (validate + compute discount)
-    server_gift_card_discount = 0.0
-    if order_input.gift_card_code:
-        from services.gift_card_service import GiftCardService
-        gc_svc = GiftCardService(db)
-        gc_res = await gc_svc.validate_for_redemption(order_input.gift_card_code, server_total_with_charges)
-        if gc_res.get("valid"):
-            server_gift_card_discount = float(gc_res["discount"])
-        else:
-            raise HTTPException(status_code=400, detail=f"Gift card: {gc_res.get('message')}")
-
-    server_final_amount = round(max(0, server_total_with_charges - server_gift_card_discount), 2)
+    server_final_amount = float(cart_calc.get("total") or 0)
+    server_coupon_discount = float(cart_calc.get("discount") or 0)
+    server_coupon_code = (order_input.coupon_code or None) if server_coupon_discount > 0 else None
+    server_gift_card_discount = float(cart_calc.get("gift_card_discount") or 0)
+    # Referral discount is informational metadata — cart total does NOT subtract it
+    # (matches cart UI). We record the user's referral_code on the order, but never
+    # alter the amount they pay.
+    server_referral_discount = 0.0
 
     # Reject if client-sent amount differs by more than ₹1 (rounding tolerance)
     client_amount = float(order_input.amount or 0)
     if abs(client_amount - server_final_amount) > 1.0:
         logging.warning(
             f"[security] amount mismatch — client={client_amount} server={server_final_amount} "
-            f"subtotal={computed_subtotal} coupon_disc={server_coupon_discount} ref_disc={server_referral_discount} "
-            f"shipping={server_shipping} pm={payment_method_normalised}"
+            f"subtotal={cart_calc.get('subtotal')} coupon_disc={server_coupon_discount} "
+            f"shipping_fee={cart_calc.get('shipping_fee')} pm={order_input.payment_method}"
         )
         raise HTTPException(
             status_code=400,

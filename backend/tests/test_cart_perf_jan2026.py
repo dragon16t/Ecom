@@ -154,7 +154,8 @@ class TestCartValidate:
         assert elapsed < 5.0, f"validate took too long: {elapsed:.2f}s"
 
     def test_free_shipping_threshold(self, session, sample_products):
-        # Pick the highest priced product, push qty high enough to cross ₹999
+        # Tiered delivery (Feb 2026): ≥₹1000 → ₹39, ≥₹1500 → ₹29, ≥₹2500 → ₹19.
+        # Confirm crossing ₹1000 brings delivery DOWN from the base ₹49.
         p = max(sample_products, key=lambda x: x.get("prepaid_price") or 0)
         price = p.get("prepaid_price") or 0
         qty_above = max(2, int(1100 / max(price, 1)) + 1)
@@ -163,8 +164,8 @@ class TestCartValidate:
         r = self._validate(session, [{"product_slug": p["slug"], "quantity": qty_above}])
         assert r.status_code == 200
         data = r.json()
-        if data["items"] and data["subtotal"] >= 999:
-            assert data["delivery_fee"] == 0, "Delivery should be free above ₹999"
+        if data["items"] and data["subtotal"] >= 1000:
+            assert data["delivery_fee"] in (19, 29, 39), f"Tiered delivery expected, got {data['delivery_fee']}"
 
     def test_valid_coupon_apr26(self, session, sample_products):
         items = [{"product_slug": p["slug"], "quantity": 1} for p in sample_products[:3]]

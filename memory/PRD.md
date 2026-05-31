@@ -171,4 +171,12 @@ Target: handle 1,000-2,000 concurrent users on production with zero "Not Availab
   - Enable "always-on" / minimum 1 replica on production (Emergent deploy setting)
   - Move MongoDB to Atlas (env var change in prod settings)
 
+## Feb 2026 — Checkout Amount Mismatch Fix (P0)
+- **Bug:** `/api/orders` (`create_order` in `server.py`) was rejecting valid carts with `Amount mismatch — server: ₹X, sent: ₹Y` (e.g. ₹8176 vs ₹7576, exact ₹600 drift on a 6-item COD cart).
+- **Root cause:** `create_order` recalculated prices per-item with `cod_price` when `payment_method == "cod"`, but `/api/cart/validate` uses **`prepaid_price` uniformly** (the new band-margin model has no per-item COD premium). With a ₹100 COD premium × 6 items the totals drifted ₹600. Combo had a second bug: server looked for `prepaid_price`, but the actual field is `combo_prepaid_price`.
+- **Fix:** `create_order` now delegates the entire pricing calculation to the same `validate_cart()` function used by the cart UI. Two functions can no longer drift, regardless of future tier / coupon / packaging changes.
+- **Referral handling:** Removed referral_discount subtraction from the amount comparison — the cart UI never subtracts it from `total`, so neither does the server. Referral code is still recorded on the order for attribution.
+- **MOQ + gift-card errors** are now re-raised from `cart_validate`'s flags (gift-card validation also runs once, not twice).
+- **Tests:** `backend/tests/test_checkout_amount_parity_feb2026.py` (6 cases: prepaid/COD parity, multi-item COD, tamper rejection, ±₹1 rounding tolerance, tiered delivery at ₹2500). All cart pytests now 36/36 pass.
+
 ## New admin endpoints (require X-Admin-Token)
