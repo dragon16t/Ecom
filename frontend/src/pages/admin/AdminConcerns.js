@@ -206,7 +206,7 @@ export default function AdminConcerns() {
             className="bg-green-600 hover:bg-green-700 text-white text-xs font-bold px-3.5 py-2 rounded-lg flex items-center gap-1.5"
             data-testid="add-new-btn"
           >
-            <Plus size={14} /> Add {tab === 'concerns' ? 'skincare concern' : tab === 'cosmetic-concerns' ? 'cosmetic concern' : tab === 'subcategories' ? 'subcategory' : tab === 'cosmetics' ? 'cosmetic category' : 'skincare category'}
+            <Plus size={14} /> Add {tab === 'concerns' ? 'skincare concern' : tab === 'cosmetic-concerns' ? 'cosmetic concern' : tab === 'subcategories' ? 'subcategory' : tab === 'cosmetics' ? 'cosmetic product type' : 'skincare product type'}
           </button>
         </div>
         {/* Tabs */}
@@ -214,8 +214,8 @@ export default function AdminConcerns() {
           {[
             { id: 'concerns', label: `Skincare Concerns (${concerns.filter(c => (c.niche || 'skincare') === 'skincare' || (c.niche || 'skincare') === 'anti-aging').length})`, icon: Sparkles },
             { id: 'cosmetic-concerns', label: `💄 Cosmetic Concerns (${concerns.filter(c => c.niche === 'cosmetics').length})`, icon: Sparkles },
-            { id: 'skincare', label: `Skincare Categories (${categories.filter(c => (c.niche || c.group) === 'skincare').length})`, icon: Package },
-            { id: 'cosmetics', label: `💄 Cosmetics Categories (${categories.filter(c => (c.niche || c.group) === 'cosmetics').length})`, icon: Package },
+            { id: 'skincare', label: `🧴 Skincare Product Types (${categories.filter(c => (c.niche || c.group) === 'skincare').length})`, icon: Package },
+            { id: 'cosmetics', label: `💄 Cosmetics Product Types (${categories.filter(c => (c.niche || c.group) === 'cosmetics').length})`, icon: Package },
             { id: 'subcategories', label: `Subcategories (${subcategories.length})`, icon: Layers },
           ].map(t => {
             const Icon = t.icon;
@@ -396,50 +396,131 @@ export default function AdminConcerns() {
           </div>
         )}
 
-        {!globalSearch && (tab === 'skincare' || tab === 'cosmetics') && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {categories.filter(c => {
-              // Categorise by niche first (canonical), fall back to legacy `group` field for old data.
-              const n = c.niche || c.group;
-              return tab === 'cosmetics' ? n === 'cosmetics' : n === 'skincare';
-            }).map(c => (
-              <div key={c.slug} className="bg-white ring-1 ring-gray-200 rounded-2xl overflow-hidden hover:ring-green-300 transition-all" data-testid={`category-card-${c.slug}`}>
-                <BannerImageDropzone
-                  currentImage={c.image}
-                  resourceType="category"
-                  slug={c.slug}
-                  token={token}
-                  onUpdated={() => load()}
-                  alt={c.name}
-                  className="aspect-[16/9]"
-                >
-                  <div className="absolute top-2 right-2 flex gap-1 z-10">
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${(c.niche || c.group) === 'cosmetics' ? 'bg-rose-100 text-rose-800' : 'bg-green-100 text-green-800'}`}>{c.niche || c.group}</span>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${c.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-600'}`}>{c.is_active ? 'Active' : 'Off'}</span>
-                  </div>
-                </BannerImageDropzone>
-                <div className="p-3.5">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xl">{c.icon}</span>
-                    <h3 className="font-black text-gray-900 text-sm">{c.name}</h3>
-                  </div>
-                  <p className="text-xs text-gray-500 line-clamp-1 mb-2">{c.tagline}</p>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] text-gray-500 font-mono truncate">/{c.slug}</span>
-                    <div className="flex gap-1 items-center">
-                      <button onClick={() => setEditing({ type: 'category', data: { ...c }, isNew: false })} className="text-blue-600 hover:bg-blue-50 p-1.5 rounded" data-testid={`edit-category-${c.slug}`}>
-                        <Edit size={14} />
-                      </button>
-                      <button onClick={() => remove('category', c.slug)} className="text-red-600 hover:bg-red-50 p-1.5 rounded" data-testid={`delete-category-${c.slug}`}>
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
+        {!globalSearch && (tab === 'skincare' || tab === 'cosmetics') && (() => {
+          // CANONICAL PRODUCT-TYPE GROUPING — mirrors the user-app structure used on
+          // /skincare and /cosmetics hubs so the admin is laid out the same way
+          // customers experience it. Each group is a routine step / cosmetics
+          // family; any product type not in the canonical list lands in "Other"
+          // so nothing is hidden from the admin.
+          const SKINCARE_GROUPS = [
+            { id: 'cleanse-prep', label: '🧼 Cleanse & Prep', desc: 'Step 1 — Wash, exfoliate, tone', slugs: ['cleansers','exfoliators','toners-mists'] },
+            { id: 'treat',        label: '💧 Treat',          desc: 'Step 2 — Active ingredients',     slugs: ['serums-treatments','essences-ampoules','spot-treatments'] },
+            { id: 'moisturize',   label: '🧴 Moisturize',     desc: 'Step 3 — Hydrate and seal',       slugs: ['moisturizers','face-oils','barrier-care'] },
+            { id: 'protect',      label: '☀️ Protect',        desc: 'Step 4 — Sun + environment',      slugs: ['sunscreens'] },
+            { id: 'target',       label: '🎯 Targeted Care',  desc: 'Eye, lip, brightening, anti-aging', slugs: ['eye-care','lip-care','brightening-products','anti-aging-products'] },
+            { id: 'mask-body',    label: '🪞 Masks & Body',   desc: 'Once-a-week + body skincare',     slugs: ['masks-packs','body-skincare'] },
+          ];
+          const COSMETICS_GROUPS = [
+            { id: 'face',  label: '🧑‍🎤 Face',         desc: 'Base + complexion',          slugs: ['face-makeup'] },
+            { id: 'lips',  label: '👄 Lips',           desc: 'Lipstick, gloss, liner, balm', slugs: ['lips'] },
+            { id: 'eyes',  label: '👁️ Eyes',          desc: 'Liner, mascara, shadow, brows',slugs: ['eyes'] },
+            { id: 'nails', label: '💅 Nails',          desc: 'Polish + care',               slugs: ['nails'] },
+            { id: 'tools', label: '🖌️ Tools & Brushes',desc: 'Applicators + tools',         slugs: ['tools-brushes'] },
+            { id: 'kits',  label: '🎁 Makeup Kits',    desc: 'Curated multi-product sets',  slugs: ['makeup-kits'] },
+          ];
+          const groups = tab === 'cosmetics' ? COSMETICS_GROUPS : SKINCARE_GROUPS;
+          const niche = tab === 'cosmetics' ? 'cosmetics' : 'skincare';
+          const allInNiche = categories.filter(c => (c.niche || c.group) === niche);
+          const inCanonical = new Set(groups.flatMap(g => g.slugs));
+          const otherItems = allInNiche.filter(c => !inCanonical.has(c.slug));
+
+          const renderCard = (c) => (
+            <div key={c.slug} className="bg-white ring-1 ring-gray-200 rounded-2xl overflow-hidden hover:ring-green-300 transition-all" data-testid={`category-card-${c.slug}`}>
+              <BannerImageDropzone
+                currentImage={c.image}
+                resourceType="category"
+                slug={c.slug}
+                token={token}
+                onUpdated={() => load()}
+                alt={c.name}
+                className="aspect-[16/9]"
+              >
+                <div className="absolute top-2 right-2 flex gap-1 z-10">
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${c.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-600'}`}>{c.is_active ? 'Active' : 'Off'}</span>
+                </div>
+              </BannerImageDropzone>
+              <div className="p-3.5">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-xl">{c.icon}</span>
+                  <h3 className="font-black text-gray-900 text-sm">{c.name}</h3>
+                </div>
+                <p className="text-xs text-gray-500 line-clamp-1 mb-2">{c.tagline}</p>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-gray-500 font-mono truncate">/{c.slug}</span>
+                  <div className="flex gap-1 items-center">
+                    <button onClick={() => setEditing({ type: 'category', data: { ...c }, isNew: false })} className="text-blue-600 hover:bg-blue-50 p-1.5 rounded" data-testid={`edit-category-${c.slug}`}>
+                      <Edit size={14} />
+                    </button>
+                    <button onClick={() => remove('category', c.slug)} className="text-red-600 hover:bg-red-50 p-1.5 rounded" data-testid={`delete-category-${c.slug}`}>
+                      <Trash2 size={14} />
+                    </button>
                   </div>
                 </div>
               </div>
-            ))}
-          </div>
-        )}
+            </div>
+          );
+
+          return (
+            <div className="space-y-7" data-testid={`product-types-${niche}`}>
+              <div className={`rounded-2xl px-4 py-3 ring-1 ${niche === 'cosmetics' ? 'bg-rose-50 ring-rose-200' : 'bg-emerald-50 ring-emerald-200'}`}>
+                <p className={`text-xs font-black ${niche === 'cosmetics' ? 'text-rose-900' : 'text-emerald-900'}`}>
+                  {niche === 'cosmetics' ? '💄 Cosmetics Product Types' : '🧴 Skincare Product Types'}
+                </p>
+                <p className={`text-[11px] mt-0.5 leading-snug ${niche === 'cosmetics' ? 'text-rose-800' : 'text-emerald-800'}`}>
+                  Grouped exactly the way customers see them on the {niche === 'cosmetics' ? '/cosmetics' : '/skincare'} hub.
+                  Click any banner to upload an image — that image will instantly appear on the storefront tile, concern pages, and category pages.
+                </p>
+              </div>
+              {groups.map(g => {
+                const items = g.slugs
+                  .map(s => allInNiche.find(c => c.slug === s))
+                  .filter(Boolean);
+                const missingFromDb = g.slugs.filter(s => !allInNiche.find(c => c.slug === s));
+                return (
+                  <section key={g.id} data-testid={`group-${g.id}`}>
+                    <div className="flex items-baseline justify-between mb-2.5 px-1">
+                      <div>
+                        <h2 className="text-base font-black text-stone-900">{g.label}</h2>
+                        <p className="text-[11px] text-stone-500">{g.desc}</p>
+                      </div>
+                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-stone-100 text-stone-700">
+                        {items.length}{missingFromDb.length ? ` / ${g.slugs.length}` : ''}
+                      </span>
+                    </div>
+                    {items.length > 0 ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {items.map(renderCard)}
+                      </div>
+                    ) : (
+                      <div className="bg-stone-50 ring-1 ring-stone-200 rounded-2xl p-5 text-center text-xs text-stone-500">
+                        No product types in this group yet.
+                      </div>
+                    )}
+                    {missingFromDb.length > 0 && (
+                      <p className="text-[10px] text-amber-700 mt-1.5 px-1">
+                        ⚠ Missing record(s) for canonical slug(s): <code className="bg-amber-50 px-1 rounded">{missingFromDb.join(', ')}</code> — click "Add {niche === 'cosmetics' ? 'cosmetic product type' : 'skincare product type'}" to create.
+                      </p>
+                    )}
+                  </section>
+                );
+              })}
+              {otherItems.length > 0 && (
+                <section data-testid="group-other">
+                  <div className="flex items-baseline justify-between mb-2.5 px-1">
+                    <div>
+                      <h2 className="text-base font-black text-stone-900">📦 Other</h2>
+                      <p className="text-[11px] text-stone-500">Product types not in the canonical groups above. Re-classify or delete from full edit form.</p>
+                    </div>
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">{otherItems.length}</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {otherItems.map(renderCard)}
+                  </div>
+                </section>
+              )}
+            </div>
+          );
+        })()}
 
         {!globalSearch && tab === 'subcategories' && (
           <div className="space-y-4" data-testid="subcategories-tab">
