@@ -85,9 +85,6 @@ function SubcatTile({ subcat, count, accent, testIdPrefix }) {
         />
         {/* Body */}
         <div className="relative h-full flex flex-col justify-end p-3 bg-gradient-to-t from-white/80 via-white/40 to-transparent">
-          <p className="text-[10px] sm:text-[11px] font-bold tracking-[0.18em] uppercase mb-0.5" style={{ color: accent }}>
-            {count != null ? `${count} ${count === 1 ? 'item' : 'items'}` : '\u00a0'}
-          </p>
           <p className="text-sm sm:text-[15px] font-black text-stone-900 leading-snug">{subcat.name}</p>
           <div className="mt-2 inline-flex items-center gap-1 text-[10px] font-bold text-stone-500 group-hover:text-stone-900 transition-colors">
             Shop now <ArrowRight size={11} className="transition-transform group-hover:translate-x-0.5" />

@@ -7,7 +7,7 @@
  */
 import React, { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
-import { Cloud, Loader2, CheckCircle2, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Cloud, Loader2, CheckCircle2, AlertTriangle, RefreshCw, RotateCcw } from 'lucide-react';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -48,6 +48,33 @@ export default function SnapshotBackupWidget({ token }) {
       setTimeout(fetchStatus, 800);
     } catch (e) {
       setError(e?.response?.data?.detail || e?.message || 'Snapshot failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const restoreNow = async () => {
+    if (busy) return;
+    if (!window.confirm(
+      'Restore from the last backup?\n\n' +
+      'This will REPLACE existing taxonomy / catalog / orders / customers etc. with the last snapshot. ' +
+      'Existing records with the same slug/id are overwritten. New records added after the snapshot are kept as-is.\n\n' +
+      'Use this only after a redeploy if data looks wrong, or to recover from an accidental bulk delete.'
+    )) return;
+    setBusy(true); setError(''); setJustSucceeded(false);
+    try {
+      const r = await axios.post(`${API}/api/admin/catalog/backup/restore`, {}, auth);
+      const counts = r.data?.counts || {};
+      const summary = Object.entries(counts)
+        .filter(([, v]) => typeof v === 'number' && v > 0)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join(' · ');
+      alert(`Restore complete!\n\nRestored:\n${summary || '(nothing — snapshot was empty)'}\n\nSnapshot from: ${r.data?.snapshot_created_at || 'unknown'}`);
+      setJustSucceeded(true);
+      setTimeout(() => setJustSucceeded(false), 4000);
+      setTimeout(fetchStatus, 800);
+    } catch (e) {
+      setError(e?.response?.data?.detail || e?.message || 'Restore failed');
     } finally {
       setBusy(false);
     }
@@ -104,9 +131,18 @@ export default function SnapshotBackupWidget({ token }) {
         className="text-xs font-black px-3.5 py-2 rounded-lg bg-stone-900 hover:bg-stone-800 disabled:opacity-60 text-white inline-flex items-center gap-1.5 shadow"
         data-testid="backup-now-button"
       >
-        {busy ? <><Loader2 size={13} className="animate-spin" /> Backing up…</>
+        {busy ? <><Loader2 size={13} className="animate-spin" /> Working…</>
         : justSucceeded ? <><CheckCircle2 size={13} /> Done!</>
         : <><Cloud size={13} /> Backup now</>}
+      </button>
+      <button
+        onClick={restoreNow}
+        disabled={busy || !status?.remote_snapshot_available}
+        title={!status?.remote_snapshot_available ? 'No backup available yet — click Backup now first' : 'Restore data from the last backup'}
+        className="text-xs font-black px-3.5 py-2 rounded-lg bg-white ring-1 ring-stone-300 hover:bg-stone-50 disabled:opacity-50 text-stone-900 inline-flex items-center gap-1.5"
+        data-testid="restore-now-button"
+      >
+        <RotateCcw size={13} /> Restore
       </button>
     </div>
   );
