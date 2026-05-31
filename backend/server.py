@@ -469,20 +469,43 @@ async def create_order(order_input: OrderCreate):
             server_referral_discount = min(float(order_input.referral_discount or 50), 50.0)
 
     server_amount_before_shipping = max(0.0, computed_subtotal - server_coupon_discount - server_referral_discount)
-    # Band Margin Pricing Strategy:
-    #   • MOQ: block carts below ₹300
-    #   • Free delivery ≥ ₹999, else ₹49 delivery
-    #   • Taxes & charges: ₹99 if < ₹999, else ₹49 (50% off)
-    #   • Packaging fee: ₹10 (always when cart > 0)
+    # Band Margin Pricing — TIERED (Feb 2026). Must match cart/validate exactly,
+    # otherwise checkout fails with "Amount mismatch".
+    #   Delivery: <₹1000 → ₹49, ≥₹1000 → ₹39, ≥₹1500 → ₹29, ≥₹2500 → ₹19
+    #   Tax (base ₹99): 0% / 30% / 35% / 40% / 50% off at ₹1000/1500/2000/5000
+    #   Packaging: ₹15 (eco + platform combined)
+    #   MOQ: ₹300
     if server_amount_before_shipping > 0 and server_amount_before_shipping < 300:
         raise HTTPException(
             status_code=400,
             detail=f"Minimum order amount is ₹300. Add more items to your cart. (current: ₹{server_amount_before_shipping:.0f})"
         )
-    qualifies_999 = server_amount_before_shipping >= 999
-    server_delivery_fee = 0.0 if qualifies_999 else 49.0
-    server_tax_charges = 49.0 if qualifies_999 else 99.0
-    server_packaging = 10.0 if server_amount_before_shipping > 0 else 0.0
+    if server_amount_before_shipping >= 2500:
+        server_delivery_fee = 19.0
+    elif server_amount_before_shipping >= 1500:
+        server_delivery_fee = 29.0
+    elif server_amount_before_shipping >= 1000:
+        server_delivery_fee = 39.0
+    elif server_amount_before_shipping > 0:
+        server_delivery_fee = 49.0
+    else:
+        server_delivery_fee = 0.0
+
+    tax_full = 99.0
+    if server_amount_before_shipping >= 5000:
+        tax_pct_off = 0.50
+    elif server_amount_before_shipping >= 2000:
+        tax_pct_off = 0.40
+    elif server_amount_before_shipping >= 1500:
+        tax_pct_off = 0.35
+    elif server_amount_before_shipping >= 1000:
+        tax_pct_off = 0.30
+    else:
+        tax_pct_off = 0.0
+    server_tax_charges = round(tax_full * (1 - tax_pct_off)) if server_amount_before_shipping > 0 else 0.0
+
+    server_packaging = 15.0 if server_amount_before_shipping > 0 else 0.0
+    qualifies_999 = server_amount_before_shipping >= 1000  # kept for downstream UI flags
     server_shipping = server_delivery_fee + server_tax_charges + server_packaging
     server_total_with_charges = round(server_amount_before_shipping + server_shipping, 2)
 
@@ -3204,6 +3227,101 @@ async def delhivery_webhook(request: Request):
 @app.get("/api/health")
 async def health_check():
     return {"ok": True, "ts": datetime.now(timezone.utc).isoformat()}
+
+
+# ---------- Pincode → state/city resolver ----------
+# Used by the checkout form to auto-fill state + city when the user types a
+# 6-digit pincode. Uses the free India Post API with a thin in-memory cache so
+# repeat lookups don't hammer the upstream.
+_pincode_cache: Dict[str, Dict[str, Any]] = {}
+
+@app.get("/api/pincode/{pincode}")
+async def lookup_pincode(pincode: str):
+    pincode = (pincode or "").strip()
+    if not pincode.isdigit() or len(pincode) != 6:
+        raise HTTPException(status_code=400, detail="Pincode must be 6 digits")
+    if pincode in _pincode_cache:
+        return _pincode_cache[pincode]
+    # First try our own MongoDB cache (admins may pre-seed delivery zones)
+    try:
+        doc = await db.pincode_directory.find_one({"pincode": pincode}, {"_id": 0})
+        if doc:
+            _pincode_cache[pincode] = doc
+            return doc
+    except Exception:
+        pass
+    # Fall back to India Post public API
+    try:
+        import requests
+        r = requests.get(f"https://api.postalpincode.in/pincode/{pincode}", timeout=4)
+        data = r.json()
+        if isinstance(data, list) and data and data[0].get("Status") == "Success":
+            offices = data[0].get("PostOffice") or []
+            if offices:
+                po = offices[0]
+                result = {
+                    "pincode": pincode,
+                    "state": po.get("State") or "",
+                    "city": po.get("District") or "",
+                    "district": po.get("District") or "",
+                    "country": po.get("Country") or "India",
+                    "offices_count": len(offices),
+                }
+                _pincode_cache[pincode] = result
+                # Persist so repeat lookups skip the external API even after a redeploy
+                try:
+                    await db.pincode_directory.update_one(
+                        {"pincode": pincode}, {"$set": result}, upsert=True
+                    )
+                except Exception:
+                    pass
+                return result
+    except Exception as exc:
+        logging.warning(f"[pincode] upstream lookup failed for {pincode}: {exc}")
+    # ---- Offline fallback: infer state from the pincode prefix ----
+    # India Post assigns the first 2 digits ("regions") deterministically.
+    # This guarantees the user always gets a state even if the upstream API is
+    # unreachable from inside the pod (firewall, outage, etc.).
+    PIN_PREFIX_STATE = {
+        "11": "Delhi",
+        "12": "Haryana", "13": "Haryana",
+        "14": "Punjab", "15": "Punjab", "16": "Punjab",
+        "17": "Himachal Pradesh",
+        "18": "Jammu & Kashmir", "19": "Jammu & Kashmir",
+        "20": "Uttar Pradesh", "21": "Uttar Pradesh", "22": "Uttar Pradesh",
+        "23": "Uttar Pradesh", "24": "Uttar Pradesh", "25": "Uttar Pradesh",
+        "26": "Uttar Pradesh", "27": "Uttar Pradesh", "28": "Uttar Pradesh",
+        "30": "Rajasthan", "31": "Rajasthan", "32": "Rajasthan",
+        "33": "Rajasthan", "34": "Rajasthan",
+        "36": "Gujarat", "37": "Gujarat", "38": "Gujarat", "39": "Gujarat",
+        "40": "Maharashtra", "41": "Maharashtra", "42": "Maharashtra",
+        "43": "Maharashtra", "44": "Maharashtra",
+        "45": "Madhya Pradesh", "46": "Madhya Pradesh", "47": "Madhya Pradesh",
+        "48": "Madhya Pradesh",
+        "49": "Chhattisgarh",
+        "50": "Andhra Pradesh / Telangana", "51": "Andhra Pradesh / Telangana",
+        "52": "Andhra Pradesh / Telangana", "53": "Andhra Pradesh / Telangana",
+        "56": "Karnataka", "57": "Karnataka", "58": "Karnataka", "59": "Karnataka",
+        "60": "Tamil Nadu", "61": "Tamil Nadu", "62": "Tamil Nadu", "63": "Tamil Nadu", "64": "Tamil Nadu",
+        "67": "Kerala", "68": "Kerala", "69": "Kerala",
+        "70": "West Bengal", "71": "West Bengal", "72": "West Bengal", "73": "West Bengal", "74": "West Bengal",
+        "75": "Odisha", "76": "Odisha", "77": "Odisha",
+        "78": "Assam",
+        "79": "Arunachal / Nagaland / Manipur / Mizoram / Tripura / Meghalaya",
+        "80": "Bihar", "81": "Bihar", "82": "Bihar", "83": "Jharkhand", "84": "Bihar", "85": "Bihar",
+        "90": "Army Postal Service", "91": "Army Postal Service",
+        "92": "Army Postal Service", "93": "Army Postal Service",
+        "94": "Army Postal Service", "95": "Army Postal Service",
+        "96": "Army Postal Service", "97": "Army Postal Service", "98": "Army Postal Service",
+        "60": "Tamil Nadu",
+    }
+    prefix = pincode[:2]
+    state = PIN_PREFIX_STATE.get(prefix)
+    if state:
+        result = {"pincode": pincode, "state": state, "city": "", "country": "India", "source": "prefix"}
+        _pincode_cache[pincode] = result
+        return result
+    raise HTTPException(status_code=404, detail="Pincode not recognised — please enter state/city manually")
 
 
 
