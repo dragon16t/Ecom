@@ -3393,6 +3393,40 @@ async def startup_seed():
             logging.info(f"[catalog_backup] auto-restored taxonomy: {restore_res}")
     except Exception as e:
         logging.warning(f"[catalog_backup] auto-restore skipped: {e}")
+
+    # ---- Daily midnight-IST backup scheduler ----
+    # Replaces the previous per-write 25-second debounce. One backup per day,
+    # plus the manual "Backup now" button in the admin dashboard. IST midnight
+    # = 18:30 UTC. We sleep until that moment, snapshot, then loop.
+    async def _daily_backup_loop():
+        import asyncio
+        from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+        IST = _tz(_td(hours=5, minutes=30))
+        from services import catalog_backup as _cb_local
+        while True:
+            try:
+                now_ist = _dt.now(IST)
+                next_run = now_ist.replace(hour=0, minute=0, second=0, microsecond=0) + _td(days=1)
+                wait_seconds = max(60, (next_run - now_ist).total_seconds())
+                logging.info(f"[catalog_backup] next daily snapshot at {next_run.isoformat()} (in {int(wait_seconds//60)} min)")
+                await asyncio.sleep(wait_seconds)
+                try:
+                    res = await _cb_local.snapshot(db)
+                    logging.info(f"[catalog_backup] daily snapshot OK: {res.get('counts')}")
+                except Exception as exc:
+                    logging.error(f"[catalog_backup] daily snapshot FAILED: {exc}")
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                logging.warning(f"[catalog_backup] scheduler error, retrying in 5 min: {exc}")
+                await asyncio.sleep(300)
+
+    try:
+        import asyncio as _asyncio
+        _asyncio.create_task(_daily_backup_loop())
+        logging.info("[catalog_backup] daily midnight-IST scheduler started")
+    except Exception as e:
+        logging.warning(f"[catalog_backup] could not start scheduler: {e}")
     # Hydrate the central active-admin-hash cache used by EVERY admin verifier.
     # After this, the env-seed password is ONLY accepted if no custom password
     # has been saved yet — closing the security hole where the default password
