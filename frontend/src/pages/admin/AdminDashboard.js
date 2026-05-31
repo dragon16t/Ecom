@@ -12,6 +12,7 @@ import { useOrderNotifications } from '../../utils/orderNotifications';
 import { getAdminToken, clearAdminToken } from '../../utils/adminAuth';
 import DailyOrdersPanel from '../../components/admin/DailyOrdersPanel';
 import DashboardSummaryPanel from '../../components/admin/DashboardSummaryPanel';
+import SnapshotBackupWidget from '../../components/admin/SnapshotBackupWidget';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -416,6 +417,11 @@ function AdminDashboard() {
 
           {/* Daily Orders / Revenue panel — top of dashboard */}
           <DailyOrdersPanel />
+
+          {/* Snapshot backup status + manual trigger — shown right at the top so
+              admins can verify "data safely backed up" before clicking redeploy
+              on Emergent. */}
+          <SnapshotBackupWidget token={adminToken} />
 
           {/* NEW: 4-KPI top row + action items + 30d chart + activity feed */}
           <DashboardSummaryPanel />
