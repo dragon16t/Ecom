@@ -413,27 +413,34 @@ class ImagePatch(BaseModel):
 async def patch_subcategory_image(slug: str, data: ImagePatch, x_admin_token: str = Header(None, alias="X-Admin-Token")):
     """One-shot image update — bypasses full-doc validation so QuickImageEditor
     can replace a banner without re-sending every accent colour / tagline / icon.
-    Used by `/admin/concerns` (subcategory cards) and similar quick-edit flows.
+
+    IMPORTANT: many subcategory slugs ALSO exist as records in the `categories`
+    collection (e.g. `chemical-exfoliant` lives in BOTH because the public hub
+    renders from `categories` while admin curates `subcategories`). We mirror
+    the image to whichever sibling record exists with the same slug so the
+    user-facing hub picks up the update immediately.
     """
     verify_admin(x_admin_token)
-    result = await db.subcategories.update_one(
-        {"slug": slug},
-        {"$set": {"image": data.image, "updated_at": datetime.now(timezone.utc).isoformat()}}
-    )
+    now_iso = datetime.now(timezone.utc).isoformat()
+    update = {"image": data.image, "updated_at": now_iso}
+    result = await db.subcategories.update_one({"slug": slug}, {"$set": update})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Subcategory not found")
+    # Mirror to the categories collection if a same-slug record exists
+    await db.categories.update_one({"slug": slug}, {"$set": update})
     return {"success": True, "image": data.image}
 
 
 @router.patch("/admin/categories/{slug}/image")
 async def patch_category_image(slug: str, data: ImagePatch, x_admin_token: str = Header(None, alias="X-Admin-Token")):
     verify_admin(x_admin_token)
-    result = await db.categories.update_one(
-        {"slug": slug},
-        {"$set": {"image": data.image, "updated_at": datetime.now(timezone.utc).isoformat()}}
-    )
+    now_iso = datetime.now(timezone.utc).isoformat()
+    update = {"image": data.image, "updated_at": now_iso}
+    result = await db.categories.update_one({"slug": slug}, {"$set": update})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Category not found")
+    # Mirror to the subcategories collection if a same-slug record exists
+    await db.subcategories.update_one({"slug": slug}, {"$set": update})
     return {"success": True, "image": data.image}
 
 
