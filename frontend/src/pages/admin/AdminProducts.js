@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Package, Plus, Edit, Trash2, Image as ImageIcon, DollarSign, Eye, EyeOff, Save, X, ChevronDown, Tag, Settings, Layers, Upload, Trash, Clock, Rocket, GripVertical, ArrowUp, ArrowDown, ArrowLeft, LayoutDashboard, Sparkles, Crop } from 'lucide-react';
@@ -640,6 +640,27 @@ function AdminProducts() {
   const [searchTerm, setSearchTerm] = useState('');
   const [analyzerOpen, setAnalyzerOpen] = useState(false);
   const [aiGenerating, setAiGenerating] = useState(false);
+  // Bulk-selection state — used by the "select multiple to delete" checkbox UX.
+  const [selectedSlugs, setSelectedSlugs] = useState(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  // Hoisted filter pipeline so the bulk-action checkbox can `Select all visible`
+  const filteredProducts = useMemo(() => products
+    .filter(p => filterNiche === 'all' || p.niche === filterNiche)
+    .filter(p => {
+      if (filterStatus === 'all') return true;
+      if (filterStatus === 'active') return p.is_active;
+      if (filterStatus === 'inactive') return !p.is_active;
+      if (filterStatus === 'tbl') return p.is_to_be_launched;
+      if (filterStatus === 'live') return !p.is_to_be_launched;
+      if (filterStatus === 'low_stock') return (p.stock_qty ?? 100) <= (p.low_stock_threshold ?? 10);
+      return true;
+    })
+    .filter(p => {
+      if (!searchTerm.trim()) return true;
+      const q = searchTerm.toLowerCase();
+      return (p.name || '').toLowerCase().includes(q) || (p.slug || '').toLowerCase().includes(q);
+    })
+  , [products, filterNiche, filterStatus, searchTerm]);
   const adminToken = sessionStorage.getItem('adminToken');
 
   const headers = { 'X-Admin-Token': adminToken };
@@ -775,6 +796,54 @@ function AdminProducts() {
       await axios.delete(`${API}/admin/products/${slug}`, { headers });
       fetchAll();
     } catch (err) { alert(err.response?.data?.detail || 'Delete failed'); }
+  };
+
+  // ---- Bulk operations ----
+  const toggleSelect = (slug) => {
+    setSelectedSlugs(prev => {
+      const next = new Set(prev);
+      if (next.has(slug)) next.delete(slug); else next.add(slug);
+      return next;
+    });
+  };
+  const selectAllVisible = (slugs, on) => {
+    setSelectedSlugs(prev => {
+      const next = new Set(prev);
+      if (on) slugs.forEach(s => next.add(s));
+      else slugs.forEach(s => next.delete(s));
+      return next;
+    });
+  };
+  const clearSelection = () => setSelectedSlugs(new Set());
+  const bulkDeleteSelected = async () => {
+    if (selectedSlugs.size === 0) return;
+    if (!window.confirm(`Permanently DELETE ${selectedSlugs.size} selected product(s)? This cannot be undone.`)) return;
+    setBulkBusy(true);
+    try {
+      const res = await axios.post(`${API}/admin/products/bulk-delete`, { slugs: Array.from(selectedSlugs) }, { headers });
+      alert(`Deleted ${res.data.deleted}. ${res.data.not_found ? 'Not found: ' + res.data.not_found : ''}`);
+      clearSelection();
+      fetchAll();
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Bulk delete failed');
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+  const bulkDeactivateSelected = async () => {
+    if (selectedSlugs.size === 0) return;
+    if (!window.confirm(`Deactivate ${selectedSlugs.size} product(s)? They will stop showing on the storefront.`)) return;
+    setBulkBusy(true);
+    try {
+      const res = await axios.post(`${API}/admin/products/bulk-update`, { slugs: Array.from(selectedSlugs), patch: { is_active: false } }, { headers });
+      alert(`Deactivated ${res.data.modified}.`);
+      clearSelection();
+      fetchAll();
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Bulk update failed');
+    } finally {
+      setBulkBusy(false);
+    }
   };
 
   const toggleProductActive = async (slug, isActive) => {
@@ -1304,8 +1373,51 @@ function AdminProducts() {
             </div>
           )}
 
+          {/* Bulk-action bar — appears only when ≥1 product is selected via checkbox.
+              Sticky so it stays visible as the admin scrolls through hundreds of products. */}
+          {selectedSlugs.size > 0 && (
+            <div className="sticky top-16 z-30 bg-red-600 text-white rounded-2xl px-4 py-3 flex flex-wrap items-center gap-3 shadow-lg" data-testid="bulk-action-bar">
+              <span className="font-black text-sm" data-testid="bulk-selected-count">
+                {selectedSlugs.size} selected
+              </span>
+              <button
+                onClick={bulkDeactivateSelected}
+                disabled={bulkBusy}
+                className="text-xs font-bold px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 disabled:opacity-60"
+                data-testid="bulk-deactivate"
+              >
+                Deactivate
+              </button>
+              <button
+                onClick={bulkDeleteSelected}
+                disabled={bulkBusy}
+                className="text-xs font-black px-3 py-1.5 rounded-lg bg-white text-red-700 hover:bg-red-50 disabled:opacity-60"
+                data-testid="bulk-delete"
+              >
+                {bulkBusy ? 'Working…' : 'Delete selected'}
+              </button>
+              <button
+                onClick={clearSelection}
+                className="ml-auto text-xs font-bold px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25"
+                data-testid="bulk-clear"
+              >
+                Clear selection
+              </button>
+            </div>
+          )}
+
           {/* Filters bar */}
           <div className="bg-white rounded-2xl border border-gray-200 p-3 flex flex-wrap items-center gap-2" data-testid="products-filter-bar">
+            <label className="flex items-center gap-2 text-xs font-semibold text-gray-600 px-2 cursor-pointer select-none" title="Select all currently filtered products">
+              <input
+                type="checkbox"
+                checked={filteredProducts.length > 0 && filteredProducts.every(p => selectedSlugs.has(p.slug))}
+                onChange={(e) => selectAllVisible(filteredProducts.map(p => p.slug), e.target.checked)}
+                className="w-4 h-4 accent-red-600 cursor-pointer"
+                data-testid="select-all-checkbox"
+              />
+              Select all
+            </label>
             <input
               type="search"
               value={searchTerm}
@@ -1730,6 +1842,15 @@ function AdminProducts() {
               ) : (
                 /* View Mode */
                 <div className="flex items-center gap-4">
+                  <input
+                    type="checkbox"
+                    checked={selectedSlugs.has(product.slug)}
+                    onChange={() => toggleSelect(product.slug)}
+                    className="w-4 h-4 accent-red-600 cursor-pointer flex-shrink-0"
+                    title="Select for bulk actions"
+                    data-testid={`select-${product.slug}`}
+                    onClick={(e) => e.stopPropagation()}
+                  />
                   <div className="text-gray-300 hover:text-gray-500 cursor-grab" title="Drag to reorder" data-testid={`drag-handle-${product.slug}`}>
                     <GripVertical size={18} />
                   </div>

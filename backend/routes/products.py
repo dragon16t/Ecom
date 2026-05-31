@@ -637,6 +637,53 @@ async def delete_product(
     return {"success": True}
 
 
+class BulkDeleteRequest(BaseModel):
+    slugs: List[str]
+
+
+class BulkUpdateRequest(BaseModel):
+    slugs: List[str]
+    patch: Dict[str, Any]
+
+
+@router.post("/admin/products/bulk-delete")
+async def bulk_delete_products(
+    payload: BulkDeleteRequest,
+    x_admin_token: str = Header(None, alias="X-Admin-Token"),
+):
+    """Admin: Hard-delete a batch of products by slug. Cap at 500 per call so
+    a runaway click can never wipe the entire catalog. Returns counts of
+    deleted vs not-found so the UI can confirm what actually changed.
+    """
+    verify_auth(x_admin_token=x_admin_token)
+    slugs = [s for s in (payload.slugs or []) if isinstance(s, str) and s][:500]
+    if not slugs:
+        raise HTTPException(status_code=400, detail="`slugs` cannot be empty")
+    res = await db.products.delete_many({"slug": {"$in": slugs}})
+    return {"deleted": res.deleted_count, "not_found": len(slugs) - res.deleted_count, "requested": len(slugs)}
+
+
+@router.post("/admin/products/bulk-update")
+async def bulk_update_products(
+    payload: BulkUpdateRequest,
+    x_admin_token: str = Header(None, alias="X-Admin-Token"),
+):
+    """Admin: Apply the same patch (e.g. {is_active: False}) to a batch.
+    Whitelisted keys only — protects against accidental mass mutation of
+    fields like `slug`, `price`, etc."""
+    verify_auth(x_admin_token=x_admin_token)
+    slugs = [s for s in (payload.slugs or []) if isinstance(s, str) and s][:500]
+    if not slugs:
+        raise HTTPException(status_code=400, detail="`slugs` cannot be empty")
+    ALLOWED = {"is_active", "is_to_be_launched", "badge", "niche", "category", "subcategory", "stock_qty", "low_stock_threshold"}
+    patch = {k: v for k, v in (payload.patch or {}).items() if k in ALLOWED}
+    if not patch:
+        raise HTTPException(status_code=400, detail="`patch` must contain at least one allowed field: " + ", ".join(sorted(ALLOWED)))
+    patch["updated_at"] = datetime.now(timezone.utc).isoformat()
+    res = await db.products.update_many({"slug": {"$in": slugs}}, {"$set": patch})
+    return {"matched": res.matched_count, "modified": res.modified_count, "requested": len(slugs)}
+
+
 # ==================== SCRAPER ENDPOINTS ====================
 class ScrapeRequest(BaseModel):
     url: str
