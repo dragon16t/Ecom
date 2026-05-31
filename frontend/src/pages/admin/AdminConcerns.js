@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { ArrowLeft, Plus, Trash2, Save, Edit, Sparkles, Package, Image as ImageIcon, Layers } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Save, Edit, Sparkles, Package, Image as ImageIcon, Layers, Search } from 'lucide-react';
 import { getAdminToken, clearAdminToken } from '../../utils/adminAuth';
 import QuickImageEditor from '../../components/admin/QuickImageEditor';
 import BannerImageDropzone from '../../components/admin/BannerImageDropzone';
@@ -38,6 +38,30 @@ export default function AdminConcerns() {
   const [subcategoryFilter, setSubcategoryFilter] = useState(''); // parent slug filter
   const [editing, setEditing] = useState(null); // {type, data}
   const [loading, setLoading] = useState(true);
+  // GLOBAL SEARCH — finds any entity (concern / category / subcategory) across
+  // ALL tabs at once. Resolves the "Sunscreen card is missing" confusion: users
+  // search "sunscreen" → find it in Skincare Categories without needing to know
+  // which tab it lives in. Empty search → falls back to per-tab listing.
+  const [globalSearch, setGlobalSearch] = useState('');
+  const allEntities = useMemo(() => {
+    const tag = (arr, type, label, badgeClass) => (arr || []).map(x => ({ ...x, _type: type, _typeLabel: label, _badgeClass: badgeClass }));
+    return [
+      ...tag(concerns.filter(c => (c.niche || 'skincare') !== 'cosmetics'), 'concern', 'Skincare Concern', 'bg-pink-100 text-pink-800'),
+      ...tag(concerns.filter(c => c.niche === 'cosmetics'), 'concern', 'Cosmetic Concern', 'bg-rose-100 text-rose-800'),
+      ...tag(categories.filter(c => (c.niche || c.group) === 'skincare'), 'category', 'Skincare Category', 'bg-green-100 text-green-800'),
+      ...tag(categories.filter(c => (c.niche || c.group) === 'cosmetics'), 'category', 'Cosmetics Category', 'bg-rose-100 text-rose-800'),
+      ...tag(subcategories, 'subcategory', 'Subcategory', 'bg-amber-100 text-amber-800'),
+    ];
+  }, [concerns, categories, subcategories]);
+  const globalResults = useMemo(() => {
+    const q = globalSearch.trim().toLowerCase();
+    if (!q) return [];
+    return allEntities.filter(e =>
+      (e.name || '').toLowerCase().includes(q) ||
+      (e.slug || '').toLowerCase().includes(q) ||
+      (e.tagline || '').toLowerCase().includes(q)
+    ).slice(0, 60);
+  }, [globalSearch, allEntities]);
 
   const token = getAdminToken();
   const auth = { headers: { 'X-Admin-Token': token } };
@@ -211,7 +235,88 @@ export default function AdminConcerns() {
 
       {/* Body */}
       <div className="max-w-7xl mx-auto px-5 py-8">
+        {/* GLOBAL SEARCH — finds any record across all 5 tabs.
+            Critical UX fix: admins kept missing entities like "Sunscreens" because
+            it lives in Skincare Categories tab, not Subcategories. Now you just
+            type the slug and the right card surfaces with its upload dropzone. */}
+        <div className="mb-5 bg-white ring-2 ring-purple-300 rounded-2xl p-3 flex flex-wrap items-center gap-3" data-testid="admin-global-search">
+          <div className="flex items-center gap-2 flex-1 min-w-[260px]">
+            <Search size={16} className="text-purple-500" />
+            <input
+              type="search"
+              value={globalSearch}
+              onChange={(e) => setGlobalSearch(e.target.value)}
+              placeholder="🔎 Search ANY image card across all tabs — try 'sunscreens', 'chemical exfoliant', 'lipstick'…"
+              className="flex-1 text-sm bg-transparent outline-none font-medium placeholder:font-normal placeholder:text-stone-400"
+              data-testid="admin-global-search-input"
+            />
+            {globalSearch && (
+              <button onClick={() => setGlobalSearch('')} className="text-stone-400 hover:text-stone-700 text-xs font-bold" data-testid="admin-global-search-clear">CLEAR</button>
+            )}
+          </div>
+          <span className="text-[11px] text-stone-500 font-semibold">
+            {globalSearch ? `${globalResults.length} match${globalResults.length === 1 ? '' : 'es'}` : 'or pick a tab below ↓'}
+          </span>
+        </div>
+
+        {/* GLOBAL SEARCH RESULTS — replaces the tab content while searching */}
+        {globalSearch && (
+          <div className="mb-6" data-testid="admin-global-search-results">
+            {globalResults.length === 0 ? (
+              <div className="bg-amber-50 ring-1 ring-amber-200 rounded-2xl p-6 text-center">
+                <p className="text-sm font-black text-amber-900">No matches for "{globalSearch}"</p>
+                <p className="text-[11px] text-amber-800 mt-1">
+                  This slug doesn't exist as a concern, category, or subcategory. Use the green "Add…" button in the right tab to create it,
+                  or check spelling.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {globalResults.map(r => (
+                  <div key={`${r._type}-${r.slug}`} className="bg-white ring-1 ring-stone-200 rounded-2xl overflow-hidden hover:ring-purple-300 transition-all" data-testid={`global-result-${r._type}-${r.slug}`}>
+                    <BannerImageDropzone
+                      currentImage={r.image}
+                      resourceType={r._type}
+                      slug={r.slug}
+                      token={token}
+                      onUpdated={() => load()}
+                      gradient={r._type === 'concern' ? `linear-gradient(135deg, ${r.accent_from || '#fce7f3'} 0%, ${r.accent_to || '#fbcfe8'} 100%)` : 'linear-gradient(135deg, #f5f3ff 0%, #fdf2f8 100%)'}
+                      alt={r.name}
+                      className="aspect-[16/9]"
+                    >
+                      <div className="absolute top-2 left-2 z-10">
+                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${r._badgeClass}`}>{r._typeLabel}</span>
+                      </div>
+                      <div className="absolute top-2 right-2 flex gap-1 z-10">
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${r.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-600'}`}>{r.is_active ? 'Active' : 'Off'}</span>
+                      </div>
+                    </BannerImageDropzone>
+                    <div className="p-3">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        {r.icon && <span className="text-lg">{r.icon}</span>}
+                        <h3 className="font-black text-gray-900 text-sm truncate">{r.name}</h3>
+                      </div>
+                      {r.parent_category && (
+                        <p className="text-[11px] text-amber-700 font-bold mb-1">↳ inside {r.parent_category}</p>
+                      )}
+                      <p className="text-[11px] text-gray-500 font-mono truncate">/{r.slug}</p>
+                      <button
+                        onClick={() => setEditing({ type: r._type, data: { ...r }, isNew: false })}
+                        className="mt-2 text-[11px] font-bold text-blue-600 hover:underline"
+                        data-testid={`global-result-edit-${r._type}-${r.slug}`}
+                      >
+                        Open full edit ↗
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Quick-image-edit explainer + sale-badge shortcut */}
+        {!globalSearch && (
         <div className="mb-5 grid grid-cols-1 md:grid-cols-2 gap-3" data-testid="admin-concerns-helper">
           <div className="bg-purple-50 ring-1 ring-purple-200 rounded-2xl px-4 py-3">
             <p className="text-xs font-black text-purple-900 mb-0.5">📷 Replace banner images in one click</p>
@@ -231,7 +336,8 @@ export default function AdminConcerns() {
             </div>
           </Link>
         </div>
-        {(tab === 'concerns' || tab === 'cosmetic-concerns') && (
+        )}
+        {!globalSearch && (tab === 'concerns' || tab === 'cosmetic-concerns') && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {concerns
               .filter(c => {
@@ -290,7 +396,7 @@ export default function AdminConcerns() {
           </div>
         )}
 
-        {(tab === 'skincare' || tab === 'cosmetics') && (
+        {!globalSearch && (tab === 'skincare' || tab === 'cosmetics') && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {categories.filter(c => {
               // Categorise by niche first (canonical), fall back to legacy `group` field for old data.
@@ -335,7 +441,7 @@ export default function AdminConcerns() {
           </div>
         )}
 
-        {tab === 'subcategories' && (
+        {!globalSearch && tab === 'subcategories' && (
           <div className="space-y-4" data-testid="subcategories-tab">
             <div className="bg-gradient-to-r from-amber-50 to-rose-50 ring-1 ring-amber-200 rounded-2xl p-4">
               <p className="text-xs font-black text-amber-900 mb-1">How subcategories work</p>
