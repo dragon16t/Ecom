@@ -304,6 +304,13 @@ async def update_category(slug: str, data: CategoryPatch, x_admin_token: str = H
     result = await db.categories.update_one({"slug": slug}, {"$set": update})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Category not found")
+    # Mirror image (and a couple of display fields) to the sibling subcategory
+    # record if it shares the same slug. Keeps admin → user-app rendering in
+    # sync whether the admin edits via Categories tab or Subcategories tab.
+    mirror_fields = {k: update[k] for k in ("image", "tagline", "icon") if k in update}
+    if mirror_fields:
+        mirror_fields["updated_at"] = update["updated_at"]
+        await db.subcategories.update_one({"slug": slug}, {"$set": mirror_fields})
     return {"success": True}
 
 
@@ -402,7 +409,56 @@ async def update_subcategory(slug: str, data: SubcategoryUpsert, x_admin_token: 
     result = await db.subcategories.update_one({"slug": slug}, {"$set": update})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Subcategory not found")
+    # Mirror image/icon/tagline to the sibling categories record (same slug).
+    # Many subcategory slugs exist as records in BOTH collections; the public
+    # /skincare hub renders from `categories`, so we keep them in sync.
+    mirror_fields = {k: update[k] for k in ("image", "tagline", "icon") if update.get(k)}
+    if mirror_fields:
+        mirror_fields["updated_at"] = update["updated_at"]
+        await db.categories.update_one({"slug": slug}, {"$set": mirror_fields})
     return {"success": True}
+
+
+@router.post("/admin/subcategories/sync-images-to-categories")
+async def backfill_subcategory_images_to_categories(x_admin_token: str = Header(None, alias="X-Admin-Token")):
+    """One-shot backfill: copies `image` from every subcategory record that has
+    an image set, into the same-slug record in the `categories` collection
+    (whenever the category record is missing an image). Run this once after
+    deploying the mirror fix so PRE-EXISTING admin uploads also propagate
+    to the user-facing hub without manual re-upload.
+    """
+    verify_admin(x_admin_token)
+    updated = 0
+    skipped_already_set = 0
+    no_sibling = 0
+    cursor = db.subcategories.find(
+        {"image": {"$exists": True, "$ne": ""}},
+        {"_id": 0, "slug": 1, "image": 1, "tagline": 1, "icon": 1},
+    )
+    async for sc in cursor:
+        slug = sc.get("slug")
+        if not slug:
+            continue
+        cat = await db.categories.find_one({"slug": slug}, {"_id": 0, "image": 1})
+        if not cat:
+            no_sibling += 1
+            continue
+        if cat.get("image"):
+            skipped_already_set += 1
+            continue
+        mirror = {"image": sc["image"], "updated_at": datetime.now(timezone.utc).isoformat()}
+        if sc.get("tagline"):
+            mirror["tagline"] = sc["tagline"]
+        if sc.get("icon"):
+            mirror["icon"] = sc["icon"]
+        await db.categories.update_one({"slug": slug}, {"$set": mirror})
+        updated += 1
+    return {
+        "success": True,
+        "updated": updated,
+        "skipped_already_set": skipped_already_set,
+        "no_sibling": no_sibling,
+    }
 
 
 class ImagePatch(BaseModel):

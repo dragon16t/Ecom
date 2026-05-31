@@ -344,6 +344,30 @@ export default function AdminConcerns() {
                 ("Best Sellers", "Luxury") — those belong to badges or filters, not the taxonomy.
               </p>
             </div>
+            <div className="bg-gradient-to-r from-emerald-50 to-cyan-50 ring-1 ring-emerald-200 rounded-2xl p-4 flex items-start gap-3">
+              <div className="flex-1">
+                <p className="text-xs font-black text-emerald-900 mb-1">Images not showing on the public site?</p>
+                <p className="text-[11px] text-emerald-800 leading-relaxed">
+                  Some subcategory slugs (e.g. <code className="bg-white px-1 rounded">chemical-exfoliant</code>) exist in BOTH
+                  the categories and subcategories collections. Older uploads only saved on one side. Click below to one-shot
+                  sync every subcategory image into the matching category record so the user-facing hub renders correctly.
+                </p>
+              </div>
+              <button
+                onClick={async () => {
+                  if (!window.confirm('Sync all subcategory images → category records?')) return;
+                  try {
+                    const r = await axios.post(`${API}/api/admin/subcategories/sync-images-to-categories`, {}, auth);
+                    alert(`Synced ${r.data.updated} images. Skipped: ${r.data.skipped_already_set} (category already had image). No sibling: ${r.data.no_sibling}.`);
+                    load();
+                  } catch (e) { alert(e?.response?.data?.detail || e.message); }
+                }}
+                className="shrink-0 self-center bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-2 rounded-lg shadow-sm"
+                data-testid="sync-subcategory-images"
+              >
+                Sync images now
+              </button>
+            </div>
             <div className="bg-white ring-1 ring-stone-200 rounded-2xl px-4 py-3 flex items-center gap-3">
               <label className="text-xs font-bold text-stone-700">Filter by category:</label>
               <select
