@@ -359,13 +359,16 @@ async def export_orders(
     niche: str = Query("all", description="anti-aging | skincare | cosmetics | all"),
     sheet_type: str = Query("inhouse", description="inhouse | dealer"),
     status: Optional[str] = Query(None, description="optional status filter"),
+    date: Optional[str] = Query(None, description="YYYY-MM-DD (IST) — restrict to orders placed on this day. Defaults to today (IST) if omitted."),
     x_admin_token: Optional[str] = Header(None, alias="X-Admin-Token"),
     admin_session: Optional[str] = Cookie(None),
 ):
     """Generate HTML invoice/list for download (browser saves as PDF).
 
     sheet_type=inhouse: full details (name, phone, full address, prices, AWB)
-    sheet_type=dealer:  customer name + product name + qty ONLY
+    sheet_type=dealer:  customer name + products + qty (one row per ORDER)
+
+    `date` is interpreted as an IST (UTC+5:30) calendar day. Default = today IST.
     """
     _auth(x_admin_token, admin_session)
     q = {}
@@ -375,6 +378,24 @@ async def export_orders(
     if niche != "all":
         prod_slugs = [p["slug"] async for p in _db.products.find({"niche": niche}, {"_id": 0, "slug": 1})]
         q["items.slug"] = {"$in": prod_slugs}
+
+    # --- Date filter (IST day → UTC window) ---
+    from datetime import timedelta
+    IST = timezone(timedelta(hours=5, minutes=30))
+    if not date:
+        # Default to today IST
+        date = datetime.now(IST).strftime("%Y-%m-%d")
+    try:
+        y, m, d = (int(x) for x in date.split("-"))
+        day_start_ist = datetime(y, m, d, 0, 0, 0, tzinfo=IST)
+        day_end_ist = day_start_ist + timedelta(days=1)
+        q["created_at"] = {
+            "$gte": day_start_ist.astimezone(timezone.utc).isoformat(),
+            "$lt": day_end_ist.astimezone(timezone.utc).isoformat(),
+        }
+        date_label = day_start_ist.strftime("%d %b %Y")
+    except Exception:
+        date_label = date
 
     orders = await _db.orders.find(q, {"_id": 0}).sort("created_at", -1).to_list(5000)
 
@@ -389,34 +410,47 @@ async def export_orders(
     now = datetime.now(timezone.utc).strftime("%d %b %Y, %H:%M UTC")
 
     if sheet_type == "dealer":
-        # Minimal columns
+        # ONE row per order. Products + qty are grouped in a single cell so each
+        # order takes exactly one line — much easier for dealers to pick & pack.
         rows_html = []
         for o in orders:
-            for it in (o.get("items") or []):
-                rows_html.append(
-                    f"<tr><td>{o.get('order_id','')}</td>"
-                    f"<td>{o.get('name','')}</td>"
-                    f"<td>{it.get('name','')}</td>"
-                    f"<td style='text-align:center'>{it.get('quantity',1)}</td></tr>"
-                )
-        headers = ["Order ID", "Customer Name", "Product", "Qty"]
+            items = o.get("items") or []
+            products_html = "<br/>".join(
+                f"• {it.get('name','')} <span style='color:#666'>×{it.get('quantity',1)}</span>"
+                for it in items
+            ) or "<span style='color:#999'>—</span>"
+            total_qty = sum(int(it.get('quantity') or 1) for it in items)
+            rows_html.append(
+                f"<tr><td style='font-family:monospace;font-size:12px'>{o.get('order_id','')}</td>"
+                f"<td>{o.get('name','')}</td>"
+                f"<td style='font-size:12px'>{products_html}</td>"
+                f"<td style='text-align:center'>{len(items)}</td>"
+                f"<td style='text-align:center'><b>{total_qty}</b></td></tr>"
+            )
+        headers = ["Order ID", "Customer Name", "Products", "Items", "Total Qty"]
     else:
-        # Full details
+        # In-house: full details, ALREADY one row per order. Keep grouping consistent
+        # with the dealer sheet: list each product on its own line with × qty.
         rows_html = []
         for o in orders:
-            items_str = ", ".join(f"{it.get('name','')} ×{it.get('quantity',1)}" for it in (o.get("items") or []))
+            items = o.get("items") or []
+            items_html = "<br/>".join(
+                f"• {it.get('name','')} <span style='color:#666'>×{it.get('quantity',1)}</span>"
+                for it in items
+            ) or "<span style='color:#999'>—</span>"
+            total_qty = sum(int(it.get('quantity') or 1) for it in items)
             addr = f"{o.get('house_number','')}, {o.get('area','')}, {o.get('state','')} - {o.get('pincode','')}"
             rows_html.append(
-                f"<tr><td>{o.get('order_id','')}</td>"
+                f"<tr><td style='font-family:monospace;font-size:12px'>{o.get('order_id','')}</td>"
                 f"<td>{o.get('name','')}<br/><span style='color:#888;font-size:11px'>+91 {o.get('phone','')}</span></td>"
                 f"<td style='font-size:12px'>{addr}</td>"
-                f"<td style='font-size:12px'>{items_str}</td>"
+                f"<td style='font-size:12px'>{items_html}<div style='color:#666;font-size:11px;margin-top:4px'>Items: {len(items)} · Qty: {total_qty}</div></td>"
                 f"<td style='text-align:right'><b>₹{o.get('amount',0)}</b></td>"
                 f"<td>{o.get('payment_method','')}</td>"
                 f"<td>{o.get('status','')}</td>"
                 f"<td style='font-family:monospace;font-size:11px'>{o.get('awb_number','-')}</td></tr>"
             )
-        headers = ["Order ID", "Customer", "Address", "Items", "Amount", "Payment", "Status", "AWB"]
+        headers = ["Order ID", "Customer", "Address", "Items (× qty)", "Amount", "Payment", "Status", "AWB"]
 
     th_html = "".join(f"<th>{h}</th>" for h in headers)
     body_html = "".join(rows_html) or "<tr><td colspan='10' style='text-align:center;padding:30px;color:#888'>No orders found</td></tr>"
@@ -440,7 +474,7 @@ async def export_orders(
   <div class='header'>
     <div>
       <h1>Celesta Glow — {title}</h1>
-      <div class='meta'>{len(orders)} orders • Generated {now}</div>
+      <div class='meta'>{len(orders)} orders • Date: <b>{date_label}</b> (IST) • Generated {now}</div>
     </div>
     <button onclick='window.print()' style='background:#047857;color:white;border:0;padding:10px 18px;border-radius:8px;font-weight:600;cursor:pointer'>Print / Save PDF</button>
   </div>

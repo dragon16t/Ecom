@@ -1488,9 +1488,16 @@ function MarginBulkPanel() {
 // 4. Order Export Panel
 // ============================================================
 function OrderExportPanel() {
+  // Default to today in IST (so admins in India see today's date by default).
+  const todayIST = (() => {
+    const now = new Date();
+    const istMs = now.getTime() + (5.5 * 60 * 60 * 1000) + (now.getTimezoneOffset() * 60 * 1000);
+    return new Date(istMs).toISOString().slice(0, 10);
+  })();
+  const [date, setDate] = useState(todayIST);
+
   const download = (niche, sheetType) => {
-    const token = localStorage.getItem('admin_session') || '';
-    const url = `${API}/admin/orders/export-sheet?niche=${niche}&sheet_type=${sheetType}`;
+    const url = `${API}/admin/orders/export-sheet?niche=${niche}&sheet_type=${sheetType}&date=${date}`;
     // Open with header via fetch then save HTML
     fetch(url, { headers: getAdminAuthHeaders() })
       .then(r => r.text())
@@ -1498,7 +1505,7 @@ function OrderExportPanel() {
         const blob = new Blob([html], { type: 'text/html' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = `${niche}-${sheetType}-${new Date().toISOString().slice(0,10)}.html`;
+        a.download = `${niche}-${sheetType}-${date}.html`;
         a.click();
         // Also open in new tab so user can print directly
         const win = window.open();
@@ -1509,7 +1516,28 @@ function OrderExportPanel() {
   return (
     <div className="bg-white rounded-2xl border border-gray-200 p-6">
       <h2 className="font-bold text-lg mb-1">Niche-Segmented Order Downloads</h2>
-      <p className="text-sm text-gray-500 mb-5">2 sheets per niche: <b>Dealer</b> (minimal — name/product/qty) and <b>In-House</b> (full — address, phone, prices, AWB). Open the HTML and use browser Print → Save as PDF.</p>
+      <p className="text-sm text-gray-500 mb-4">2 sheets per niche: <b>Dealer</b> (one row per order — products grouped) and <b>In-House</b> (full — address, phone, prices, AWB). Open the HTML and use browser Print → Save as PDF.</p>
+
+      <div className="flex items-center gap-3 mb-5 p-3 bg-emerald-50/60 border border-emerald-100 rounded-xl">
+        <label htmlFor="export-date" className="text-sm font-semibold text-emerald-900">Order date (IST):</label>
+        <input
+          id="export-date"
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          max={todayIST}
+          data-testid="mt-export-date-picker"
+          className="border border-emerald-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-300"
+        />
+        <button
+          type="button"
+          onClick={() => setDate(todayIST)}
+          data-testid="mt-export-date-today"
+          className="text-xs text-emerald-700 hover:text-emerald-900 underline"
+        >
+          Today
+        </button>
+      </div>
 
       {['anti-aging', 'skincare', 'cosmetics'].map(niche => (
         <div key={niche} className="border-t border-gray-100 py-4 first:border-t-0">
