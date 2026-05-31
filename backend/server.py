@@ -3198,6 +3198,16 @@ async def delhivery_webhook(request: Request):
         return {"success": False, "error": str(e)}
 
 
+# ---------- Keep-alive / health probe (cheap, no DB hit) ----------
+# Frontend pings this every 4 min to keep the backend pod warm. Returns 200
+# instantly with no Mongo query so it costs almost zero compute.
+@app.get("/api/health")
+async def health_check():
+    return {"ok": True, "ts": datetime.now(timezone.utc).isoformat()}
+
+
+
+
 app.include_router(api_router)
 app.include_router(admin_routes.router, prefix="/api")
 app.include_router(i18n_routes.router, prefix="/api")

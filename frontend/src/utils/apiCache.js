@@ -66,7 +66,7 @@ const buildKey = (url, params) => {
 };
 
 export async function cachedGet(url, options = {}) {
-  const { ttl = DEFAULT_TTL_MS, params, headers, force = false } = options;
+  const { ttl = DEFAULT_TTL_MS, params, headers, force = false, retry = 1, timeout = 12_000 } = options;
   const key = buildKey(url, params);
 
   if (!force) {
@@ -81,15 +81,28 @@ export async function cachedGet(url, options = {}) {
   }
 
   const p = (async () => {
-    try {
-      const r = await axios.get(url, { params, headers });
-      cache.set(key, { value: r.data, expiresAt: Date.now() + ttl });
-      persistToStorage();
-      return r.data;
-    } finally {
-      inflight.delete(key);
+    let lastErr = null;
+    // PERF/UX: auto-retry once on network failure / 5xx / timeout so a single
+    // cold-start hiccup doesn't surface as "Not Available" to the user.
+    for (let attempt = 0; attempt <= retry; attempt++) {
+      try {
+        const r = await axios.get(url, { params, headers, timeout });
+        cache.set(key, { value: r.data, expiresAt: Date.now() + ttl });
+        persistToStorage();
+        return r.data;
+      } catch (e) {
+        lastErr = e;
+        const status = e?.response?.status;
+        const retryable = !status || status >= 500 || e.code === 'ECONNABORTED' || e.code === 'ERR_NETWORK';
+        if (!retryable || attempt === retry) break;
+        // 500ms then 1s back-off
+        await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+      }
     }
-  })();
+    throw lastErr;
+  })().finally(() => {
+    inflight.delete(key);
+  });
   inflight.set(key, p);
 
   const value = await p;

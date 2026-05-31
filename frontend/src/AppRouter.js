@@ -106,6 +106,24 @@ function App() {
     }
     // Warm per-niche brand cache so ProductCard renders the right brand on first paint
     loadNicheBrands();
+
+    // PERF: Keep-alive ping. The Emergent prod pod scales to zero after idle,
+    // causing a 5-30s cold-start on the next request. A tiny /api/health ping
+    // every 4 minutes while the tab is open keeps the pod warm. Cost: ~30 bytes
+    // every 4 min. Benefit: search/niche-switch never hits cold-start again.
+    const API = process.env.REACT_APP_BACKEND_URL;
+    let pingTimer = null;
+    const ping = () => {
+      if (document.visibilityState !== 'visible') return;
+      try { fetch(`${API}/api/health`, { credentials: 'omit', cache: 'no-store' }).catch(() => {}); } catch (_) {}
+    };
+    ping();
+    pingTimer = setInterval(ping, 4 * 60 * 1000);
+    document.addEventListener('visibilitychange', ping);
+    return () => {
+      if (pingTimer) clearInterval(pingTimer);
+      document.removeEventListener('visibilitychange', ping);
+    };
   }, []);
 
   return (

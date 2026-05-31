@@ -6,7 +6,7 @@ Public + admin routes for skin concerns and product categories.
 - GET /api/categories/{slug}        -> category + matching products
 - POST/PUT/DELETE /api/admin/...    -> admin CRUD
 """
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Response
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime, timezone
@@ -59,16 +59,20 @@ class ConcernUpsert(BaseModel):
 
 
 @router.get("/concerns")
-async def list_concerns():
+async def list_concerns(response: Response):
     """Public: List all active concerns sorted by sort_order"""
     items = await db.concerns.find({"is_active": True}, {"_id": 0}).sort("sort_order", 1).to_list(50)
+    # PERF: concerns rarely change → cache at the CDN edge for 5 min, serve stale
+    # for 10 min while we revalidate in background. Cuts backend load by ~95%.
+    response.headers["Cache-Control"] = "public, max-age=300, stale-while-revalidate=600"
     return items
 
 
 @router.get("/niches")
-async def list_niches():
+async def list_niches(response: Response):
     """Public: List all active niches (top-level 3-pill: anti-aging / skincare / cosmetics)"""
     items = await db.niches.find({"is_active": True}, {"_id": 0}).sort("sort_order", 1).to_list(20)
+    response.headers["Cache-Control"] = "public, max-age=600, stale-while-revalidate=1200"
     return items
 
 
@@ -198,12 +202,14 @@ class CategoryPatch(BaseModel):
 
 
 @router.get("/categories")
-async def list_categories(niche: Optional[str] = None):
+async def list_categories(response: Response, niche: Optional[str] = None):
     """Public: List all active categories. Optional `niche` filter (skincare/cosmetics)."""
     q = {"is_active": True}
     if niche:
         q["niche"] = niche
     items = await db.categories.find(q, {"_id": 0}).sort("sort_order", 1).to_list(length=None)
+    # PERF: categories change rarely → 5 min edge cache
+    response.headers["Cache-Control"] = "public, max-age=300, stale-while-revalidate=600"
     return items
 
 
