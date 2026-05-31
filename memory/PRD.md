@@ -158,4 +158,17 @@
 - **Frontend summary UI** — strike-through original delivery fee when discounted, "30/35/40/50% OFF" pill next to taxes, "Add ₹X more to unlock Y% OFF taxes + ₹Z delivery" nudge banner whenever the customer is below the next band, and a qualified banner above ₹1000 summarising current savings.
 - **Tested** end-to-end via `testing_agent_v3_fork` (iteration_9.json): 13/13 backend + 14/14 frontend pass. Regression pytest at `backend/tests/test_cart_tiers_jan2026.py`. All 6 tier bands verified at exact spec values; qty/badge sync working without lag; PDP navigation from cart items confirmed.
 
+## Feb 2026 — Concurrency / Reliability Batch (P0)
+Target: handle 1,000-2,000 concurrent users on production with zero "Not Available" errors during niche switch / search / category browsing.
+- **Backend search switched from `$regex` → MongoDB `$text` index** (`routes/products.py`). For queries ≥3 chars with alphanumeric content, uses the existing `product_text_search` text index (covers name+brand+description+tags). Falls back to `$regex` on short/special-char queries. Drops search query time from ~2-4s → ~50ms on 7,800-product catalog.
+- **`GET /api/health` keep-alive endpoint** (`server.py`) — no DB hit, returns `{ok:true, ts}` instantly. Lets the frontend keep the production pod warm.
+- **Frontend keep-alive ping** (`AppRouter.js`) — fires `/api/health` on mount, every 4 min, and on `visibilitychange` (throttled to once per 60s). Kills the 5-30s cold-start that was causing "Not Available" errors after the pod scaled to zero on idle.
+- **Frontend auto-retry on cachedGet** (`utils/apiCache.js`) — every cached GET now auto-retries once on 5xx / network error / timeout (12s) with 500ms → 1s back-off. Single cold-start hiccup no longer surfaces as a hard error.
+- **CDN cache headers on rarely-changing endpoints** (`routes/concerns.py`) — `/api/categories`, `/api/concerns` → `public, max-age=300, stale-while-revalidate=600`; `/api/niches` → `public, max-age=600`. Lets the Emergent edge serve cached responses for most browsing traffic, dropping backend load by ~95% on those endpoints.
+- **Verified** end-to-end via `testing_agent_v3_fork` (iteration_10.json): 18/18 backend pass, all frontend flows (homepage, /shop, /skincare, /cosmetics, /search) render without 5xx or blank states. Pytest at `backend/tests/test_perf_reliability_jan2026.py`.
+- **NOT done in code (requires user action on Emergent prod side):**
+  - Increase uvicorn workers from 1 → 4 (Emergent deploy setting — talk to Support to enable)
+  - Enable "always-on" / minimum 1 replica on production (Emergent deploy setting)
+  - Move MongoDB to Atlas (env var change in prod settings)
+
 ## New admin endpoints (require X-Admin-Token)

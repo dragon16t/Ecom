@@ -113,8 +113,12 @@ function App() {
     // every 4 min. Benefit: search/niche-switch never hits cold-start again.
     const API = process.env.REACT_APP_BACKEND_URL;
     let pingTimer = null;
+    let lastPingAt = 0;
     const ping = () => {
       if (document.visibilityState !== 'visible') return;
+      // Throttle: don't ping more than once every 60s to avoid spamming on rapid tab-flicker
+      if (Date.now() - lastPingAt < 60_000) return;
+      lastPingAt = Date.now();
       try { fetch(`${API}/api/health`, { credentials: 'omit', cache: 'no-store' }).catch(() => {}); } catch (_) {}
     };
     ping();
