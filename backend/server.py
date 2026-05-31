@@ -3308,6 +3308,12 @@ app.add_middleware(GZipMiddleware, minimum_size=1024)
 from services.rate_limit import RateLimitMiddleware  # noqa: E402
 app.add_middleware(RateLimitMiddleware)
 
+# Auto-snapshot middleware: schedules a Cloudinary backup after every
+# successful admin write so data survives ephemeral-pod redeploys.
+from services.catalog_backup_middleware import CatalogBackupTriggerMiddleware  # noqa: E402
+from services import catalog_backup as _cb_module  # noqa: E402
+app.add_middleware(CatalogBackupTriggerMiddleware, db=db, schedule_snapshot=_cb_module.schedule_snapshot)
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -3375,6 +3381,18 @@ async def startup_seed():
         await product_routes._refresh_admin_pw_cache()
     except Exception as e:
         logging.error(f"Failed to refresh admin pw cache: {e}")
+    # ---- Taxonomy auto-restore from Cloudinary snapshot ----
+    # Pod-internal MongoDB is ephemeral; on a fresh deploy our taxonomy starts
+    # empty even though seed scripts run. If a previous deploy uploaded a
+    # snapshot to Cloudinary, restore it so admin-curated images / records /
+    # subcategory structure survive across redeploys. Safe + idempotent.
+    try:
+        from services import catalog_backup as _cb
+        restore_res = await _cb.auto_restore_if_empty(db)
+        if restore_res.get("restored"):
+            logging.info(f"[catalog_backup] auto-restored taxonomy: {restore_res}")
+    except Exception as e:
+        logging.warning(f"[catalog_backup] auto-restore skipped: {e}")
     # Hydrate the central active-admin-hash cache used by EVERY admin verifier.
     # After this, the env-seed password is ONLY accepted if no custom password
     # has been saved yet — closing the security hole where the default password

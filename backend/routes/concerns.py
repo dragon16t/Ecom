@@ -11,6 +11,18 @@ from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime, timezone
 
+from services import catalog_backup as _catalog_backup
+
+
+def _snap_after_write() -> None:
+    """Schedule a debounced taxonomy snapshot after admin writes. Coalesces
+    bursts so 20 writes in 25s only produce 1 backup. Safe + non-blocking."""
+    try:
+        _catalog_backup.schedule_snapshot(db)
+    except Exception:
+        pass
+
+
 router = APIRouter()
 db = None
 admin_sessions = {}
@@ -163,11 +175,30 @@ async def delete_concern(slug: str, x_admin_token: str = Header(None, alias="X-A
 
 
 @router.get("/admin/concerns")
-async def admin_list_concerns(x_admin_token: str = Header(None, alias="X-Admin-Token")):
+async def admin_list_concerns(
+    x_admin_token: str = Header(None, alias="X-Admin-Token"),
+    page: Optional[int] = None,
+    limit: int = 50,
+    search: Optional[str] = None,
+):
     verify_admin(x_admin_token)
-    # No cap — admin needs to see every record (canonical taxonomy may have 100+ rows).
-    items = await db.concerns.find({}, {"_id": 0}).sort("sort_order", 1).to_list(length=None)
-    return items
+    q = {}
+    if search and search.strip():
+        s = search.strip()
+        q = {"$or": [
+            {"slug": {"$regex": s, "$options": "i"}},
+            {"name": {"$regex": s, "$options": "i"}},
+            {"tagline": {"$regex": s, "$options": "i"}},
+        ]}
+    cursor = db.concerns.find(q, {"_id": 0}).sort("sort_order", 1)
+    if page is None:
+        # Backwards compatible: full list (no cap)
+        return await cursor.to_list(length=None)
+    page = max(1, page)
+    limit = max(1, min(200, limit))
+    total = await db.concerns.count_documents(q)
+    items = await cursor.skip((page - 1) * limit).limit(limit).to_list(length=limit)
+    return {"items": items, "total": total, "page": page, "limit": limit, "has_next": page * limit < total}
 
 
 # ==================== CATEGORIES ====================
@@ -325,14 +356,32 @@ async def delete_category(slug: str, x_admin_token: str = Header(None, alias="X-
 
 
 @router.get("/admin/categories")
-async def admin_list_categories(x_admin_token: str = Header(None, alias="X-Admin-Token")):
+async def admin_list_categories(
+    x_admin_token: str = Header(None, alias="X-Admin-Token"),
+    page: Optional[int] = None,
+    limit: int = 50,
+    niche: Optional[str] = None,
+    search: Optional[str] = None,
+):
     verify_admin(x_admin_token)
-    # No cap — admin must see every category (158+ across both niches incl.
-    # canonical parents like `sunscreens`, `cleansers`, etc.). Previously
-    # capped at 100 which silently hid 58 records causing the
-    # "Sunscreens missing under Protect" bug.
-    items = await db.categories.find({}, {"_id": 0}).sort("sort_order", 1).to_list(length=None)
-    return items
+    q = {}
+    if niche:
+        q["niche"] = niche
+    if search and search.strip():
+        s = search.strip()
+        q["$or"] = [
+            {"slug": {"$regex": s, "$options": "i"}},
+            {"name": {"$regex": s, "$options": "i"}},
+            {"tagline": {"$regex": s, "$options": "i"}},
+        ]
+    cursor = db.categories.find(q, {"_id": 0}).sort("sort_order", 1)
+    if page is None:
+        return await cursor.to_list(length=None)
+    page = max(1, page)
+    limit = max(1, min(200, limit))
+    total = await db.categories.count_documents(q)
+    items = await cursor.skip((page - 1) * limit).limit(limit).to_list(length=limit)
+    return {"items": items, "total": total, "page": page, "limit": limit, "has_next": page * limit < total}
 
 
 # ==================== SUBCATEGORIES ====================
@@ -374,10 +423,36 @@ async def list_subcategories(
 
 
 @router.get("/admin/subcategories")
-async def admin_list_subcategories(x_admin_token: str = Header(None, alias="X-Admin-Token")):
+async def admin_list_subcategories(
+    x_admin_token: str = Header(None, alias="X-Admin-Token"),
+    page: Optional[int] = None,
+    limit: int = 50,
+    parent_category: Optional[str] = None,
+    niche: Optional[str] = None,
+    search: Optional[str] = None,
+):
     verify_admin(x_admin_token)
-    items = await db.subcategories.find({}, {"_id": 0}).sort("sort_order", 1).to_list(500)
-    return items
+    q = {}
+    if parent_category:
+        q["parent_category"] = parent_category
+    if niche:
+        q["niche"] = niche
+    if search and search.strip():
+        s = search.strip()
+        q["$or"] = [
+            {"slug": {"$regex": s, "$options": "i"}},
+            {"name": {"$regex": s, "$options": "i"}},
+            {"tagline": {"$regex": s, "$options": "i"}},
+        ]
+    cursor = db.subcategories.find(q, {"_id": 0}).sort("sort_order", 1)
+    if page is None:
+        # Backwards-compatible: return full list (no cap)
+        return await cursor.to_list(length=None)
+    page = max(1, page)
+    limit = max(1, min(200, limit))
+    total = await db.subcategories.count_documents(q)
+    items = await cursor.skip((page - 1) * limit).limit(limit).to_list(length=limit)
+    return {"items": items, "total": total, "page": page, "limit": limit, "has_next": page * limit < total}
 
 
 @router.post("/admin/subcategories")
@@ -489,6 +564,7 @@ async def patch_subcategory_image(slug: str, data: ImagePatch, x_admin_token: st
         raise HTTPException(status_code=404, detail="Subcategory not found")
     # Mirror to the categories collection if a same-slug record exists
     await db.categories.update_one({"slug": slug}, {"$set": update})
+    _snap_after_write()
     return {"success": True, "image": data.image}
 
 
@@ -502,6 +578,7 @@ async def patch_category_image(slug: str, data: ImagePatch, x_admin_token: str =
         raise HTTPException(status_code=404, detail="Category not found")
     # Mirror to the subcategories collection if a same-slug record exists
     await db.subcategories.update_one({"slug": slug}, {"$set": update})
+    _snap_after_write()
     return {"success": True, "image": data.image}
 
 
@@ -514,7 +591,52 @@ async def patch_concern_image(slug: str, data: ImagePatch, x_admin_token: str = 
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Concern not found")
+    _snap_after_write()
     return {"success": True, "image": data.image}
+
+
+# ---- Catalog backup admin endpoints ----
+@router.get("/admin/catalog/backup/status")
+async def catalog_backup_status(x_admin_token: str = Header(None, alias="X-Admin-Token")):
+    """Inspect snapshot health — counts in local DB vs latest remote snapshot."""
+    verify_admin(x_admin_token)
+    return await _catalog_backup.status(db)
+
+
+@router.post("/admin/catalog/backup/snapshot")
+async def catalog_backup_snapshot(x_admin_token: str = Header(None, alias="X-Admin-Token")):
+    """Manually trigger an immediate snapshot of taxonomy → Cloudinary."""
+    verify_admin(x_admin_token)
+    try:
+        return await _catalog_backup.snapshot(db)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/admin/catalog/backup/restore")
+async def catalog_backup_restore(x_admin_token: str = Header(None, alias="X-Admin-Token")):
+    """Manually trigger a restore — used after a redeploy if auto-restore was
+    skipped (e.g. seed scripts inserted defaults so collections weren't empty)."""
+    verify_admin(x_admin_token)
+    # Lower the "needs restore" floor by clearing existing taxonomy first? No —
+    # instead we call the same auto path which is idempotent (upsert by slug).
+    res = await _catalog_backup.auto_restore_if_empty(db)
+    if not res.get("restored"):
+        # Force an actual restore even if not "empty"
+        snap = await _catalog_backup._fetch_latest_snapshot(db)
+        if not snap:
+            raise HTTPException(status_code=404, detail="No remote snapshot available")
+        restored = {}
+        for col in _catalog_backup.SNAPSHOT_COLLECTIONS:
+            docs = (snap.get("collections") or {}).get(col) or []
+            for d in docs:
+                slug = d.get("slug")
+                if not slug:
+                    continue
+                await db[col].update_one({"slug": slug}, {"$set": d}, upsert=True)
+            restored[col] = len(docs)
+        return {"restored": True, "force": True, "counts": restored, "snapshot_created_at": snap.get("created_at")}
+    return res
 
 
 @router.delete("/admin/subcategories/{slug}")
