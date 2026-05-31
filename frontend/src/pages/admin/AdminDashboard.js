@@ -6,7 +6,7 @@ import {
   TrendingUp, Package, Eye, IndianRupee, ChevronRight, Plus,
   Activity, Phone, Globe, Clock, Zap, RefreshCw, Sparkles, Stethoscope,
   Home, ShoppingCart, Lock, Settings, Calendar, Filter, ChevronDown,
-  MousePointer, Route, MessageSquare, Bell, Volume2, Gift, CreditCard, CheckCircle, Shield, Star
+  MousePointer, Route, MessageSquare, Bell, Volume2, Gift, CreditCard, CheckCircle, Shield, Star, Image as ImageIcon
 } from 'lucide-react';
 import { useOrderNotifications } from '../../utils/orderNotifications';
 import { getAdminToken, clearAdminToken } from '../../utils/adminAuth';
@@ -274,6 +274,9 @@ function AdminDashboard() {
           </Link>
           <Link to="/admin/categories-hub" className="flex items-center gap-3 px-4 py-3 text-rose-600 hover:bg-rose-50 rounded-xl" data-testid="nav-categories-hub">
             <Sparkles size={20} /> Shop by Category Hub
+          </Link>
+          <Link to="/admin/missing-images" className="flex items-center gap-3 px-4 py-3 text-purple-600 hover:bg-purple-50 rounded-xl" data-testid="nav-missing-images">
+            <ImageIcon size={20} /> Missing Images Scanner
           </Link>
           <Link to="/admin/retention" className="flex items-center gap-3 px-4 py-3 text-cyan-600 hover:bg-cyan-50 rounded-xl" data-testid="nav-retention">
             <Phone size={20} /> Retention
