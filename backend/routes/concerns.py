@@ -61,7 +61,7 @@ class ConcernUpsert(BaseModel):
 @router.get("/concerns")
 async def list_concerns(response: Response):
     """Public: List all active concerns sorted by sort_order"""
-    items = await db.concerns.find({"is_active": True}, {"_id": 0}).sort("sort_order", 1).to_list(50)
+    items = await db.concerns.find({"is_active": True}, {"_id": 0}).sort("sort_order", 1).to_list(length=None)
     # PERF: concerns rarely change → cache at the CDN edge for 5 min, serve stale
     # for 10 min while we revalidate in background. Cuts backend load by ~95%.
     response.headers["Cache-Control"] = "public, max-age=300, stale-while-revalidate=600"
@@ -165,7 +165,8 @@ async def delete_concern(slug: str, x_admin_token: str = Header(None, alias="X-A
 @router.get("/admin/concerns")
 async def admin_list_concerns(x_admin_token: str = Header(None, alias="X-Admin-Token")):
     verify_admin(x_admin_token)
-    items = await db.concerns.find({}, {"_id": 0}).sort("sort_order", 1).to_list(100)
+    # No cap — admin needs to see every record (canonical taxonomy may have 100+ rows).
+    items = await db.concerns.find({}, {"_id": 0}).sort("sort_order", 1).to_list(length=None)
     return items
 
 
@@ -326,7 +327,11 @@ async def delete_category(slug: str, x_admin_token: str = Header(None, alias="X-
 @router.get("/admin/categories")
 async def admin_list_categories(x_admin_token: str = Header(None, alias="X-Admin-Token")):
     verify_admin(x_admin_token)
-    items = await db.categories.find({}, {"_id": 0}).sort("sort_order", 1).to_list(100)
+    # No cap — admin must see every category (158+ across both niches incl.
+    # canonical parents like `sunscreens`, `cleansers`, etc.). Previously
+    # capped at 100 which silently hid 58 records causing the
+    # "Sunscreens missing under Protect" bug.
+    items = await db.categories.find({}, {"_id": 0}).sort("sort_order", 1).to_list(length=None)
     return items
 
 
