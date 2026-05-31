@@ -44,8 +44,9 @@ from . import cloudinary_service as _cs
 logger = logging.getLogger(__name__)
 
 # Collections we treat as the canonical snapshot. Everything an admin can
-# create / edit through the dashboard belongs here. Skipped collections are
-# explained below.
+# create / edit through the dashboard belongs here, PLUS all customer-facing
+# transactional data (orders, customer accounts, leads, reviews). User mandate:
+# "not a penny of data should be lost on redeploy".
 SNAPSHOT_COLLECTIONS = [
     # --- Taxonomy ---
     "concerns", "categories", "subcategories", "niches",
@@ -56,26 +57,29 @@ SNAPSHOT_COLLECTIONS = [
     "site_settings", "site_pages", "blogs", "blog_posts",
     # --- Brand / store config ---
     "brands", "store_locations", "site_announcements",
-    # --- Orders & customer data are NOT snapshotted here on purpose:
-    #     they are write-heavy and would inflate the snapshot to many MB.
-    #     For a real production deployment with order volume you still need
-    #     a proper persistent MongoDB (Atlas / managed) — this stop-gap is
-    #     designed for the launch phase where catalog & admin content is
-    #     the primary data being curated.
+    # --- Transactional data (orders, customers, leads, reviews) ---
+    # NOTE: these are write-heavy. Snapshots happen on a 25s debounce so an
+    # order placed in the last 25s before a redeploy may be lost. For high
+    # order volumes (>100/day) you still want Atlas — but for the launch
+    # phase this safety net catches everything.
+    "orders", "order_items", "order_tracking",
+    "users", "customers", "customer_addresses",
+    "leads", "contact_messages", "otp_records",
+    "reviews", "review_reports",
+    "referrals", "referral_payouts",
+    "wallet_transactions", "wallet_balances",
 ]
 
-# Collections that are intentionally excluded from the snapshot (transactional
-# / session / ephemeral). Documented here so future authors don't add them.
+# Collections that are intentionally excluded (truly ephemeral / sensitive / TTL).
 NON_SNAPSHOT_COLLECTIONS = {
-    "orders", "users", "customers",
-    "admin_sessions", "employee_sessions",
-    "reviews", "review_reports",
-    "visitor_pings", "live_visitors",
-    "taxonomy_jobs", "background_jobs",
-    "rate_limits", "scraper_logs", "audit_logs",
-    "cart_events", "cart_abandonment",
-    "api_credentials",  # contains secrets — never back up to Cloudinary
-    "admin_settings",   # Cloudinary credentials live here; never back up
+    "admin_sessions", "employee_sessions",  # short-lived auth tokens
+    "visitor_pings", "live_visitors",       # 5-min TTL by design
+    "taxonomy_jobs", "background_jobs",     # transient job runners
+    "rate_limits", "scraper_logs",          # short-lived
+    "audit_logs",                           # log stream, append-only
+    "cart_events", "cart_abandonment",      # analytics fluff
+    "api_credentials",                      # SECRETS — never back up
+    "admin_settings",                       # SECRETS — Cloudinary keys live here
 }
 
 CLOUDINARY_PUBLIC_ID = "celesta-glow/db-snapshots/latest"

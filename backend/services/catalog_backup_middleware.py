@@ -27,6 +27,24 @@ logger = logging.getLogger(__name__)
 
 _WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
+# Public (non-admin) paths that ALSO write user data we care about persisting:
+# order creation, payment confirmation, OTP records, review submission, etc.
+# Any successful 2xx write to one of these will schedule a snapshot too.
+_PUBLIC_WRITE_PREFIXES = (
+    "/api/orders",
+    "/api/checkout",
+    "/api/payment",
+    "/api/razorpay",
+    "/api/reviews",
+    "/api/auth/",
+    "/api/customer/",
+    "/api/wallet",
+    "/api/referral",
+    "/api/leads",
+    "/api/contact",
+    "/api/newsletter",
+)
+
 
 class CatalogBackupTriggerMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, db, schedule_snapshot):
@@ -37,13 +55,15 @@ class CatalogBackupTriggerMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
         try:
-            if (
-                request.method in _WRITE_METHODS
-                and request.url.path.startswith("/api/admin/")
-                and 200 <= response.status_code < 300
-                and request.headers.get("x-admin-token")
-            ):
-                # Fire-and-forget; the snapshot service is already debounced
+            if request.method not in _WRITE_METHODS or not (200 <= response.status_code < 300):
+                return response
+            path = request.url.path
+            # Admin writes (always backed up)
+            if path.startswith("/api/admin/") and request.headers.get("x-admin-token"):
+                self._schedule(self._db)
+                return response
+            # Customer/transactional writes
+            if any(path.startswith(p) for p in _PUBLIC_WRITE_PREFIXES):
                 self._schedule(self._db)
         except Exception as exc:
             logger.debug("Snapshot trigger failed: %s", exc)
