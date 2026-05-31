@@ -111,15 +111,59 @@ export default function ConcernCategoryPage({ mode = 'concern' }) {
   // For concern mode: categories that have at least 1 product for this concern (with metadata)
   const concernCategoryItems = useMemo(() => {
     if (mode !== 'concern' || !products.length) return [];
-    const slugs = new Set(products.map(p => p.category).filter(Boolean));
+    // Count products per category once
+    const counts = {};
+    for (const p of products) {
+      if (p.category) counts[p.category] = (counts[p.category] || 0) + 1;
+    }
+    const slugs = new Set(Object.keys(counts));
+
+    // Canonical routine order used across the user app (same as SkincareHome
+    // virtualGroups + Cosmetics parent order). Categories rendered on the
+    // concern page now appear in the SAME order customers see on /skincare and
+    // /cosmetics, so the structure is consistent end-to-end.
+    const ROUTINE_ORDER = [
+      // Skincare — Cleanse & Prep
+      'cleansers', 'exfoliators', 'toners-mists',
+      // Skincare — Treat
+      'serums-treatments', 'essences-ampoules', 'spot-treatments',
+      // Skincare — Moisturize
+      'moisturizers', 'face-oils', 'barrier-care',
+      // Skincare — Protect
+      'sunscreens',
+      // Skincare — Targeted Care
+      'eye-care', 'lip-care', 'brightening-products', 'anti-aging-products',
+      // Skincare — Masks & Body
+      'masks-packs', 'body-skincare',
+      // Cosmetics — Face
+      'face-makeup', 'foundation', 'concealer', 'face-primer', 'blush',
+      'highlighter', 'contour', 'setting-powder', 'setting-spray',
+      // Cosmetics — Lips
+      'lips', 'lipstick', 'lip-gloss', 'lip-liner', 'lip-balm',
+      // Cosmetics — Eyes
+      'eyes', 'eyeshadow', 'eyeliner', 'mascara', 'eyebrow-products',
+      // Cosmetics — Nails
+      'nails', 'nail-polish', 'nail-care',
+      // Cosmetics — Tools & Kits
+      'tools-brushes', 'makeup-kits',
+    ];
+    const orderIndex = Object.fromEntries(ROUTINE_ORDER.map((s, i) => [s, i]));
+
     return allCategories
       .filter(c => slugs.has(c.slug))
       .map(c => ({
         ...c,
+        product_count: counts[c.slug] || 0,
         accent_from: head?.accent_from || '#dcfce7',
         accent_to: head?.accent_to || '#bbf7d0',
-        // Override route prefix not used; we'll pass routePrefix to strip
-      }));
+      }))
+      .sort((a, b) => {
+        const ai = orderIndex[a.slug] ?? 999;
+        const bi = orderIndex[b.slug] ?? 999;
+        if (ai !== bi) return ai - bi;
+        // Tie-break: admin sort_order, then alphabetical
+        return (a.sort_order ?? 99) - (b.sort_order ?? 99) || (a.name || '').localeCompare(b.name || '');
+      });
   }, [products, allCategories, mode, head]);
 
   // Product grid filter based on activeCat (concern mode) or activeSubcat (category mode)
@@ -243,14 +287,16 @@ export default function ConcernCategoryPage({ mode = 'concern' }) {
         </div>
       </section>
 
-      {/* CONCERN MODE: CIRCULAR CATEGORY PICKER (inline filter — no redirect) */}
+      {/* CONCERN MODE: CIRCULAR CATEGORY PICKER (inline filter — no redirect).
+          Order matches the canonical routine flow used on /skincare & /cosmetics
+          so customers see the same structure end-to-end. */}
       {mode === 'concern' && concernCategoryItems.length > 0 && (
         <section className="bg-white border-b border-stone-100">
           <div className="max-w-7xl mx-auto px-3 sm:px-6 py-7 sm:py-10">
             <CircularCategoryStrip
               items={concernCategoryItems}
               title={<>Choose a <span className="italic" style={{ color: accentText }}>product type</span></>}
-              subtitle={`For ${head.name.toLowerCase()}`}
+              subtitle={`Ordered by routine step · ${concernCategoryItems.length} types`}
               accent={accentText}
               testIdPrefix="concern-cat"
               onItemClick={(slug) => setActiveCat(prev => prev === slug ? 'all' : slug)}
