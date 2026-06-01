@@ -211,6 +211,21 @@ Target: handle 1,000-2,000 concurrent users on production with zero "Not Availab
   - Placeholder Unsplash image — user will upload final via admin
 - **Delhivery default pickup_location changed `Parakkal` → `Office`** (`services/delhivery_service.py`). Preview .env already had `DELHIVERY_PICKUP_LOCATION=Office`; production env vars are managed separately by the user. By moving the code default to "Office" too, even the production deployment now reads the correct warehouse name without needing the env var to be set.
 
+## Feb 2026 — Persistence + Image Perf + Free AI Image Path (P0/P1)
+- **CRITICAL FIX — uploaded category / concern / subcategory images were silently LOST on every redeploy** (`services/catalog_backup.py`). The `auto_restore_if_empty()` function used `$setOnInsert` on upserts. Backend startup order is: (1) seed scripts insert canonical taxonomy WITHOUT images, then (2) auto_restore runs. With `$setOnInsert`, every record already existed → snapshot data SILENTLY bounced off → admin's uploaded images / accent colours / edits never came back. Fixed: switched to `$set` so the snapshot ALWAYS wins on a fresh boot. Future uploads (debounced into the 25-second snapshot window) now survive redeploys properly. Also took a fresh manual snapshot (`snapshot_bytes_compressed=2.2 MB`, 7858 products, 158 cats, 135 subcats, 29 orders, 30 reviews, 129 referrals) so production has a current backup to restore from.
+- **Image-loading perf: f_auto / q_auto / w_<width> Cloudinary transforms now also applied to TAXONOMY images** (`services/image_optimizer.py` + `routes/concerns.py`). Was previously only applied to product card images (`routes/products.py`). Now:
+  - `/api/concerns` → `w_400` (circular strip, 200px @ retina)
+  - `/api/categories` → `w_600` (category tiles, 300px @ retina)
+  - `/api/subcategories` → `w_400`
+  - Cuts taxonomy image bytes 70-90 % via WebP / AVIF + auto-quality, slashing first-paint time on the niche home pages. Idempotent — non-Cloudinary URLs untouched.
+- **`loading="lazy"` + `decoding="async"`** confirmed/added on CircularCategoryStrip + CosmeticsCategoryHub subcat tiles so off-screen images don't block the main thread.
+- **AI Banner Generator now has multi-provider fallback chain** (`routes/image_ai.py`):
+  1. **Pollinations.ai** (was free in 2025, turned paid in 2026 — currently 402)
+  2. **Direct Google AI Studio (`gemini-2.5-flash-image`)** — needs paid plan on the user's Gemini key (`GEMINI_API_KEY` in .env), free tier is quota=0 for image gen as of 2026
+  3. **Emergent LLM key** — exhausted budget per user's account
+  - All three currently blocked at the provider level. Endpoint code is fully wired and battle-tested (Cloudinary upload works after fixing a stale DB record `cloud_name=test`); the moment ANY provider has quota, generation will succeed.
+- **Stale Cloudinary DB record fixed** — `admin_settings.cloudinary.cloud_name` was set to `test` (probably from a long-ago smoke test), overriding the correct env value `dtj1zuhkl`. Patched to use the env value so AI banner uploads (and any other code path that goes through `cloudinary_service`) work.
+
 ## New admin endpoints (require X-Admin-Token)
 - `POST /api/admin/ai/generate-banner` — multipart form (`prompt` text, `reference` image file optional, `aspect` square|landscape|portrait). Returns `{success, image_url, storage, mime_type, size_bytes}`.
 

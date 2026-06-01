@@ -12,6 +12,17 @@ from typing import Optional, List
 from datetime import datetime, timezone
 
 from services import catalog_backup as _catalog_backup
+from services.image_optimizer import optimize_cloudinary_url
+
+
+def _optimize_taxonomy_image(item: dict, width: int = 400) -> dict:
+    """Rewrite Cloudinary `image` field of a concern/category/subcategory to
+    serve f_auto,q_auto,w_<width>. Cuts banner weight 70-90 % with WebP/AVIF
+    auto-quality. Concerns get 400px (circular strip), categories 600 px (tiles),
+    hero banners 1200 px. Non-Cloudinary URLs pass through untouched."""
+    if isinstance(item, dict) and isinstance(item.get("image"), str):
+        item["image"] = optimize_cloudinary_url(item["image"], width)
+    return item
 
 
 def _snap_after_write() -> None:
@@ -74,6 +85,8 @@ class ConcernUpsert(BaseModel):
 async def list_concerns(response: Response):
     """Public: List all active concerns sorted by sort_order"""
     items = await db.concerns.find({"is_active": True}, {"_id": 0}).sort("sort_order", 1).to_list(length=None)
+    # Concerns are shown in a circular strip — 400px is plenty (2× for retina 200px).
+    items = [_optimize_taxonomy_image(c, 400) for c in items]
     # PERF: concerns rarely change → cache at the CDN edge for 5 min, serve stale
     # for 10 min while we revalidate in background. Cuts backend load by ~95%.
     response.headers["Cache-Control"] = "public, max-age=300, stale-while-revalidate=600"
@@ -240,6 +253,8 @@ async def list_categories(response: Response, niche: Optional[str] = None):
     if niche:
         q["niche"] = niche
     items = await db.categories.find(q, {"_id": 0}).sort("sort_order", 1).to_list(length=None)
+    # Category tiles use a wider hero crop (~600px renders at 300px tile retina-friendly).
+    items = [_optimize_taxonomy_image(c, 600) for c in items]
     # PERF: categories change rarely → 5 min edge cache
     response.headers["Cache-Control"] = "public, max-age=300, stale-while-revalidate=600"
     return items
@@ -409,6 +424,7 @@ class SubcategoryUpsert(BaseModel):
 
 @router.get("/subcategories")
 async def list_subcategories(
+    response: Response,
     category: Optional[str] = None,
     niche: Optional[str] = None,
 ):
@@ -419,6 +435,8 @@ async def list_subcategories(
     if niche:
         query["niche"] = niche
     items = await db.subcategories.find(query, {"_id": 0}).sort("sort_order", 1).to_list(200)
+    items = [_optimize_taxonomy_image(s, 400) for s in items]
+    response.headers["Cache-Control"] = "public, max-age=300, stale-while-revalidate=600"
     return items
 
 

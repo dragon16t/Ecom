@@ -253,6 +253,7 @@ async def auto_restore_if_empty(db) -> Dict[str, Any]:
             continue
         try:
             inserted = 0
+            updated = 0
             for d in docs:
                 # Pick the natural primary key per collection
                 pk = None
@@ -265,10 +266,20 @@ async def auto_restore_if_empty(db) -> Dict[str, Any]:
                     await db[col].insert_one(d)
                     inserted += 1
                 else:
-                    res = await db[col].update_one(pk, {"$setOnInsert": d}, upsert=True)
+                    # Use $set instead of $setOnInsert — auto_restore runs at
+                    # backend startup before any admin writes, and the seed
+                    # creates canonical taxonomy WITHOUT images. With
+                    # $setOnInsert the snapshot's uploaded images / accent
+                    # colours / edits would silently bounce off the seeded
+                    # docs. $set lets the snapshot win, so admin-uploaded
+                    # category / concern / subcategory images come back after
+                    # every redeploy — which is the whole point of the backup.
+                    res = await db[col].update_one(pk, {"$set": d}, upsert=True)
                     if res.upserted_id is not None:
                         inserted += 1
-            restored_counts[col] = inserted
+                    elif res.modified_count:
+                        updated += 1
+            restored_counts[col] = inserted + updated
         except Exception as exc:
             logger.error("Auto-restore failed for %s: %s", col, exc)
             restored_counts[col] = -1

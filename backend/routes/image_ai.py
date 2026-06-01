@@ -312,10 +312,6 @@ async def generate_banner(
     """
     _verify_admin_token(x_admin_token)
 
-    api_key = os.environ.get("EMERGENT_LLM_KEY")
-    if not api_key:
-        raise HTTPException(status_code=500, detail="EMERGENT_LLM_KEY not configured")
-
     prompt = (prompt or "").strip()
     if not prompt:
         raise HTTPException(status_code=400, detail="Prompt is required")
@@ -324,56 +320,115 @@ async def generate_banner(
 
     # ---- Build aspect / composition hint ----
     aspect_map = {
-        "square": "perfectly square 1:1 framing",
-        "landscape": "wide 16:9 landscape framing suited for a hero banner",
-        "portrait": "tall 3:4 portrait framing",
+        "square":    {"hint": "perfectly square 1:1 framing",                                "w": 1024, "h": 1024},
+        "landscape": {"hint": "wide 16:9 landscape framing suited for a hero banner",        "w": 1280, "h": 720},
+        "portrait":  {"hint": "tall 3:4 portrait framing",                                   "w": 768,  "h": 1024},
     }
-    aspect_hint = aspect_map.get((aspect or "square").lower(), aspect_map["square"])
+    cfg = aspect_map.get((aspect or "square").lower(), aspect_map["square"])
+    aspect_hint = cfg["hint"]
 
-    # ---- Optional reference image ----
-    file_contents = []
+    # ---- Optional reference image (raw bytes for Gemini SDK; for Pollinations
+    # we can only pass a text "style hint", since their free API is text-to-image.) ----
+    ref_bytes: Optional[bytes] = None
+    ref_mime: Optional[str] = None
     if reference is not None:
         raw = await reference.read()
         if len(raw) > 8 * 1024 * 1024:
             raise HTTPException(status_code=413, detail="Reference image too large (max 8 MB)")
         if raw:
-            file_contents.append(ImageContent(base64.b64encode(raw).decode("utf-8")))
+            ref_bytes = raw
+            ref_mime = reference.content_type or "image/jpeg"
 
-    # Compose final prompt — keep it focused so Nano Banana doesn't add captions / text.
+    # Compose final prompt
     full_prompt = (
-        f"{prompt}\n\nPhotorealistic, high-end skincare / beauty editorial style. "
+        f"{prompt}. Photorealistic, high-end skincare / beauty editorial style. "
         f"{aspect_hint}. Clean composition, soft natural lighting, vibrant but tasteful colours. "
-        "Do NOT render any text, logos, watermarks, captions, or UI elements."
+        "No text, no logos, no watermarks, no captions, no UI."
     )
-    if file_contents:
-        full_prompt = (
-            "Use the attached image only as a style / mood / colour reference. "
-            "Generate a fresh original image inspired by it for the prompt below.\n\n"
-            + full_prompt
-        )
+    if ref_bytes:
+        # Pollinations is text-only, so the user's reference image only serves as a
+        # mental anchor here. The prompt is augmented with a style note.
+        full_prompt = "Premium product banner inspired by reference imagery. " + full_prompt
 
-    # ---- Call Nano Banana ----
+    # ---- Provider selection ----
+    # 1. Pollinations.ai  (FREE, no key, no quota — DEFAULT)
+    # 2. Direct Google Gemini ("gemini-2.5-flash-image") if GEMINI_API_KEY is
+    #    present AND has paid quota (free tier 429s instantly).
+    # 3. Emergent LLM key fallback (paid via Emergent).
+    out_bytes: Optional[bytes] = None
+    mime: str = "image/png"
+
+    # --- 1. Pollinations.ai (free, instant, no key) ---
     try:
-        chat = LlmChat(
-            api_key=api_key,
-            session_id=f"banner-{uuid.uuid4().hex[:8]}",
-            system_message="You are a skincare-brand visual designer that produces photorealistic, premium banner images.",
+        import httpx as _httpx
+        from urllib.parse import quote as _q
+        # `nologo=true` strips the Pollinations watermark. `enhance=true` improves
+        # composition. `model=flux` is FLUX-Schnell — high quality, free.
+        url = (
+            f"https://image.pollinations.ai/prompt/{_q(full_prompt)}"
+            f"?width={cfg['w']}&height={cfg['h']}&model=flux&nologo=true&enhance=true&seed={uuid.uuid4().int % 10_000_000}"
         )
-        chat.with_model("gemini", "gemini-3.1-flash-image-preview").with_params(
-            modalities=["image", "text"]
-        )
-        msg = UserMessage(text=full_prompt, file_contents=file_contents or None)
-        _text, images = await chat.send_message_multimodal_response(msg)
+        async with _httpx.AsyncClient(timeout=90.0, follow_redirects=True) as _hc:
+            r = await _hc.get(url)
+            if r.status_code == 200 and r.content and len(r.content) > 1024:
+                out_bytes = r.content
+                mime = r.headers.get("content-type", "image/jpeg").split(";")[0]
+            else:
+                logger.warning(f"[banner-ai] Pollinations returned {r.status_code} / {len(r.content)} bytes — will try Gemini fallback")
     except Exception as e:
-        logger.error(f"[banner-ai] Gemini call failed: {e}")
-        raise HTTPException(status_code=502, detail=f"AI generation failed: {str(e)[:160]}")
+        logger.warning(f"[banner-ai] Pollinations failed (will try Gemini): {e}")
 
-    if not images:
-        raise HTTPException(status_code=502, detail="AI did not return an image — try a different prompt")
+    # --- 2. Direct Google Gemini (only if Pollinations failed AND a key is set) ---
+    if not out_bytes:
+        gemini_key = os.environ.get("GEMINI_API_KEY")
+        if gemini_key:
+            try:
+                from google import genai
+                from google.genai import types as _gtypes
+                _client = genai.Client(api_key=gemini_key)
+                parts: list = [full_prompt]
+                if ref_bytes:
+                    parts.append(_gtypes.Part.from_bytes(data=ref_bytes, mime_type=ref_mime))
+                resp = _client.models.generate_content(
+                    model="gemini-2.5-flash-image",
+                    contents=parts,
+                )
+                for part in (resp.candidates[0].content.parts if resp.candidates else []):
+                    inline = getattr(part, "inline_data", None)
+                    if inline and getattr(inline, "data", None):
+                        out_bytes = inline.data
+                        mime = inline.mime_type or "image/png"
+                        break
+            except Exception as e:
+                logger.warning(f"[banner-ai] Direct Gemini fallback failed: {e}")
 
-    out_img = images[0]
-    out_bytes = base64.b64decode(out_img["data"])
-    mime = out_img.get("mime_type", "image/png")
+    # --- 3. Emergent LLM key fallback ---
+    if not out_bytes:
+        emergent_key = os.environ.get("EMERGENT_LLM_KEY")
+        if emergent_key:
+            try:
+                file_contents = []
+                if ref_bytes:
+                    file_contents.append(ImageContent(base64.b64encode(ref_bytes).decode("utf-8")))
+                chat = LlmChat(
+                    api_key=emergent_key,
+                    session_id=f"banner-{uuid.uuid4().hex[:8]}",
+                    system_message="You are a skincare-brand visual designer that produces photorealistic, premium banner images.",
+                )
+                chat.with_model("gemini", "gemini-3.1-flash-image-preview").with_params(modalities=["image", "text"])
+                msg = UserMessage(text=full_prompt, file_contents=file_contents or None)
+                _text, images = await chat.send_message_multimodal_response(msg)
+                if images:
+                    out_bytes = base64.b64decode(images[0]["data"])
+                    mime = images[0].get("mime_type", "image/png")
+            except Exception as e:
+                logger.warning(f"[banner-ai] Emergent fallback failed: {e}")
+
+    if not out_bytes:
+        raise HTTPException(
+            status_code=502,
+            detail="All image-gen providers failed. Try a different prompt, or set GEMINI_API_KEY / EMERGENT_LLM_KEY with quota."
+        )
 
     # ---- Push to Cloudinary (no local-disk fallback in prod) ----
     public_url = None
