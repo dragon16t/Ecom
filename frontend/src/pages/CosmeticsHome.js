@@ -36,8 +36,8 @@ const FALLBACK = {
 };
 
 export default function CosmeticsHome() {
-  // Cap at 48 — homepage only shows curated sections, never the full catalog.
-  const _raw = peek(`${API}/api/products?niche=cosmetics&page=1&limit=48`) || peek(`${API}/api/products?niche=cosmetics`) || [];
+  // Show only 20 products on the niche home. Full catalog at /shop?niche=cosmetics.
+  const _raw = peek(`${API}/api/products?niche=cosmetics&page=1&limit=20`) || peek(`${API}/api/products?niche=cosmetics&page=1&limit=48`) || [];
   const _cp = Array.isArray(_raw) ? _raw : (_raw?.items || []);
   const _cc = peek(`${API}/api/categories?niche=cosmetics`) || peek(`${API}/api/categories`) || [];
   const _cs = peek(`${API}/api/site-settings`) || {};
@@ -57,17 +57,17 @@ export default function CosmeticsHome() {
   const [loading, setLoading] = useState(_cp.length === 0);
 
   useEffect(() => {
-    let cancelled = false;
+    const ctrl = new AbortController();
+    const sig = ctrl.signal;
+
+    // 1) Taxonomy first — categories + concerns + settings render immediately
     Promise.all([
-      cachedGet(`${API}/api/products?niche=cosmetics&page=1&limit=48`),
-      cachedGet(`${API}/api/categories?niche=cosmetics`),
-      cachedGet(`${API}/api/site-settings`),
-      cachedGet(`${API}/api/concerns`),
+      cachedGet(`${API}/api/categories?niche=cosmetics`, { signal: sig }),
+      cachedGet(`${API}/api/site-settings`, { signal: sig }),
+      cachedGet(`${API}/api/concerns`, { signal: sig }),
     ])
-      .then(([p, c, s, cn]) => {
-        if (cancelled) return;
-        const items = Array.isArray(p.data) ? p.data : (p.data?.items || []);
-        setProducts(items);
+      .then(([c, s, cn]) => {
+        if (sig.aborted) return;
         setCategories((c.data || [])
           .filter(x => x.niche === 'cosmetics' || x.group === 'cosmetics')
           .map(x => ({
@@ -80,8 +80,19 @@ export default function CosmeticsHome() {
         setConcerns((cn.data || []).filter(x => x.niche === 'cosmetics'));
         setSettings(s.data || {});
       })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+      .catch(() => {});
+
+    // 2) Products second — 20 only
+    cachedGet(`${API}/api/products?niche=cosmetics&page=1&limit=20`, { signal: sig })
+      .then((p) => {
+        if (sig.aborted) return;
+        const items = Array.isArray(p.data) ? p.data : (p.data?.items || []);
+        setProducts(items);
+      })
+      .catch(() => {})
+      .finally(() => { if (!sig.aborted) setLoading(false); });
+
+    return () => { ctrl.abort(); };
   }, []);
 
   const niche = (settings?.niche_settings && settings.niche_settings['cosmetics']) || FALLBACK;

@@ -207,7 +207,7 @@ export { getCart, saveCart, addToCart, addComboToCart, setProductQty, getProduct
 function Homepage() {
   const { trackAction } = useTracking();
   // Seed from persistent cache so the page paints instantly on revisit
-  const _cachedProducts = peek(`${API}/api/products?niche=anti-aging&page=1&limit=48`) || peek(`${API}/api/products?niche=anti-aging`) || [];
+  const _cachedProducts = peek(`${API}/api/products?niche=anti-aging&page=1&limit=20`) || peek(`${API}/api/products?niche=anti-aging&page=1&limit=48`) || [];
   const _cachedProductsList = Array.isArray(_cachedProducts) ? _cachedProducts : (_cachedProducts?.items || []);
   const _cachedCombos = peek(`${API}/api/combos`) || [];
   const _cachedSettings = peek(`${API}/api/site-settings`) || {};
@@ -224,40 +224,44 @@ function Homepage() {
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    // Cap at 48 products per niche — the homepage only renders curated sections
-    // (bestsellers, new arrivals, featured). Fetching the full catalog would
-    // be 3-5 MB JSON at 2000+ SKUs and freeze low-end devices.
+    const ctrl = new AbortController();
+    const sig = ctrl.signal;
+
+    // ---- 1) Taxonomy + small data first (combos + settings — tiny + heavily cached) ----
+    // Renders the page skeleton, hero, concern strip etc. immediately.
     Promise.all([
-      cachedGet(`${API}/api/products?niche=anti-aging&page=1&limit=48`),
-      // Short TTL on combos + site-settings so admin TBL/launch toggles + niche-section
-      // edits propagate to the live homepage within ~60 seconds without a hard refresh.
-      cachedGet(`${API}/api/combos`, { ttl: 60_000 }),
-      cachedGet(`${API}/api/site-settings`, { ttl: 60_000 }),
+      cachedGet(`${API}/api/combos`, { ttl: 60_000, signal: sig }),
+      cachedGet(`${API}/api/site-settings`, { ttl: 60_000, signal: sig }),
     ])
-      .then(([p, c, s]) => {
-        if (cancelled) return;
-        // Paginated endpoint returns { items, total, ... }; guard for legacy array too.
-        const items = Array.isArray(p.data) ? p.data : (p.data?.items || []);
-        setProducts(items);
+      .then(([c, s]) => {
+        if (sig.aborted) return;
         setCombos(c.data || []);
         setSettings(s.data || {});
-        // If everything came from cache we can drop the loader instantly
-        if (p.fromCache && c.fromCache && s.fromCache) setLoading(false);
       })
-      .finally(() => { if (!cancelled) setLoading(false); });
+      .catch(() => {});
 
-    // Background-prefetch sibling niches so switching Skincare/Cosmetics is instant
-    // (runs after the browser is idle so it never competes with visible content).
+    // ---- 2) Products second — only 20 (the full catalog lives at /shop?niche=anti-aging) ----
+    cachedGet(`${API}/api/products?niche=anti-aging&page=1&limit=20`, { signal: sig })
+      .then((p) => {
+        if (sig.aborted) return;
+        const items = Array.isArray(p.data) ? p.data : (p.data?.items || []);
+        setProducts(items);
+      })
+      .catch(() => {})
+      .finally(() => { if (!sig.aborted) setLoading(false); });
+
+    // Background-prefetch sibling niches so switching Skincare/Cosmetics is instant.
+    // Runs after the browser is idle so it never competes with visible content.
+    // No signal here — we WANT these to populate the cache even if user navigates away.
     const prefetch = () => {
-      cachedGet(`${API}/api/products?niche=skincare&page=1&limit=48`).catch(() => {});
-      cachedGet(`${API}/api/products?niche=cosmetics&page=1&limit=48`).catch(() => {});
+      cachedGet(`${API}/api/products?niche=skincare&page=1&limit=20`).catch(() => {});
+      cachedGet(`${API}/api/products?niche=cosmetics&page=1&limit=20`).catch(() => {});
       cachedGet(`${API}/api/concerns`).catch(() => {});
       cachedGet(`${API}/api/categories`).catch(() => {});
     };
     const idleHandle = (window.requestIdleCallback || window.setTimeout)(prefetch, { timeout: 1500 });
     return () => {
-      cancelled = true;
+      ctrl.abort();
       if (window.cancelIdleCallback && typeof idleHandle === 'number') window.cancelIdleCallback(idleHandle);
     };
   }, []);

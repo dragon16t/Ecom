@@ -36,9 +36,10 @@ const FALLBACK = {
 };
 
 export default function SkincareHome() {
-  // Cap at 48 — homepage only shows curated sections. At 2000+ SKUs, fetching
-  // the full niche catalog would be 3-5 MB JSON and freeze mobile devices.
-  const _raw = peek(`${API}/api/products?niche=skincare&page=1&limit=48`) || peek(`${API}/api/products?niche=skincare`) || [];
+  // Show only the first 20 products on the niche home (curated bestsellers section).
+  // The full catalog lives at /shop?niche=skincare with infinite scroll. Loading
+  // 48+ here on every niche switch was burning bandwidth and freezing low-end devices.
+  const _raw = peek(`${API}/api/products?niche=skincare&page=1&limit=20`) || peek(`${API}/api/products?niche=skincare&page=1&limit=48`) || [];
   const _cp = Array.isArray(_raw) ? _raw : (_raw?.items || []);
   const _cc = peek(`${API}/api/concerns`) || [];
   const _cs = peek(`${API}/api/site-settings`) || {};
@@ -50,23 +51,38 @@ export default function SkincareHome() {
   const [loading, setLoading] = useState(_cp.length === 0);
 
   useEffect(() => {
-    let cancelled = false;
+    // AbortController kills in-flight requests when the user rapidly switches niche,
+    // so the latest niche's data isn't blocked by stale earlier requests.
+    const ctrl = new AbortController();
+    const sig = ctrl.signal;
+
+    // ---- 1) Taxonomy first (concerns + categories + settings) ----
+    // These are tiny + heavily CDN-cached, so the concerns strip & category hub
+    // render instantly even if the products fetch is still going.
     Promise.all([
-      cachedGet(`${API}/api/products?niche=skincare&page=1&limit=48`),
-      cachedGet(`${API}/api/concerns`),
-      cachedGet(`${API}/api/site-settings`),
-      cachedGet(`${API}/api/categories`),
+      cachedGet(`${API}/api/concerns`, { signal: sig }),
+      cachedGet(`${API}/api/site-settings`, { signal: sig }),
+      cachedGet(`${API}/api/categories`, { signal: sig }),
     ])
-      .then(([p, c, s, cats]) => {
-        if (cancelled) return;
-        const items = Array.isArray(p.data) ? p.data : (p.data?.items || []);
-        setProducts(items);
+      .then(([c, s, cats]) => {
+        if (sig.aborted) return;
         setConcerns(c.data || []);
         setSettings(s.data || {});
         setCategories(cats.data || []);
       })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+      .catch(() => { /* aborted or network — swallow */ });
+
+    // ---- 2) Products after (only 20 — the rest lives at /shop) ----
+    cachedGet(`${API}/api/products?niche=skincare&page=1&limit=20`, { signal: sig })
+      .then((p) => {
+        if (sig.aborted) return;
+        const items = Array.isArray(p.data) ? p.data : (p.data?.items || []);
+        setProducts(items);
+      })
+      .catch(() => { /* aborted */ })
+      .finally(() => { if (!sig.aborted) setLoading(false); });
+
+    return () => { ctrl.abort(); };
   }, []);
 
   const niche = (settings?.niche_settings && settings.niche_settings['skincare']) || FALLBACK;
