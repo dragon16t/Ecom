@@ -140,6 +140,24 @@ async def snapshot(db) -> Dict[str, Any]:
     )
     _last_snapshot_at = asyncio.get_event_loop().time()
     counts = {c: payload["collections"].get(c + "__count", 0) for c in SNAPSHOT_COLLECTIONS}
+    # Persist the versioned secure_url to Mongo so we can fetch the EXACT
+    # bytes we just uploaded on next restore, bypassing Cloudinary's
+    # `latest` alias CDN cache (which can lag several minutes behind a
+    # re-upload and was causing the "uploaded image / changed price
+    # didn't survive redeploy" bug).
+    snapshot_url = res.get("secure_url") or res.get("url")
+    try:
+        await db.admin_settings.update_one(
+            {"type": "catalog_backup"},
+            {"$set": {
+                "type": "catalog_backup",
+                "latest_url": snapshot_url,
+                "created_at": payload["created_at"],
+            }},
+            upsert=True,
+        )
+    except Exception as exc:
+        logger.warning("Failed to persist snapshot URL: %s", exc)
     logger.info(
         "Snapshot uploaded: raw=%dKB gz=%dKB collections=%s",
         len(raw_json) // 1024, len(blob) // 1024, counts,
@@ -189,9 +207,39 @@ async def _fetch_latest_snapshot(db) -> Optional[Dict[str, Any]]:
     cloud_name = creds.get("cloud_name") or os.environ.get("CLOUDINARY_CLOUD_NAME")
     if not cloud_name:
         return None
+    # 1) Prefer the versioned URL we persisted in Mongo on last snapshot
+    #    upload — bypasses Cloudinary's `latest` alias CDN cache entirely.
+    versioned: Optional[str] = None
+    try:
+        meta = await db.admin_settings.find_one({"type": "catalog_backup"}, {"_id": 0, "latest_url": 1})
+        if meta and meta.get("latest_url"):
+            versioned = meta["latest_url"]
+    except Exception:
+        pass
+
+    # 2) If Mongo doesn't have the URL (e.g. fresh boot after redeploy where
+    #    admin_settings was wiped), ask Cloudinary directly for the current
+    #    version of the snapshot resource. This dodges the CDN edge cache
+    #    on `latest` aliases that previously made auto-restore pick up
+    #    stale snapshots after a redeploy.
+    if not versioned:
+        try:
+            import cloudinary.api as _capi
+            info = _capi.resource(CLOUDINARY_PUBLIC_ID, resource_type="raw")
+            if info and info.get("secure_url"):
+                versioned = info["secure_url"]
+        except Exception as exc:
+            logger.debug("Cloudinary admin API lookup failed: %s", exc)
+
+    # 3) Fallback to the public `latest` alias (with cache-bust query string).
+    import time as _time
+    cb = int(_time.time())
     candidates = [
-        f"https://res.cloudinary.com/{cloud_name}/raw/upload/{CLOUDINARY_PUBLIC_ID}",
-        f"https://res.cloudinary.com/{cloud_name}/raw/upload/{CLOUDINARY_PUBLIC_ID}.json",
+        c for c in [
+            versioned,
+            f"https://res.cloudinary.com/{cloud_name}/raw/upload/{CLOUDINARY_PUBLIC_ID}?_={cb}",
+            f"https://res.cloudinary.com/{cloud_name}/raw/upload/{CLOUDINARY_PUBLIC_ID}.json?_={cb}",
+        ] if c
     ]
     for candidate in candidates:
         try:
