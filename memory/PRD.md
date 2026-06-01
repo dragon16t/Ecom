@@ -189,4 +189,28 @@ Target: handle 1,000-2,000 concurrent users on production with zero "Not Availab
 - **Background prefetch updated** — Homepage's idle prefetch of sibling niches now fetches `limit=20` (was `limit=48`), matching the new initial-fetch size.
 - **Verified end-to-end:** Lint clean across all 4 modified files. 9 rapid niche switches (skincare→cosmetics→home, ×3) complete without hang. 36/36 cart+checkout pytests still green.
 
+## Feb 2026 — Admin Polish + AI Banner Generator + Delhivery default (P0/P1)
+- **Category is now OPTIONAL on product create/edit** (`pages/admin/AdminProducts.js`):
+  - Hard validation block (`alert('Please pick a category...')`) removed from `saveProduct`. Products can be saved with no category.
+  - Both create form (line 1245) and edit form (line 1615) updated: `*` removed, "(optional)" hint added, red border styling removed, `required` attribute removed, placeholder text changed to "— No category —". Backend already accepted `category=null`.
+- **Snapshot Restore now forces a UI refresh** (`components/admin/SnapshotBackupWidget.js`). Previously after `POST /api/admin/catalog/backup/restore` the admin saw stale image URLs / categories cached in React state from BEFORE the restore. Fix: dispatch `admin-data-changed` (invalidates apiCache) and `window.location.reload()` 500 ms after success. The restored snapshot now visibly takes effect immediately.
+- **NEW: AI Banner Generator for category / concern / subcategory cards** (`components/admin/AIBannerGenerator.js` + backend `POST /api/admin/ai/generate-banner`):
+  - Sparkles icon button next to Edit on every concern / category / subcategory card.
+  - Modal accepts: text prompt (required) + optional reference image upload + shape selector (square / landscape / portrait).
+  - Calls Gemini Nano Banana (`gemini-3.1-flash-image-preview`) via the Emergent LLM key. Reference image is sent as a STYLE guide only ("inspired by it" wording) so a fresh original is produced, not an edit.
+  - Generated image uploaded to Cloudinary (`celesta-glow/ai-banner` folder); URL returned.
+  - "Use this image" PATCHes the URL onto the resource via the existing `/api/admin/{categories|concerns|subcategories}/{slug}/image` endpoint, fires `admin-data-changed` to refresh the hub tiles, then closes the modal.
+  - "Generate again" re-rolls without leaving the modal; closing + reopening = fresh state — so a new image + new prompt produces a different result (exactly the flow the user described).
+  - **Requires Emergent LLM key balance** — if the budget is exhausted you'll get a 502 with `Budget has been exceeded` in the error message. Top up via Profile → Universal Key → Add Balance.
+- **NEW PRODUCT: Celesta Glow Advanced Face Serum** added under niche=anti-aging, brand=Celesta Glow:
+  - slug: `celesta-glow-advanced-face-serum`
+  - 30 ml · MRP ₹1499 · Prepaid ₹899 · COD ₹999 (40 % off)
+  - Concerns: brightening-glow, pigmentation, aging
+  - Benefits, ingredients, how-to-use all captured from user spec
+  - "New Launch" badge + `new_launch`, `bestseller` tags
+  - Placeholder Unsplash image — user will upload final via admin
+- **Delhivery default pickup_location changed `Parakkal` → `Office`** (`services/delhivery_service.py`). Preview .env already had `DELHIVERY_PICKUP_LOCATION=Office`; production env vars are managed separately by the user. By moving the code default to "Office" too, even the production deployment now reads the correct warehouse name without needing the env var to be set.
+
 ## New admin endpoints (require X-Admin-Token)
+- `POST /api/admin/ai/generate-banner` — multipart form (`prompt` text, `reference` image file optional, `aspect` square|landscape|portrait). Returns `{success, image_url, storage, mime_type, size_bytes}`.
+

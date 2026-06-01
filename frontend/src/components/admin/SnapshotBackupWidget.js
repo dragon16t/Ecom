@@ -69,10 +69,13 @@ export default function SnapshotBackupWidget({ token }) {
         .filter(([, v]) => typeof v === 'number' && v > 0)
         .map(([k, v]) => `${k}: ${v}`)
         .join(' · ');
-      alert(`Restore complete!\n\nRestored:\n${summary || '(nothing — snapshot was empty)'}\n\nSnapshot from: ${r.data?.snapshot_created_at || 'unknown'}`);
+      alert(`Restore complete!\n\nRestored:\n${summary || '(nothing — snapshot was empty)'}\n\nSnapshot from: ${r.data?.snapshot_created_at || 'unknown'}\n\nReloading the page so the restored images, categories, and product data appear...`);
+      // Wipe the local apiCache + force a hard reload — otherwise the admin
+      // sees stale image URLs / category slugs cached in memory from BEFORE
+      // the restore landed. The snapshot is now in Mongo; the UI must refetch.
+      try { window.dispatchEvent(new Event('admin-data-changed')); } catch (_) { /* noop */ }
       setJustSucceeded(true);
-      setTimeout(() => setJustSucceeded(false), 4000);
-      setTimeout(fetchStatus, 800);
+      setTimeout(() => { window.location.reload(); }, 500);
     } catch (e) {
       setError(e?.response?.data?.detail || e?.message || 'Restore failed');
     } finally {

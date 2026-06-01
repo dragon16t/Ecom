@@ -728,10 +728,9 @@ function AdminProducts() {
           alert('Please pick a niche (Anti-Aging / Skincare / Cosmetics).');
           return;
         }
-        if (!data.category || !data.category.trim()) {
-          alert('Please pick a category. Every product must belong to one — head to Admin → Concerns & Categories to create new ones.');
-          return;
-        }
+        // Category is OPTIONAL — many niches (esp. flagship Anti-Aging products
+        // like full kits / serums) don't fit a single category. The product
+        // page + niche pages render fine with category=null.
       }
       if (data && data.__isNew) {
         // CREATE flow
@@ -1243,9 +1242,9 @@ function AdminProducts() {
                   </div>
                   {/* 4. Category */}
                   <div>
-                    <label className="text-xs font-semibold text-gray-500">4. Category <span className="text-red-500">*</span></label>
-                    <select value={editProduct.category || ''} onChange={e => setEditProduct({...editProduct, category: e.target.value, subcategory: ''})} className={`w-full px-3 py-2 border rounded-lg text-sm bg-white ${!editProduct.category ? 'border-red-300' : ''}`} data-testid="new-category" required>
-                      <option value="">— Select category (required) —</option>
+                    <label className="text-xs font-semibold text-gray-500">4. Category <span className="text-gray-400 font-normal">(optional)</span></label>
+                    <select value={editProduct.category || ''} onChange={e => setEditProduct({...editProduct, category: e.target.value, subcategory: ''})} className="w-full px-3 py-2 border rounded-lg text-sm bg-white" data-testid="new-category">
+                      <option value="">— No category —</option>
                       {categories.filter(c => { const n = editProduct.niche || 'anti-aging'; if (!c.niche) return true; if (c.niche === n) return true; /* anti-aging is the flagship sub-niche of skincare and uses the skincare taxonomy (Moisturizers, Serums, Cleansers, etc.). Without this fallback the Category dropdown is empty and the form blocks save. */ if (n === 'anti-aging' && c.niche === 'skincare') return true; return false; }).map(c => <option key={c.slug} value={c.slug}>{c.icon} {c.name}</option>)}
                     </select>
                     {categories.filter(c => { const n = editProduct.niche || 'anti-aging'; if (!c.niche) return true; if (c.niche === n) return true; /* anti-aging is the flagship sub-niche of skincare and uses the skincare taxonomy (Moisturizers, Serums, Cleansers, etc.). Without this fallback the Category dropdown is empty and the form blocks save. */ if (n === 'anti-aging' && c.niche === 'skincare') return true; return false; }).length === 0 && (
@@ -1613,15 +1612,14 @@ function AdminProducts() {
                       </select>
                     </div>
                     <div>
-                      <label className="text-xs font-semibold text-gray-500 mb-1 block">Category <span className="text-red-500">*</span></label>
+                      <label className="text-xs font-semibold text-gray-500 mb-1 block">Category <span className="text-gray-400 font-normal">(optional)</span></label>
                       <select
                         value={editProduct.category || ''}
                         onChange={e => setEditProduct({ ...editProduct, category: e.target.value, subcategory: '' })}
-                        className={`w-full px-3 py-2 border rounded-lg text-sm bg-white ${!editProduct.category ? 'border-red-300' : ''}`}
+                        className="w-full px-3 py-2 border rounded-lg text-sm bg-white"
                         data-testid="edit-product-category"
-                        required
                       >
-                        <option value="">— Select category (required) —</option>
+                        <option value="">— No category —</option>
                         {categories.filter(c => { const n = editProduct.niche || 'anti-aging'; if (!c.niche) return true; if (c.niche === n) return true; /* anti-aging is the flagship sub-niche of skincare and uses the skincare taxonomy (Moisturizers, Serums, Cleansers, etc.). Without this fallback the Category dropdown is empty and the form blocks save. */ if (n === 'anti-aging' && c.niche === 'skincare') return true; return false; }).map(c => (
                           <option key={c.slug} value={c.slug}>{c.icon} {c.name}</option>
                         ))}

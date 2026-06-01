@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 import httpx
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException, Header, Form, File, UploadFile
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
@@ -287,4 +287,134 @@ Tone: trustworthy, clinical-but-warm, India-aware (no foreign units except insid
         "offer_price": int(data.get("offer_price") or 0) if str(data.get("offer_price", "")).strip().replace("-", "").isdigit() else 0,
         "brand_suggestion": data.get("brand_suggestion", "") or brand,
         "faqs": data.get("faqs", []) if isinstance(data.get("faqs"), list) else [],
+    }
+
+
+
+# ==================== AI BANNER GENERATION (category / concern hero images) ====================
+# Admins upload an optional reference image + type a prompt; Nano Banana returns
+# a freshly-generated banner ready to drop onto the category / concern card.
+
+@router.post("/admin/ai/generate-banner")
+async def generate_banner(
+    prompt: str = Form(..., description="Describe the banner / hero image you want"),
+    reference: Optional[UploadFile] = File(None, description="Optional reference image to guide style/composition"),
+    aspect: Optional[str] = Form("square", description="square | landscape | portrait"),
+    x_admin_token: Optional[str] = Header(None, alias="X-Admin-Token"),
+):
+    """Generate a brand-new banner image for category / concern / hero use.
+
+    Flow:
+      1. Admin sends a text prompt + (optional) reference image.
+      2. We pipe both into Gemini Nano Banana (image-out modality).
+      3. The first returned image is uploaded to Cloudinary and the URL is
+         returned so the admin can preview + one-click "Use this image".
+    """
+    _verify_admin_token(x_admin_token)
+
+    api_key = os.environ.get("EMERGENT_LLM_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="EMERGENT_LLM_KEY not configured")
+
+    prompt = (prompt or "").strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Prompt is required")
+    if len(prompt) > 1500:
+        raise HTTPException(status_code=400, detail="Prompt too long (max 1500 chars)")
+
+    # ---- Build aspect / composition hint ----
+    aspect_map = {
+        "square": "perfectly square 1:1 framing",
+        "landscape": "wide 16:9 landscape framing suited for a hero banner",
+        "portrait": "tall 3:4 portrait framing",
+    }
+    aspect_hint = aspect_map.get((aspect or "square").lower(), aspect_map["square"])
+
+    # ---- Optional reference image ----
+    file_contents = []
+    if reference is not None:
+        raw = await reference.read()
+        if len(raw) > 8 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="Reference image too large (max 8 MB)")
+        if raw:
+            file_contents.append(ImageContent(base64.b64encode(raw).decode("utf-8")))
+
+    # Compose final prompt — keep it focused so Nano Banana doesn't add captions / text.
+    full_prompt = (
+        f"{prompt}\n\nPhotorealistic, high-end skincare / beauty editorial style. "
+        f"{aspect_hint}. Clean composition, soft natural lighting, vibrant but tasteful colours. "
+        "Do NOT render any text, logos, watermarks, captions, or UI elements."
+    )
+    if file_contents:
+        full_prompt = (
+            "Use the attached image only as a style / mood / colour reference. "
+            "Generate a fresh original image inspired by it for the prompt below.\n\n"
+            + full_prompt
+        )
+
+    # ---- Call Nano Banana ----
+    try:
+        chat = LlmChat(
+            api_key=api_key,
+            session_id=f"banner-{uuid.uuid4().hex[:8]}",
+            system_message="You are a skincare-brand visual designer that produces photorealistic, premium banner images.",
+        )
+        chat.with_model("gemini", "gemini-3.1-flash-image-preview").with_params(
+            modalities=["image", "text"]
+        )
+        msg = UserMessage(text=full_prompt, file_contents=file_contents or None)
+        _text, images = await chat.send_message_multimodal_response(msg)
+    except Exception as e:
+        logger.error(f"[banner-ai] Gemini call failed: {e}")
+        raise HTTPException(status_code=502, detail=f"AI generation failed: {str(e)[:160]}")
+
+    if not images:
+        raise HTTPException(status_code=502, detail="AI did not return an image — try a different prompt")
+
+    out_img = images[0]
+    out_bytes = base64.b64decode(out_img["data"])
+    mime = out_img.get("mime_type", "image/png")
+
+    # ---- Push to Cloudinary (no local-disk fallback in prod) ----
+    public_url = None
+    storage = "none"
+    if _db is not None:
+        try:
+            from services import cloudinary_service as _cs
+            if await _cs.ensure_configured(_db):
+                res = await _cs.upload_image(
+                    _db, out_bytes,
+                    folder="celesta-glow/ai-banner",
+                    public_id=f"banner-{uuid.uuid4().hex[:12]}",
+                )
+                if res.get("url"):
+                    public_url = res["url"]
+                    storage = "cloudinary"
+        except Exception as exc:
+            logger.error(f"[banner-ai] Cloudinary upload failed: {exc}")
+
+    allow_local = (os.environ.get("ALLOW_LOCAL_UPLOADS") or "").lower() in ("1", "true", "yes")
+    if not public_url:
+        if not allow_local:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Cloudinary not configured — generated banner would die on the next "
+                    "redeploy. Set CLOUDINARY_* env vars and try again."
+                ),
+            )
+        ext = "png" if "png" in mime else "jpg"
+        filename = f"banner-{uuid.uuid4().hex[:12]}.{ext}"
+        out_path = UPLOAD_DIR / filename
+        with open(out_path, "wb") as f:
+            f.write(out_bytes)
+        public_url = f"/api/uploads/ai_bg/{filename}"
+        storage = "local"
+
+    return {
+        "success": True,
+        "image_url": public_url,
+        "storage": storage,
+        "mime_type": mime,
+        "size_bytes": len(out_bytes),
     }

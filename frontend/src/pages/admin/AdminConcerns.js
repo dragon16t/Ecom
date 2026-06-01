@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { ArrowLeft, Plus, Trash2, Save, Edit, Sparkles, Package, Image as ImageIcon, Layers, Search } from 'lucide-react';
 import { getAdminToken, clearAdminToken } from '../../utils/adminAuth';
+import AIBannerGenerator from '../../components/admin/AIBannerGenerator';
 import QuickImageEditor from '../../components/admin/QuickImageEditor';
 import BannerImageDropzone from '../../components/admin/BannerImageDropzone';
 
@@ -372,6 +373,7 @@ export default function AdminConcerns() {
                 <div className="p-3 flex items-center justify-between">
                   <span className="text-[11px] text-gray-500 font-mono truncate">/{c.slug}</span>
                   <div className="flex gap-1 items-center">
+                    <AIBannerGenerator resourceType="concern" slug={c.slug} currentImage={c.image} token={token} onUpdated={() => load()} />
                     <button onClick={() => setEditing({ type: 'concern', data: { ...c }, isNew: false })} className="text-blue-600 hover:bg-blue-50 p-1.5 rounded" data-testid={`edit-concern-${c.slug}`}>
                       <Edit size={14} />
                     </button>
@@ -448,6 +450,7 @@ export default function AdminConcerns() {
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] text-gray-500 font-mono truncate">/{c.slug}</span>
                   <div className="flex gap-1 items-center">
+                    <AIBannerGenerator resourceType="category" slug={c.slug} currentImage={c.image} token={token} onUpdated={() => load()} />
                     <button onClick={() => setEditing({ type: 'category', data: { ...c }, isNew: false })} className="text-blue-600 hover:bg-blue-50 p-1.5 rounded" data-testid={`edit-category-${c.slug}`}>
                       <Edit size={14} />
                     </button>
@@ -615,6 +618,7 @@ export default function AdminConcerns() {
                         <div className="flex items-center justify-between">
                           <span className="text-[11px] text-gray-500 font-mono truncate">/{s.slug}</span>
                           <div className="flex gap-1 items-center">
+                            <AIBannerGenerator resourceType="subcategory" slug={s.slug} currentImage={s.image} token={token} onUpdated={() => load()} />
                             <button onClick={() => setEditing({ type: 'subcategory', data: { ...s }, isNew: false })} className="text-blue-600 hover:bg-blue-50 p-1.5 rounded" data-testid={`edit-subcategory-${s.slug}`}>
                               <Edit size={14} />
                             </button>
