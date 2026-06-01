@@ -529,13 +529,10 @@ async def create_product(
 ):
     """Admin: Create a new product"""
     verify_auth(x_admin_token=x_admin_token)
-    # Mandatory category — surfaced as a clear 422 so the admin form can show
-    # a friendly error instead of a generic 500.
-    if not (data.category and str(data.category).strip()):
-        raise HTTPException(
-            status_code=422,
-            detail="Category is required. Pick one from /admin/categories before saving the product."
-        )
+    # Category is OPTIONAL (Feb 2026 spec). Flagship products like the Celesta
+    # Glow Anti-Aging Serum live directly under the niche without a category
+    # bucket. The admin UI no longer renders the asterisk either — see
+    # /app/frontend/src/pages/admin/AdminProducts.js.
     existing = await db.products.find_one({"slug": data.slug})
     if existing:
         raise HTTPException(status_code=400, detail="Product slug already exists")
@@ -601,10 +598,13 @@ async def update_product(
     """
     verify_auth(x_admin_token=x_admin_token)
     update = {k: v for k, v in data.dict().items() if v is not None}
-    allow_price = bool(update.pop("allow_price_change", False))
-    if not allow_price:
-        for k in ("prepaid_price", "cod_price", "mrp"):
-            update.pop(k, None)
+    # The deprecated `allow_price_change` flag is no longer required for the
+    # per-product PUT — bulk-update has its own price whitelist (see
+    # `bulk_update_products`), so a single-product edit is always a deliberate
+    # admin action and prices MUST flow through to the DB. Without this fix
+    # the admin form silently dropped prepaid_price / cod_price / mrp on save
+    # and the new price never showed on the storefront.
+    update.pop("allow_price_change", None)
     if not update:
         raise HTTPException(status_code=400, detail="Nothing to update")
     # Mirror singular `image` into images[0] so legacy schema consumers still find it.

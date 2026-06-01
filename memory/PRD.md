@@ -211,6 +211,11 @@ Target: handle 1,000-2,000 concurrent users on production with zero "Not Availab
   - Placeholder Unsplash image — user will upload final via admin
 - **Delhivery default pickup_location changed `Parakkal` → `Office`** (`services/delhivery_service.py`). Preview .env already had `DELHIVERY_PICKUP_LOCATION=Office`; production env vars are managed separately by the user. By moving the code default to "Office" too, even the production deployment now reads the correct warehouse name without needing the env var to be set.
 
+## Feb 2026 — Admin Price + Category Save Bugs (P0)
+- **Price updates were silently failing on every product** (`routes/products.py:update_product`). Cause: a stale `allow_price_change` guard left over from a Jan 2026 bulk-import protection. It silently `pop()`ed `prepaid_price`, `cod_price`, and `mrp` from the update payload unless the admin sent `allow_price_change: true` — which the admin UI never did. Admin would see "Saved" but the price never changed. Removed the guard from the per-product PUT (bulk-update has its own whitelist on line 678 of products.py, so prices are still protected from accidental mass mutation).
+- **Category-required check on backend create endpoint** (`routes/products.py:create_product`). Mirrors the prior frontend fix — backend was throwing `422 Category is required` even though the frontend now allows save with no category. Removed the check so the two layers agree.
+- **Sort order updates always worked** server-side (no guard), so single-edit reorder now saves correctly via the same fix path.
+
 ## Feb 2026 — Persistence definitive fix + Image perf + AI feature skipped
 - **CRITICAL — uploaded images AND changed prices were silently lost on every redeploy.** Two root causes, both fixed:
   1. **Stale Cloudinary snapshot URL** — `_fetch_latest_snapshot()` hit `latest` alias from the CDN edge, which can lag minutes behind a fresh upload. On redeploy the auto-restore picked up snapshot bytes from BEFORE the admin's recent edits. Fix (`services/catalog_backup.py`):
