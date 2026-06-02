@@ -307,9 +307,13 @@ async def get_all_products(
     if paginating:
         cursor = cursor.skip(skip_i).limit(limit_i)
     else:
-        # Admin & legacy callers fetch the full catalog in one shot. Cap at 5000
-        # so the list view (with virtualization) can host 2,000-4,000 SKUs.
-        cursor = cursor.limit(5000)
+        # Admin & legacy callers fetch the full catalog in one shot. Cap raised
+        # to 20 000 (Feb 2026) — the catalog grew past 5 000 and admins were
+        # blind to the tail end. Without this lift, the admin UI's product
+        # search couldn't find products past index 4 999, and reorder/edit
+        # operations on the missing tail were impossible. The list view uses
+        # react-window virtualization so 20 000 rows render fine.
+        cursor = cursor.limit(20000)
     products = await cursor.to_list(length=None)
 
     # Auto-flip TBL → launched on read if launch_date passed (unchanged logic)

@@ -211,6 +211,9 @@ Target: handle 1,000-2,000 concurrent users on production with zero "Not Availab
   - Placeholder Unsplash image — user will upload final via admin
 - **Delhivery default pickup_location changed `Parakkal` → `Office`** (`services/delhivery_service.py`). Preview .env already had `DELHIVERY_PICKUP_LOCATION=Office`; production env vars are managed separately by the user. By moving the code default to "Office" too, even the production deployment now reads the correct warehouse name without needing the env var to be set.
 
+## Feb 2026 — Admin product list 5000-cap bug (P0)
+- **Admin couldn't see/search/edit products past index 4999.** Total catalog is 7858 but `routes/products.py` capped the non-paginated admin fetch (`cursor.limit(5000)` on line 312) at 5000. Anything past that was invisible to the admin UI — including missing it from front-end search results. Lifted the cap to 20000. Admin UI uses react-window virtualization so 7858 rows render fine. Verified: admin fetch now returns all 7858 products (was 5000), response 16.9 MB.
+
 ## Feb 2026 — Admin Price + Category Save Bugs (P0)
 - **Price updates were silently failing on every product** (`routes/products.py:update_product`). Cause: a stale `allow_price_change` guard left over from a Jan 2026 bulk-import protection. It silently `pop()`ed `prepaid_price`, `cod_price`, and `mrp` from the update payload unless the admin sent `allow_price_change: true` — which the admin UI never did. Admin would see "Saved" but the price never changed. Removed the guard from the per-product PUT (bulk-update has its own whitelist on line 678 of products.py, so prices are still protected from accidental mass mutation).
 - **Category-required check on backend create endpoint** (`routes/products.py:create_product`). Mirrors the prior frontend fix — backend was throwing `422 Category is required` even though the frontend now allows save with no category. Removed the check so the two layers agree.
