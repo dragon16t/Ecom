@@ -268,3 +268,9 @@ Target: handle 1,000-2,000 concurrent users on production with zero "Not Availab
 
 - `POST /api/admin/ai/generate-banner` — multipart form (`prompt` text, `reference` image file optional, `aspect` square|landscape|portrait). Returns `{success, image_url, storage, mime_type, size_bytes}`.
 
+
+
+### Feb 2026 — Splash centering & middleware cleanup
+- **Splash PNG re-cropped for true vertical centering.** Original splash (`/app/frontend/public/splash-celesta-glow.png`) had 40% blank space at top vs 1.2% at bottom, so flex-centering the image visually pushed the CELESTA logo + tagline into the lower half of the viewport. Re-cropped to bounding-box of content + symmetric 13.2% top/bottom padding → content now sits at true centre on every device (1920×1080 desktop and 390×844 mobile both verified).
+- **Auto-restore verified live.** Confirmed startup logs: 7,856 products / 25,056 customers / 106,380 referrals / 158 categories / 135 subcategories / 14 concerns / 12,096 site_settings restored from latest Cloudinary snapshot on each backend boot. Daily midnight-IST + 15-min safety-net snapshots both active.
+- **Silenced noisy `RuntimeError: No response returned` log spam** by removing the deprecated `CatalogBackupTriggerMiddleware` from the middleware stack (it was already a no-op since per-write snapshots were disabled; Starlette's `BaseHTTPMiddleware` tripped this for certain streaming responses). The `schedule_snapshot` helper is still imported by the scheduler. File `services/catalog_backup_middleware.py` is left in place for future opt-in.

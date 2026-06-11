@@ -3355,11 +3355,12 @@ app.add_middleware(GZipMiddleware, minimum_size=1024)
 from services.rate_limit import RateLimitMiddleware  # noqa: E402
 app.add_middleware(RateLimitMiddleware)
 
-# Auto-snapshot middleware: schedules a Cloudinary backup after every
-# successful admin write so data survives ephemeral-pod redeploys.
-from services.catalog_backup_middleware import CatalogBackupTriggerMiddleware  # noqa: E402
+# Auto-snapshot middleware: per-write snapshot was disabled (Feb 2026) and the
+# remaining no-op BaseHTTPMiddleware tripped Starlette's "No response returned"
+# bug for certain streaming/long-poll responses, spamming the logs. The
+# snapshot schedule_snapshot helper is still imported for explicit callers
+# below; the middleware itself is unregistered.
 from services import catalog_backup as _cb_module  # noqa: E402
-app.add_middleware(CatalogBackupTriggerMiddleware, db=db, schedule_snapshot=_cb_module.schedule_snapshot)
 
 logging.basicConfig(
     level=logging.INFO,
