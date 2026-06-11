@@ -126,7 +126,13 @@ async def _serialize(db) -> Dict[str, Any]:
 
 
 async def snapshot(db) -> Dict[str, Any]:
-    """Compress + upload the current state to Cloudinary as a raw .json.gz."""
+    """Compress + upload the current state to Cloudinary as a raw .json.gz.
+
+    Retention: only the LAST 3 backups are kept. After each upload we delete
+    every older backup file on Cloudinary to keep storage usage in check.
+    The full DB state is in EVERY snapshot — losing older ones doesn't lose
+    any data, you just can't time-travel further back than 3 backups.
+    """
     global _last_snapshot_at
     if not await _cs.ensure_configured(db):
         raise RuntimeError("Cloudinary not configured — cannot snapshot")
@@ -134,31 +140,78 @@ async def snapshot(db) -> Dict[str, Any]:
     raw_json = json.dumps(payload, separators=(",", ":"), default=str).encode("utf-8")
     # gzip compresses the typical 5-15MB catalog snapshot down to 800KB-2MB
     blob = gzip.compress(raw_json, compresslevel=6)
+    # Dated public_id so older backups are addressable and pruneable.
+    ts_compact = payload["created_at"].replace(":", "-").replace(".", "-")
+    dated_public_id = f"celesta-glow/backups/snapshot-{ts_compact}"
     res = cloudinary.uploader.upload(
         io.BytesIO(blob),
-        public_id=CLOUDINARY_PUBLIC_ID,
+        public_id=dated_public_id,
         resource_type="raw",
         overwrite=True,
         unique_filename=False,
     )
+    # ALSO mirror to the legacy `latest` alias so older code paths (auto-restore
+    # cold-boot fallback) still find a snapshot if Mongo `admin_settings` is wiped.
+    try:
+        cloudinary.uploader.upload(
+            io.BytesIO(blob),
+            public_id=CLOUDINARY_PUBLIC_ID,
+            resource_type="raw",
+            overwrite=True,
+            unique_filename=False,
+        )
+    except Exception as exc:
+        logger.warning("Failed to mirror snapshot to `latest` alias: %s", exc)
+
     _last_snapshot_at = asyncio.get_event_loop().time()
     counts = {c: payload["collections"].get(c + "__count", 0) for c in SNAPSHOT_COLLECTIONS}
-    # Persist the versioned secure_url to Mongo so we can fetch the EXACT
-    # bytes we just uploaded on next restore, bypassing Cloudinary's
-    # `latest` alias CDN cache (which can lag several minutes behind a
-    # re-upload and was causing the "uploaded image / changed price
-    # didn't survive redeploy" bug).
     snapshot_url = res.get("secure_url") or res.get("url")
+    snapshot_version = res.get("version")
     try:
+        # Append to a sliding window of the last 3 snapshots. Older entries are
+        # both forgotten from Mongo AND deleted from Cloudinary below.
+        doc = await db.admin_settings.find_one({"type": "catalog_backup"}, {"_id": 0}) or {}
+        history = doc.get("history", [])
+        history.append({
+            "public_id": dated_public_id,
+            "url": snapshot_url,
+            "version": snapshot_version,
+            "created_at": payload["created_at"],
+            "bytes": len(blob),
+        })
+        history = history[-3:]  # keep last 3 only
         await db.admin_settings.update_one(
             {"type": "catalog_backup"},
             {"$set": {
                 "type": "catalog_backup",
                 "latest_url": snapshot_url,
                 "created_at": payload["created_at"],
+                "history": history,
             }},
             upsert=True,
         )
+
+        # ---- Cloudinary retention sweep ----
+        # Discover every backup file currently on Cloudinary (in the backups/
+        # folder) and delete anything not in our 3-keep history. Catches files
+        # left over from previous runs even before we tracked history in Mongo.
+        try:
+            import cloudinary.api as _capi
+            keep_ids = {h["public_id"] for h in history}
+            keep_ids.add(CLOUDINARY_PUBLIC_ID)  # never delete the `latest` alias
+            res_list = _capi.resources(
+                resource_type="raw",
+                type="upload",
+                prefix="celesta-glow/backups/",
+                max_results=100,
+            )
+            to_delete = [r["public_id"] for r in res_list.get("resources", []) if r["public_id"] not in keep_ids]
+            if to_delete:
+                _capi.delete_resources(to_delete, resource_type="raw")
+                logger.info("Backup retention: pruned %d old snapshot(s) from Cloudinary: %s", len(to_delete), to_delete)
+        except Exception as exc:
+            logger.warning("Cloudinary retention sweep failed (storage may bloat): %s", exc)
+
     except Exception as exc:
         logger.warning("Failed to persist snapshot URL: %s", exc)
     logger.info(
@@ -167,7 +220,7 @@ async def snapshot(db) -> Dict[str, Any]:
     )
     return {
         "success": True,
-        "url": res.get("secure_url") or res.get("url"),
+        "url": snapshot_url,
         "counts": counts,
         "snapshot_bytes_raw": len(raw_json),
         "snapshot_bytes_compressed": len(blob),

@@ -1,26 +1,129 @@
 import React, { useEffect, useState } from 'react';
 
 /**
- * SplashScreen — first-paint brand splash for Celesta Glow.
+ * SplashScreen — bulletproof v3.
  *
- * Plays once per browser session (sessionStorage), staying out of the way on
- * subsequent navigations within the same tab. Dismisses on first user action
- * (click / scroll / tap) so it never blocks an impatient shopper.
+ * Hard lessons from production glitches (black screen / missing animations /
+ * fallback fonts) on slow 4G + iOS in-app browsers + ad-blockers:
  *
- * Theme — matches the rest of the storefront (mint emerald + gold accent on
- * white).
+ *   • NO Google Fonts. Custom font loading is async and unreliable — the
+ *     previous version's `background-clip: text` shimmer made letters
+ *     INVISIBLE if the gradient didn't apply (Flash of Invisible Text), which
+ *     is exactly the "black screen" bug.
+ *   • NO Tailwind class deps for ANY critical visual. Tailwind is one HTTP
+ *     round-trip away from rendering nothing; we inline-style everything.
+ *   • NO SVG underline / shimmer trick. Both are async-CSS-dependent.
+ *   • System fonts only (`serif` for CELESTA, `system-ui` for the rest).
+ *   • Simple opacity + transform animations only — work on every browser.
+ *   • Plays once per browser session, dismisses on first deliberate user
+ *     interaction (pointerdown / keydown), 2.6s autoplay.
  *
- * Animation timeline (total ~2.6 s):
- *   0.0 s  fade-in white background + soft gradient orb
- *   0.4 s  logo "CELESTA" zooms in, then "GLOW" slides in gold
- *   1.1 s  tagline + slogan fade up
- *   2.4 s  whole screen fades + scales out, calls onDone()
+ * If anything else breaks again, the "remove splash entirely" escape hatch
+ * is a 1-line change: return null from this component.
  */
-const SESSION_KEY = 'cg_splash_seen_v1';
+const SESSION_KEY = 'cg_splash_seen_v3';
+
+// Brand palette (inline so it never depends on Tailwind)
+const MINT = '#7FB069';
+const MINT_PALE = '#b9d6a4';
+const INK = '#161616';
+const BODY_INK = '#1f1f1f';
+
+const styles = {
+  wrap: {
+    position: 'fixed',
+    inset: 0,
+    zIndex: 9999,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+    colorScheme: 'light',
+    overflow: 'hidden',
+    WebkitFontSmoothing: 'antialiased',
+    MozOsxFontSmoothing: 'grayscale',
+    padding: '24px',
+    boxSizing: 'border-box',
+  },
+  inner: {
+    position: 'relative',
+    zIndex: 2,
+    textAlign: 'center',
+    maxWidth: 440,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+  },
+  celesta: {
+    fontFamily: '"Cormorant Garamond", "EB Garamond", Georgia, "Times New Roman", serif',
+    fontWeight: 400,
+    fontSize: 'clamp(2.4rem, 9vw, 4.6rem)',
+    letterSpacing: '0.5rem',
+    color: INK,
+    lineHeight: 1,
+    margin: 0,
+  },
+  glowRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    maxWidth: 320,
+    marginTop: 14,
+  },
+  glowRule: { flex: 1, height: 1.3, backgroundColor: MINT, borderRadius: 999 },
+  glow: {
+    fontFamily: '"Cormorant Garamond", "EB Garamond", Georgia, serif',
+    fontWeight: 400,
+    fontSize: 'clamp(1rem, 2.8vw, 1.25rem)',
+    letterSpacing: '0.55em',
+    color: MINT,
+    padding: '0 1em',
+    whiteSpace: 'nowrap',
+    lineHeight: 1,
+  },
+  tagline: {
+    marginTop: 40,
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif',
+    fontWeight: 500,
+    fontSize: 'clamp(1.05rem, 4vw, 1.15rem)',
+    lineHeight: 1.45,
+    color: BODY_INK,
+    margin: 0,
+  },
+  kerala: { color: MINT, fontWeight: 600 },
+  heartRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    maxWidth: 320,
+    marginTop: 32,
+  },
+  heartRule: { flex: 1, height: 1.2, backgroundColor: MINT_PALE, borderRadius: 999 },
+  slogan: {
+    marginTop: 28,
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif',
+    fontWeight: 500,
+    fontStyle: 'normal',
+    fontSize: 'clamp(1.6rem, 5vw, 2.1rem)',
+    color: MINT,
+    letterSpacing: '0.02em',
+    lineHeight: 1.15,
+    margin: 0,
+  },
+  // Background wash blobs (very faint, never block content)
+  orbA: {
+    position: 'absolute', top: -180, left: -180, width: 480, height: 480, borderRadius: '50%',
+    backgroundColor: 'rgba(217,237,202,0.40)', filter: 'blur(80px)', pointerEvents: 'none',
+  },
+  orbB: {
+    position: 'absolute', bottom: -180, right: -180, width: 520, height: 520, borderRadius: '50%',
+    backgroundColor: 'rgba(254,243,199,0.30)', filter: 'blur(80px)', pointerEvents: 'none',
+  },
+};
 
 export default function SplashScreen({ onDone }) {
-  // Skip if already shown this session — keeps page loads instant on
-  // intra-tab navigation (search, product detail, cart, etc.).
   const [visible, setVisible] = useState(() => {
     try { return !sessionStorage.getItem(SESSION_KEY); } catch (_) { return true; }
   });
@@ -30,26 +133,17 @@ export default function SplashScreen({ onDone }) {
     if (!visible || fadingOut) return;
     setFadingOut(true);
     try { sessionStorage.setItem(SESSION_KEY, '1'); } catch (_) { /* noop */ }
-    // Match the fade-out duration in the inline <style> below
     setTimeout(() => { setVisible(false); onDone?.(); }, 380);
   }, [visible, fadingOut, onDone]);
 
-  // ----- Preload everything the homepage will need while the splash is showing -----
-  // Runs ONCE on first mount of the splash. By the time the user finishes
-  // looking at the logo (~2.4 s), the homepage's products, concerns, categories,
-  // site-settings and combos are already sitting in `apiCache`, so the post-
-  // splash transition feels instant. No-op on intra-tab navigation because
-  // SplashScreen is gated by sessionStorage.
+  // Background-preload homepage data while splash is showing
   useEffect(() => {
     if (!visible) return;
-    let cancelled = false;
     (async () => {
       try {
         const { cachedGet } = await import('../utils/apiCache');
         const API = process.env.REACT_APP_BACKEND_URL;
-        // Fire all in parallel — apiCache.cachedGet de-dupes in-flight requests
-        // so the homepage's own useEffect won't re-fetch.
-        const prefetch = [
+        await Promise.allSettled([
           cachedGet(`${API}/api/concerns`, { ttl: 60_000 }),
           cachedGet(`${API}/api/categories`, { ttl: 60_000 }),
           cachedGet(`${API}/api/subcategories`, { ttl: 60_000 }),
@@ -58,28 +152,17 @@ export default function SplashScreen({ onDone }) {
           cachedGet(`${API}/api/products?niche=anti-aging&page=1&limit=20`),
           cachedGet(`${API}/api/products?niche=skincare&page=1&limit=20`),
           cachedGet(`${API}/api/products?niche=cosmetics&page=1&limit=20`),
-        ];
-        await Promise.allSettled(prefetch);
-      } catch (_) { /* preload is best-effort */ }
-      if (cancelled) return;
+        ]);
+      } catch (_) { /* best-effort */ }
     })();
-    return () => { cancelled = true; };
   }, [visible]);
 
   useEffect(() => {
     if (!visible) { onDone?.(); return; }
-    // Auto-dismiss after the animation completes
-    const t = setTimeout(finish, 3500);
+    const t = setTimeout(finish, 2600);
 
-    // BUG fix: the dismiss-on-interaction listeners used to fire DURING page
-    // load (browser's `scroll-restoration` triggers a scroll event the moment
-    // the document mounts; mobile browsers also emit spurious touchstart events
-    // mid-render). That killed the splash after just a couple of letters.
-    //   1. Wait 1.4 s before arming the listeners (covers the load burst).
-    //   2. Drop `scroll` entirely — it's never a deliberate "skip splash" intent
-    //      on a fixed-overlay page, but it's the #1 false-positive source.
-    //   3. Only treat `keydown` and a real `pointerdown` as a skip — both are
-    //      true user actions.
+    // Arm dismiss listeners AFTER the initial render burst (1.4 s) so spurious
+    // load-time scroll / touch events don't kill the splash early.
     let armed = false;
     const skip = () => { if (armed) finish(); };
     const arm = setTimeout(() => { armed = true; }, 1400);
@@ -95,190 +178,76 @@ export default function SplashScreen({ onDone }) {
 
   if (!visible) return null;
 
+  const sloganLetters = 'Glow With Confidence';
+
   return (
     <div
       data-testid="splash-screen"
-      className={`fixed inset-0 z-[9999] flex items-center justify-center bg-white overflow-hidden ${fadingOut ? 'cg-splash-out' : 'cg-splash-in'}`}
-      aria-label="Celesta Glow"
+      style={{ ...styles.wrap, ...(fadingOut ? { animation: 'cg-splash-out .38s ease-in forwards' } : { animation: 'cg-splash-in .35s ease-out forwards' }) }}
       role="status"
+      aria-label="Celesta Glow"
     >
-      {/* Subtle background wash (kept very faint so the layout matches the brand sheet) */}
-      <div className="absolute inset-0 pointer-events-none cg-splash-orb">
-        <div className="absolute -top-40 -left-40 w-[480px] h-[480px] rounded-full bg-emerald-50/60 blur-3xl" />
-        <div className="absolute -bottom-40 -right-40 w-[520px] h-[520px] rounded-full bg-amber-50/40 blur-3xl" />
-      </div>
+      <div style={styles.orbA} aria-hidden="true" />
+      <div style={styles.orbB} aria-hidden="true" />
 
-      {/* Brand stack — matches the supplied design (serif CELESTA, mint GLOW with horizontal rules,
-          three-line tagline with "Kerala" in mint, heart-rule divider, cursive slogan with underline). */}
-      <div className="relative z-10 flex flex-col items-center text-center px-6 max-w-md">
-        {/* CELESTA — bold serif, very wide letter-spacing */}
-        <div className="cg-splash-celesta select-none">
-          <span className="cg-celesta-text">CELESTA</span>
+      <div style={styles.inner}>
+        {/* CELESTA */}
+        <div style={{ ...styles.celesta, animation: 'cg-rise .7s cubic-bezier(.22,1,.36,1) .15s both' }}>
+          CELESTA
         </div>
 
-        {/* GLOW row — mint colour, sandwiched between two horizontal rules */}
-        <div className="cg-splash-glowrow mt-3 flex items-center justify-center w-full max-w-[280px] sm:max-w-[340px]" aria-hidden="true">
-          <span className="cg-glowrow-rule" />
-          <span className="cg-glow-text">G L O W</span>
-          <span className="cg-glowrow-rule" />
+        {/* GLOW row with rules */}
+        <div style={{ ...styles.glowRow, animation: 'cg-glow .65s cubic-bezier(.22,1,.36,1) .65s both', transformOrigin: 'center' }} aria-hidden="true">
+          <span style={styles.glowRule} />
+          <span style={styles.glow}>G L O W</span>
+          <span style={styles.glowRule} />
         </div>
 
-        {/* Tagline — three lines, "Kerala" in mint */}
-        <p className="cg-splash-tagline mt-10 text-[1.05rem] sm:text-[1.15rem] leading-snug font-medium text-stone-800">
+        {/* Tagline */}
+        <p style={{ ...styles.tagline, animation: 'cg-rise .55s ease-out 1s both' }}>
           The Most Trusted
           <br />
           Skincare Ecommerce App
           <br />
-          of <span style={{ color: '#7FB069' }} className="font-semibold">Kerala</span>
+          of <span style={styles.kerala}>Kerala</span>
         </p>
 
         {/* Heart-rule divider */}
-        <div className="cg-splash-heart mt-8 flex items-center justify-center w-full max-w-[300px]" aria-hidden="true">
-          <span className="cg-heart-rule" />
-          <svg className="mx-3 cg-heart-icon" width="14" height="14" viewBox="0 0 24 24" fill="#7FB069" aria-hidden="true">
-            <path d="M12 21s-7.2-4.35-9.5-9.1C.83 8.6 2.5 5 6 5c2 0 3.5 1.1 4.5 2.7C11.5 6.1 13 5 15 5c3.5 0 5.17 3.6 3.5 6.9C19.2 16.65 12 21 12 21z" />
+        <div style={{ ...styles.heartRow, animation: 'cg-rise .5s ease-out 1.35s both' }} aria-hidden="true">
+          <span style={styles.heartRule} />
+          <svg width="14" height="14" viewBox="0 0 24 24" style={{ margin: '0 12px', animation: 'cg-pulse 1.8s ease-in-out 1.9s infinite', transformOrigin: 'center' }} aria-hidden="true">
+            <path d="M12 21s-7.2-4.35-9.5-9.1C.83 8.6 2.5 5 6 5c2 0 3.5 1.1 4.5 2.7C11.5 6.1 13 5 15 5c3.5 0 5.17 3.6 3.5 6.9C19.2 16.65 12 21 12 21z" fill={MINT} />
           </svg>
-          <span className="cg-heart-rule" />
+          <span style={styles.heartRule} />
         </div>
 
-        {/* Cursive slogan with underline flourish */}
-        <div className="cg-splash-slogan mt-7 relative inline-block">
-          <span className="cg-slogan-text" style={{ color: '#7FB069' }}>Glow With Confidence</span>
-          <svg className="cg-slogan-underline" width="220" height="14" viewBox="0 0 220 14" fill="none" aria-hidden="true">
-            <path d="M5 8 Q60 1 115 6 T215 8" stroke="#7FB069" strokeWidth="2.2" strokeLinecap="round" fill="none" />
-          </svg>
+        {/* Slogan — letter-by-letter reveal, clean sans, no underline */}
+        <div style={styles.slogan} aria-label={sloganLetters}>
+          {sloganLetters.split('').map((ch, i) => (
+            <span
+              key={i}
+              style={{
+                display: 'inline-block',
+                opacity: 0,
+                animation: `cg-letter .5s cubic-bezier(.22,1,.36,1) forwards`,
+                animationDelay: `${1.6 + i * 0.04}s`,
+                whiteSpace: 'pre',
+              }}
+            >{ch === ' ' ? '\u00A0' : ch}</span>
+          ))}
         </div>
       </div>
 
+      {/* Animations — kept TINY and in one inline <style>. No external deps. */}
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500&family=Great+Vibes&family=Outfit:wght@300;400;500&display=swap');
-
-        .cg-celesta-text {
-          /* Light-weight Cormorant Garamond — matches the website's premium
-             serif. Heavy weights read as "bold logo"; on a splash screen we want
-             quiet elegance, so we stay between 300 and 400. */
-          font-family: 'Cormorant Garamond', 'EB Garamond', Georgia, serif;
-          font-weight: 400;
-          font-size: clamp(2.8rem, 9.5vw, 5.2rem);
-          letter-spacing: clamp(0.45rem, 1.3vw, 0.95rem);
-          color: #161616;
-          line-height: 1;
-          position: relative;
-          /* Make the text itself the clipping mask for the shimmer overlay */
-          background-image: linear-gradient(
-            115deg,
-            #161616 0%,
-            #161616 38%,
-            #d6b275 49%,
-            #f1d9a8 50%,
-            #d6b275 51%,
-            #161616 62%,
-            #161616 100%
-          );
-          background-size: 240% 100%;
-          background-position: 100% 0;
-          background-repeat: no-repeat;
-          -webkit-background-clip: text;
-                  background-clip: text;
-          -webkit-text-fill-color: transparent;
-          animation: cg-celesta-pop .95s cubic-bezier(.22,1,.36,1) .15s both,
-                     cg-shimmer-sweep 1.6s cubic-bezier(.45,.05,.55,.95) 1.4s 1 forwards;
-        }
-        .cg-glow-text {
-          font-family: 'Cormorant Garamond', Georgia, serif;
-          font-weight: 400;
-          font-size: clamp(0.95rem, 2.6vw, 1.25rem);
-          letter-spacing: 0.55em;
-          color: #7FB069;
-          padding: 0 1em;
-          line-height: 1;
-          white-space: nowrap;
-        }
-        .cg-glowrow-rule {
-          flex: 1;
-          height: 1.3px;
-          background: #7FB069;
-          border-radius: 999px;
-        }
-        .cg-heart-rule {
-          flex: 1;
-          height: 1.2px;
-          background: #b9d6a4;
-          border-radius: 999px;
-        }
-        .cg-splash-tagline {
-          /* Match the site's body sans family for visual cohesion */
-          font-family: 'Outfit', 'DM Sans', system-ui, sans-serif;
-          font-weight: 400;
-          letter-spacing: 0.005em;
-        }
-        .cg-slogan-text {
-          /* Clean sans-serif — matches the site's body family (Outfit / DM Sans).
-             Medium weight + letter-spacing for premium feel without ever
-             looking italic or cursive. Easily readable at any size. */
-          font-family: 'Outfit', 'DM Sans', system-ui, sans-serif;
-          font-style: normal;
-          font-weight: 500;
-          font-size: clamp(1.6rem, 5vw, 2.2rem);
-          line-height: 1.1;
-          letter-spacing: 0.04em;
-        }
-        .cg-slogan-underline {
-          position: absolute;
-          left: 50%;
-          bottom: -14px;
-          transform: translateX(-50%);
-          width: clamp(180px, 60vw, 240px);
-        }
-
-        @keyframes cg-fade-in    { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes cg-fade-out   { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(1.03); } }
-        @keyframes cg-celesta-pop {
-          0%   { opacity: 0; transform: translateY(14px) scale(.96); letter-spacing: 1.1em; }
-          70%  { opacity: 1; transform: translateY(0)    scale(1.005); }
-          100% { opacity: 1; transform: translateY(0)    scale(1); }
-        }
-        @keyframes cg-shimmer-sweep {
-          0%   { background-position: 100% 0; }
-          100% { background-position: 0% 0; }
-        }
-        @keyframes cg-glowrow-in {
-          0%   { opacity: 0; transform: scaleX(0.4); }
-          100% { opacity: 1; transform: scaleX(1); }
-        }
-        @keyframes cg-rise-fade  { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes cg-heart-pulse {
-          0%, 100% { transform: scale(1); }
-          50%      { transform: scale(1.18); }
-        }
-        @keyframes cg-underline-draw {
-          from { stroke-dashoffset: 240; }
-          to   { stroke-dashoffset: 0; }
-        }
-        @keyframes cg-orb-pan     { from { transform: scale(1); } to { transform: scale(1.06); } }
-
-        .cg-splash-in  { animation: cg-fade-in  .35s ease-out forwards; }
-        .cg-splash-out { animation: cg-fade-out .4s ease-in  forwards; }
-        .cg-splash-orb { animation: cg-orb-pan 2.4s ease-out forwards; }
-
-        .cg-splash-glowrow { animation: cg-glowrow-in .7s cubic-bezier(.22,1,.36,1) .9s both; transform-origin: center; }
-        .cg-splash-tagline { animation: cg-rise-fade .6s ease-out 1.25s both; }
-        .cg-splash-heart   { animation: cg-rise-fade .55s ease-out 1.65s both; }
-        .cg-heart-icon     { animation: cg-heart-pulse 1.8s ease-in-out 2.3s infinite; transform-origin: center; }
-        .cg-splash-slogan  { animation: cg-rise-fade .6s ease-out 1.95s both; }
-        .cg-slogan-underline path {
-          stroke-dasharray: 240;
-          stroke-dashoffset: 240;
-          animation: cg-underline-draw .95s cubic-bezier(.22,1,.36,1) 2.25s forwards;
-        }
-
+        @keyframes cg-splash-in  { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes cg-splash-out { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(1.02); } }
+        @keyframes cg-rise       { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes cg-glow       { from { opacity: 0; transform: scaleX(.4); } to { opacity: 1; transform: scaleX(1); } }
+        @keyframes cg-letter     { 0% { opacity: 0; transform: translateY(8px) scale(.95); } 60% { opacity: 1; transform: translateY(0) scale(1.02); } 100% { opacity: 1; transform: translateY(0) scale(1); } }
+        @keyframes cg-pulse      { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.18); } }
         @media (prefers-reduced-motion: reduce) {
-          .cg-celesta-text { animation: none; background-position: 0 0; }
-          .cg-splash-glowrow, .cg-splash-tagline,
-          .cg-splash-heart, .cg-heart-icon, .cg-splash-slogan,
-          .cg-slogan-underline path, .cg-splash-orb {
-            animation: none; opacity: 1; transform: none; stroke-dashoffset: 0;
-          }
+          [data-testid="splash-screen"] * { animation: none !important; opacity: 1 !important; transform: none !important; }
         }
       `}</style>
     </div>
