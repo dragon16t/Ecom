@@ -633,11 +633,14 @@ async def delete_product(
     slug: str,
     x_admin_token: str = Header(None, alias="X-Admin-Token")
 ):
-    """Admin: Delete product"""
+    """Admin: Delete product. Writes a tombstone so seed scripts won't
+    resurrect this slug on the next container redeploy."""
     verify_auth(x_admin_token=x_admin_token)
     result = await db.products.delete_one({"slug": slug})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Product not found")
+    from services import taxonomy_tombstones as _tomb
+    await _tomb.add_tombstone(db, "product", slug)
     return {"success": True}
 
 
@@ -664,6 +667,10 @@ async def bulk_delete_products(
     if not slugs:
         raise HTTPException(status_code=400, detail="`slugs` cannot be empty")
     res = await db.products.delete_many({"slug": {"$in": slugs}})
+    # Tombstone each deleted slug so seed scripts don't resurrect them
+    from services import taxonomy_tombstones as _tomb
+    for s in slugs:
+        await _tomb.add_tombstone(db, "product", s)
     return {"deleted": res.deleted_count, "not_found": len(slugs) - res.deleted_count, "requested": len(slugs)}
 
 
@@ -1835,6 +1842,15 @@ async def seed_products():
         }
     ]
     
+    # Filter out any tombstoned slugs so admin-deleted sample products don't
+    # come back when the DB is wiped + reseeded on redeploy.
+    try:
+        from services.taxonomy_tombstones import get_tombstoned_slugs
+        tombs = await get_tombstoned_slugs(db, "product")
+        products = [p for p in products if p.get("slug") not in tombs]
+    except Exception:
+        pass
+
     await db.products.insert_many(products)
     logging.info(f"Seeded {len(products)} products")
     

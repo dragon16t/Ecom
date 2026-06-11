@@ -187,18 +187,15 @@ async def _debounced_snapshot(db):
         _pending_snapshot_task = None
 
 
+_last_write_at: Optional[float] = None
+
+
 def schedule_snapshot(db) -> None:
-    """Fire-and-forget snapshot. Safe to call from any admin write handler;
-    coalesces bursts so 50 writes in 5 seconds only produce 1 backup."""
-    global _pending_snapshot_task
-    if _pending_snapshot_task and not _pending_snapshot_task.done():
-        return  # already queued
-    try:
-        loop = asyncio.get_event_loop()
-        _pending_snapshot_task = loop.create_task(_debounced_snapshot(db))
-    except RuntimeError:
-        # No running loop (e.g. called from a sync seed script) — skip
-        logger.debug("No running event loop; skipping snapshot schedule")
+    """Mark that a write happened. The actual upload is handled by the
+    15-minute safety-net scheduler in `server.py` (was per-write debounced
+    before, but that pushed too much Cloudinary bandwidth on busy days)."""
+    global _last_write_at
+    _last_write_at = asyncio.get_event_loop().time()
 
 
 async def _fetch_latest_snapshot(db) -> Optional[Dict[str, Any]]:
@@ -334,6 +331,29 @@ async def auto_restore_if_empty(db) -> Dict[str, Any]:
         except Exception as exc:
             logger.error("Auto-restore failed for %s: %s", col, exc)
             restored_counts[col] = -1
+
+    # ---------- Tombstone enforcement ----------
+    # `taxonomy_tombstones` were already restored above. Now sweep across
+    # concerns / categories / subcategories / products and DELETE any row
+    # whose slug is tombstoned. This catches the edge case where the
+    # snapshot was taken BEFORE the admin's delete — without this sweep,
+    # the auto-restore would silently bring deleted items back.
+    try:
+        kind_to_col = {
+            "concern": "concerns",
+            "category": "categories",
+            "subcategory": "subcategories",
+            "product": "products",
+        }
+        for kind, col in kind_to_col.items():
+            tomb_slugs = [d["slug"] async for d in db.taxonomy_tombstones.find({"kind": kind}, {"_id": 0, "slug": 1})]
+            if tomb_slugs:
+                res = await db[col].delete_many({"slug": {"$in": tomb_slugs}})
+                if res.deleted_count:
+                    logger.info("Tombstone sweep removed %d resurrected %s rows", res.deleted_count, kind)
+    except Exception as exc:
+        logger.warning("Tombstone sweep failed: %s", exc)
+
     logger.info(
         "Snapshot auto-restored: %s (snapshot created %s)",
         restored_counts, snapshot_data.get("created_at"),

@@ -185,12 +185,13 @@ function ProductDetailPage() {
     const load = async () => {
       setLoading(true); setImgIdx(0);
       try {
-        const [p, all, c] = await Promise.all([
-          cachedGet(`${API}/api/products/${slug}`),
-          cachedGet(`${API}/api/products`),
-          cachedGet(`${API}/api/combos`, { ttl: 60_000 }),
-        ]);
-        setProduct(p.data); setAllProducts(all.data.filter(x => x.slug !== slug)); setCombos(c.data);
+        // PERF (Feb 2026): fetch the product first; the related-products + combos
+        // queries run in parallel as a SEPARATE step so the product page can paint
+        // immediately. Also, related products are now scoped to the same niche
+        // with `limit=12` instead of pulling the entire 7858-SKU catalog (which
+        // was the 16.9 MB JSON download causing the 4-6 s product-page lag).
+        const p = await cachedGet(`${API}/api/products/${slug}`);
+        setProduct(p.data);
         // Auto-select first in-stock shade for products with shade variants
         const shadesArr = (p.data && p.data.shades) || [];
         if (Array.isArray(shadesArr) && shadesArr.length > 0) {
@@ -199,16 +200,29 @@ function ProductDetailPage() {
         } else {
           setSelectedShadeId(null);
         }
-        // Track recently-viewed slugs (last 8) in sessionStorage so cart can recommend
+        // Pixel + tracking right away
         try {
           const prev = JSON.parse(sessionStorage.getItem('recentlyViewed') || '[]');
           const next = [slug, ...prev.filter(s => s !== slug)].slice(0, 8);
           sessionStorage.setItem('recentlyViewed', JSON.stringify(next));
-        } catch (e) {}
+        } catch (e) { /* sessionStorage might be unavailable */ }
         if (window.fbq) window.fbq('track', 'ViewContent', { content_name: p.data.name, content_ids: [slug], content_type: 'product', value: p.data.prepaid_price, currency: 'INR' });
         trackAction('view_product', { slug });
-      } catch { navigate('/shop'); }
-      setLoading(false);
+        // Drop the spinner — the rest is decorative
+        setLoading(false);
+
+        // Fire-and-forget: niche-scoped related products + combos. These render
+        // below the fold (recommendations strip) so the user never waits for them.
+        const niche = p.data?.niche || 'anti-aging';
+        Promise.all([
+          cachedGet(`${API}/api/products?niche=${niche}&page=1&limit=12`),
+          cachedGet(`${API}/api/combos`, { ttl: 60_000 }),
+        ]).then(([all, c]) => {
+          const items = Array.isArray(all.data) ? all.data : (all.data?.items || []);
+          setAllProducts(items.filter(x => x.slug !== slug));
+          setCombos(c.data);
+        }).catch(() => { /* below-the-fold — ok if it fails */ });
+      } catch { navigate('/shop'); setLoading(false); }
     };
     load();
   }, [slug]);

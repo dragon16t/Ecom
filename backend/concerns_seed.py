@@ -1082,10 +1082,18 @@ async def seed_concerns_and_categories(db):
 
 
 async def seed_extra_products(db):
-    """Seed 8 additional sample products if not already present."""
+    """Seed 8 additional sample products if not already present.
+
+    Respects product tombstones: admin-deleted slugs won't be resurrected
+    on subsequent container boots.
+    """
+    from services.taxonomy_tombstones import get_tombstoned_slugs
+    tombs = await get_tombstoned_slugs(db, "product")
     now = datetime.now(timezone.utc).isoformat()
     inserted = 0
     for p in NEW_SAMPLE_PRODUCTS:
+        if p["slug"] in tombs:
+            continue
         existing = await db.products.find_one({"slug": p["slug"]})
         if existing:
             continue

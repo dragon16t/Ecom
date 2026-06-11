@@ -34,6 +34,38 @@ export default function SplashScreen({ onDone }) {
     setTimeout(() => { setVisible(false); onDone?.(); }, 380);
   }, [visible, fadingOut, onDone]);
 
+  // ----- Preload everything the homepage will need while the splash is showing -----
+  // Runs ONCE on first mount of the splash. By the time the user finishes
+  // looking at the logo (~2.4 s), the homepage's products, concerns, categories,
+  // site-settings and combos are already sitting in `apiCache`, so the post-
+  // splash transition feels instant. No-op on intra-tab navigation because
+  // SplashScreen is gated by sessionStorage.
+  useEffect(() => {
+    if (!visible) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { cachedGet } = await import('../utils/apiCache');
+        const API = process.env.REACT_APP_BACKEND_URL;
+        // Fire all in parallel — apiCache.cachedGet de-dupes in-flight requests
+        // so the homepage's own useEffect won't re-fetch.
+        const prefetch = [
+          cachedGet(`${API}/api/concerns`, { ttl: 60_000 }),
+          cachedGet(`${API}/api/categories`, { ttl: 60_000 }),
+          cachedGet(`${API}/api/subcategories`, { ttl: 60_000 }),
+          cachedGet(`${API}/api/site-settings`, { ttl: 60_000 }),
+          cachedGet(`${API}/api/combos`, { ttl: 60_000 }),
+          cachedGet(`${API}/api/products?niche=anti-aging&page=1&limit=20`),
+          cachedGet(`${API}/api/products?niche=skincare&page=1&limit=20`),
+          cachedGet(`${API}/api/products?niche=cosmetics&page=1&limit=20`),
+        ];
+        await Promise.allSettled(prefetch);
+      } catch (_) { /* preload is best-effort */ }
+      if (cancelled) return;
+    })();
+    return () => { cancelled = true; };
+  }, [visible]);
+
   useEffect(() => {
     if (!visible) { onDone?.(); return; }
     // Auto-dismiss after the animation completes

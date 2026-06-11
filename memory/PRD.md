@@ -233,7 +233,24 @@ Target: handle 1,000-2,000 concurrent users on production with zero "Not Availab
 - **AI Banner Generator REMOVED from UI (backend kept)** — all free image-gen providers turned paid in 2026 (Pollinations 402, Google AI Studio image-gen needs paid tier, Emergent budget exhausted on user's account). Sparkles button stripped from AdminConcerns cards. Backend endpoint `POST /api/admin/ai/generate-banner` is still wired with full Pollinations→Gemini→Emergent fallback chain — turns on instantly if user enables billing on any provider later.
 - **Stale Cloudinary DB record fixed earlier in session** (`admin_settings.cloudinary.cloud_name: 'test' → 'dtj1zuhkl'`).
 
-## Feb 2026 — Big batch: Splash, Cache, Tombstones, Labels (P0/P1)
+## Feb 2026 — Product Tombstones + Product Page Speed + Splash Preload + Safety Snapshots
+- **Deleted PRODUCTS no longer auto-restore** (`routes/products.py` + `concerns_seed.py`).
+  Two paths fixed:
+    1. `DELETE /api/admin/products/{slug}` and `bulk_delete_products` now write a `taxonomy_tombstones` record (`kind="product", slug=...`).
+    2. Both `seed_products()` (the 7858-product seed) and `seed_extra_products()` (the 8 sample products) now skip tombstoned slugs.
+    3. `auto_restore_if_empty()` in `catalog_backup.py` now runs a **tombstone-sweep DELETE** after restoring all 4 taxonomy collections. So even if a deleted slug was still in the snapshot (because the snapshot was taken BEFORE the deletion), it's wiped immediately after restore. Tombstones are themselves restored from the snapshot, so a fresh pod knows about every deletion ever made.
+- **Product detail page slowness FIXED** (`pages/ProductDetailPage.js`).
+  Root cause: the page was fetching the **entire 7858-product catalog (17.5 MB JSON)** on every product view, just to compute "related products" recommendations that only need 4 items. That single download was the 4-6 second lag.
+  Fix:
+    - Product detail fetches in its own Promise (renders + drops spinner in ~250 ms).
+    - Related products + combos move to a `Promise.allSettled` AFTER spinner drop — niche-scoped (`?niche=X&page=1&limit=12`, 5.8 KB instead of 17.5 MB).
+    - User sees content in ~250 ms; related-products strip below the fold fills in within another ~150 ms.
+- **Splash screen now PRELOADS the storefront in the background** (`components/SplashScreen.js`).
+  While the splash is animating (~2.4 s), it fires parallel `cachedGet` requests for concerns, categories, subcategories, site-settings, combos, AND the first 20 products of all 3 niches (anti-aging / skincare / cosmetics). When the splash fades out, the Homepage's own `useEffect` calls `cachedGet` and gets instant cache hits — no flicker, no spinner, content is ALREADY there.
+- **15-minute safety-net snapshot** (`server.py` + `services/catalog_backup.py`).
+  In addition to the daily midnight backup, a second async task runs every 15 minutes and snapshots IF there's been any admin write since the last safety run (tracked via `_last_write_at`). Catches mid-session edits between daily backups so a pod restart at 11 AM can never lose more than 15 minutes of work. No bandwidth waste on quiet days — the loop sleeps until a write happens.
+- **Per-write debounced snapshot REMOVED**. `schedule_snapshot()` is now just a write-timestamp setter (the 15-min safety loop reads it). On busy admin sessions this cuts Cloudinary bandwidth ~100× without losing freshness.
+
 - **Splash screen** (`components/SplashScreen.js`, wired in `AppRouter.js`).
   White background, brand-themed (emerald + gold), animated logo (CELESTA + GLOW in serif italic gold), tagline "The Most Trusted Skincare E-commerce App of Kerala", slogan "Glow With Confidence", animated underline + shimmer loader. ~2.4 s autoplay, also dismisses on first click / scroll / keydown / touch. Plays ONCE per browser session (sessionStorage gate) so intra-tab navigation never sees it again. Skips on `/admin/*` paths. Respects `prefers-reduced-motion`.
 - **Banner / category image cache lag** (`routes/concerns.py`).
