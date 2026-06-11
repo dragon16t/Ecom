@@ -205,15 +205,15 @@ export default function SplashScreen({ onDone }) {
           letter-spacing: 0.005em;
         }
         .cg-slogan-text {
-          /* Great Vibes — refined script with much more readable letterforms
-             than Pinyon. Each glyph is open and well-spaced, so "Glow With
-             Confidence" scans cleanly even at smaller widths, while still
-             keeping the luxury hand-engraved feel. */
-          font-family: 'Great Vibes', 'Allura', 'Dancing Script', cursive;
-          font-weight: 400;
-          font-size: clamp(2.6rem, 8.5vw, 3.8rem);
-          line-height: 1.05;
-          letter-spacing: 0.01em;
+          /* Clean sans-serif — matches the site's body family (Outfit / DM Sans).
+             Medium weight + letter-spacing for premium feel without ever
+             looking italic or cursive. Easily readable at any size. */
+          font-family: 'Outfit', 'DM Sans', system-ui, sans-serif;
+          font-style: normal;
+          font-weight: 500;
+          font-size: clamp(1.6rem, 5vw, 2.2rem);
+          line-height: 1.1;
+          letter-spacing: 0.04em;
         }
         .cg-slogan-underline {
           position: absolute;
