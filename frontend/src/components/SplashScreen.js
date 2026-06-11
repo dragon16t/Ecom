@@ -70,18 +70,26 @@ export default function SplashScreen({ onDone }) {
     if (!visible) { onDone?.(); return; }
     // Auto-dismiss after the animation completes
     const t = setTimeout(finish, 3500);
-    // Also dismiss on any user interaction so impatient shoppers aren't blocked
-    const skip = () => finish();
-    window.addEventListener('click', skip, { passive: true });
-    window.addEventListener('touchstart', skip, { passive: true });
+
+    // BUG fix: the dismiss-on-interaction listeners used to fire DURING page
+    // load (browser's `scroll-restoration` triggers a scroll event the moment
+    // the document mounts; mobile browsers also emit spurious touchstart events
+    // mid-render). That killed the splash after just a couple of letters.
+    //   1. Wait 1.4 s before arming the listeners (covers the load burst).
+    //   2. Drop `scroll` entirely — it's never a deliberate "skip splash" intent
+    //      on a fixed-overlay page, but it's the #1 false-positive source.
+    //   3. Only treat `keydown` and a real `pointerdown` as a skip — both are
+    //      true user actions.
+    let armed = false;
+    const skip = () => { if (armed) finish(); };
+    const arm = setTimeout(() => { armed = true; }, 1400);
+    window.addEventListener('pointerdown', skip, { passive: true });
     window.addEventListener('keydown', skip);
-    window.addEventListener('scroll', skip, { passive: true });
     return () => {
       clearTimeout(t);
-      window.removeEventListener('click', skip);
-      window.removeEventListener('touchstart', skip);
+      clearTimeout(arm);
+      window.removeEventListener('pointerdown', skip);
       window.removeEventListener('keydown', skip);
-      window.removeEventListener('scroll', skip);
     };
   }, [visible, finish, onDone]);
 
