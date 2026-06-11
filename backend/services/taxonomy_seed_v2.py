@@ -394,8 +394,15 @@ COSMETICS_CATEGORIES = {
 
 
 async def seed_comprehensive_taxonomy(db) -> dict:
-    """Idempotently seed the canonical taxonomy. Returns counts of insertions."""
+    """Idempotently seed the canonical taxonomy. Returns counts of insertions.
+
+    Respects taxonomy tombstones: admin deletions survive every redeploy.
+    """
+    from services.taxonomy_tombstones import get_tombstoned_slugs
     counts = {"concerns": 0, "categories": 0, "subcategories": 0}
+    tombs_concerns = await get_tombstoned_slugs(db, "concern")
+    tombs_categories = await get_tombstoned_slugs(db, "category")
+    tombs_subcategories = await get_tombstoned_slugs(db, "subcategory")
 
     # ----- Concerns -----
     existing_concern_slugs = set()
@@ -403,7 +410,7 @@ async def seed_comprehensive_taxonomy(db) -> dict:
         existing_concern_slugs.add(c["slug"])
     to_insert = []
     for i, (slug, name, group, icon) in enumerate(SKINCARE_CONCERNS):
-        if slug in existing_concern_slugs:
+        if slug in existing_concern_slugs or slug in tombs_concerns:
             continue
         to_insert.append({
             "slug": slug,
@@ -437,7 +444,7 @@ async def seed_comprehensive_taxonomy(db) -> dict:
     cats_to_insert = []
     subs_to_insert = []
     for order, (slug, info) in enumerate(SKINCARE_CATEGORIES.items()):
-        if slug not in existing_cat_slugs:
+        if slug not in existing_cat_slugs and slug not in tombs_categories:
             cats_to_insert.append({
                 "slug": slug,
                 "name": info["name"],
@@ -453,7 +460,7 @@ async def seed_comprehensive_taxonomy(db) -> dict:
                 "created_at": _now(),
             })
         for sub_order, (sub_slug, sub_name) in enumerate(info["subs"]):
-            if sub_slug in existing_sub_slugs:
+            if sub_slug in existing_sub_slugs or sub_slug in tombs_subcategories:
                 continue
             subs_to_insert.append({
                 "slug": sub_slug,
@@ -474,7 +481,7 @@ async def seed_comprehensive_taxonomy(db) -> dict:
             })
 
     for order, (slug, info) in enumerate(COSMETICS_CATEGORIES.items()):
-        if slug not in existing_cat_slugs:
+        if slug not in existing_cat_slugs and slug not in tombs_categories:
             cats_to_insert.append({
                 "slug": slug,
                 "name": info["name"],
@@ -490,7 +497,7 @@ async def seed_comprehensive_taxonomy(db) -> dict:
                 "created_at": _now(),
             })
         for sub_order, (sub_slug, sub_name) in enumerate(info["subs"]):
-            if sub_slug in existing_sub_slugs:
+            if sub_slug in existing_sub_slugs or sub_slug in tombs_subcategories:
                 continue
             subs_to_insert.append({
                 "slug": sub_slug,

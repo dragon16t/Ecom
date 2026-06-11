@@ -50,6 +50,9 @@ logger = logging.getLogger(__name__)
 SNAPSHOT_COLLECTIONS = [
     # --- Taxonomy ---
     "concerns", "categories", "subcategories", "niches",
+    # Deletion records — without this, admin-deleted concerns/categories
+    # come back on every redeploy when seed scripts re-create them.
+    "taxonomy_tombstones",
     # --- Catalog & merchandising ---
     "products", "combos", "shades",
     # --- Promotions & site content ---

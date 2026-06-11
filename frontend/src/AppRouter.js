@@ -1,10 +1,11 @@
-import React, { useEffect, lazy, Suspense } from 'react';
+import React, { useEffect, lazy, Suspense, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { loadNicheBrands } from './utils/brand';
 import ScrollToTop from './components/ScrollToTop';
 import { TrackingProvider } from './providers/TrackingProvider';
 import PublicLayout from './layouts/PublicLayout';
 import AdminMobileNav from './components/admin/AdminMobileNav';
+import SplashScreen from './components/SplashScreen';
 
 // Eagerly loaded pages (critical for first paint)
 import Homepage from './pages/Homepage';
@@ -97,6 +98,13 @@ const AdminLayout = ({ children }) => (
 );
 
 function App() {
+  // SplashScreen mounts once per browser session; it stays out of the way on
+  // intra-tab navigation so the rest of the app is unaffected.
+  const [splashGone, setSplashGone] = useState(false);
+  const isAdminRoute = typeof window !== 'undefined' && window.location.pathname.startsWith('/admin');
+  // Don't show splash on admin / employee paths
+  const showSplash = !splashGone && !isAdminRoute;
+
   useEffect(() => {
     // Detect referral code from URL on any page load and store in sessionStorage
     const urlParams = new URLSearchParams(window.location.search);
@@ -133,6 +141,7 @@ function App() {
 
   return (
     <Router>
+      {showSplash && <SplashScreen onDone={() => setSplashGone(true)} />}
       <ScrollToTop />
       <Routes>
         {/* Admin Routes - No tracking provider, lazy loaded */}

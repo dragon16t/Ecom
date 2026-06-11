@@ -87,9 +87,11 @@ async def list_concerns(response: Response):
     items = await db.concerns.find({"is_active": True}, {"_id": 0}).sort("sort_order", 1).to_list(length=None)
     # Concerns are shown in a circular strip — 400px is plenty (2× for retina 200px).
     items = [_optimize_taxonomy_image(c, 400) for c in items]
-    # PERF: concerns rarely change → cache at the CDN edge for 5 min, serve stale
-    # for 10 min while we revalidate in background. Cuts backend load by ~95%.
-    response.headers["Cache-Control"] = "public, max-age=300, stale-while-revalidate=600"
+    # PERF / FRESHNESS: 30 s edge cache + 60 s stale-while-revalidate.
+    # Lower than 5 min so admin image / order edits show up within ~30 s
+    # on the live storefront (was previously taking up to 5 min — users
+    # were seeing "old banner / old category image" after every admin edit).
+    response.headers["Cache-Control"] = "public, max-age=30, stale-while-revalidate=60"
     return items
 
 
@@ -184,6 +186,10 @@ async def delete_concern(slug: str, x_admin_token: str = Header(None, alias="X-A
     result = await db.concerns.delete_one({"slug": slug})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Concern not found")
+    # Tombstone the slug so seed scripts don't resurrect it on the next redeploy.
+    from services import taxonomy_tombstones as _tomb
+    await _tomb.add_tombstone(db, "concern", slug)
+    _snap_after_write()
     return {"success": True}
 
 
@@ -255,8 +261,8 @@ async def list_categories(response: Response, niche: Optional[str] = None):
     items = await db.categories.find(q, {"_id": 0}).sort("sort_order", 1).to_list(length=None)
     # Category tiles use a wider hero crop (~600px renders at 300px tile retina-friendly).
     items = [_optimize_taxonomy_image(c, 600) for c in items]
-    # PERF: categories change rarely → 5 min edge cache
-    response.headers["Cache-Control"] = "public, max-age=300, stale-while-revalidate=600"
+    # PERF: 30 s edge cache so admin edits propagate quickly
+    response.headers["Cache-Control"] = "public, max-age=30, stale-while-revalidate=60"
     return items
 
 
@@ -367,6 +373,9 @@ async def delete_category(slug: str, x_admin_token: str = Header(None, alias="X-
     result = await db.categories.delete_one({"slug": slug})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Category not found")
+    from services import taxonomy_tombstones as _tomb
+    await _tomb.add_tombstone(db, "category", slug)
+    _snap_after_write()
     return {"success": True}
 
 
@@ -436,7 +445,7 @@ async def list_subcategories(
         query["niche"] = niche
     items = await db.subcategories.find(query, {"_id": 0}).sort("sort_order", 1).to_list(200)
     items = [_optimize_taxonomy_image(s, 400) for s in items]
-    response.headers["Cache-Control"] = "public, max-age=300, stale-while-revalidate=600"
+    response.headers["Cache-Control"] = "public, max-age=30, stale-while-revalidate=60"
     return items
 
 
@@ -665,6 +674,9 @@ async def delete_subcategory(slug: str, x_admin_token: str = Header(None, alias=
         raise HTTPException(status_code=404, detail="Subcategory not found")
     # Also clear `subcategory` field from any products that referenced it
     await db.products.update_many({"subcategory": slug}, {"$set": {"subcategory": ""}})
+    from services import taxonomy_tombstones as _tomb
+    await _tomb.add_tombstone(db, "subcategory", slug)
+    _snap_after_write()
     return {"success": True}
 
 

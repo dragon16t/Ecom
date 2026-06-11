@@ -365,6 +365,25 @@ function AdminOrders() {
               <button onClick={() => bulkUpdateStatus('shipped')} className="text-xs font-semibold px-2.5 py-1.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-md">Mark Shipped</button>
               <button onClick={() => bulkUpdateStatus('delivered')} className="text-xs font-semibold px-2.5 py-1.5 bg-green-50 text-green-700 hover:bg-green-100 rounded-md">Mark Delivered</button>
               <button onClick={() => bulkUpdateStatus('cancelled')} className="text-xs font-semibold px-2.5 py-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-md">Cancel</button>
+              <button
+                onClick={async () => {
+                  try {
+                    const res = await axios.post(
+                      `${API}/orders/labels/bulk?token=${encodeURIComponent(adminToken)}`,
+                      { order_ids: selectedIds },
+                      { responseType: 'blob' }
+                    );
+                    const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+                    window.open(url, '_blank');
+                  } catch (e) {
+                    alert('Bulk label generation failed: ' + (e?.response?.data?.detail || e.message));
+                  }
+                }}
+                className="text-xs font-semibold px-2.5 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-md"
+                data-testid="bulk-print-labels-btn"
+              >
+                📮 Print Labels (A4 4-up)
+              </button>
               <button onClick={clearSelection} className="text-xs font-semibold px-2.5 py-1.5 text-gray-500 hover:underline">Clear</button>
             </div>
           )}
@@ -653,6 +672,14 @@ function AdminOrders() {
                     data-testid="admin-print-invoice-btn"
                   >
                     🧾 Print Invoice
+                  </button>
+                  <button
+                    onClick={() => window.open(`${API}/orders/${selectedOrder.order_id}/label.pdf?token=${encodeURIComponent(adminToken)}`, '_blank')}
+                    className="flex items-center gap-2 px-4 py-2 bg-emerald-700 text-white rounded-lg font-medium hover:bg-emerald-800 transition-colors"
+                    data-testid="admin-print-postoffice-label-btn"
+                    title="A6 India Post shipping label (PDF)"
+                  >
+                    📮 Print Post Office Label
                   </button>
                   {selectedOrder.status !== 'shipped' && selectedOrder.status !== 'delivered' && (
                     <button

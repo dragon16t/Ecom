@@ -129,3 +129,5 @@ websockets==16.0
 yarl==1.23.0
 zipp==3.23.0
 openpyxl==3.1.5
+python-barcode==0.16.1
+reportlab==4.5.1

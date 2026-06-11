@@ -3261,6 +3261,10 @@ app.include_router(concerns_routes.router, prefix="/api")
 app.include_router(image_ai_routes.router, prefix="/api")
 app.include_router(reviews_routes.router, prefix="/api")
 
+# Shipping labels (India Post A6 PDF) — single + bulk
+from routes import shipping_labels as _shipping_labels  # noqa: E402
+app.include_router(_shipping_labels.router, prefix="/api")
+
 # SEO — dynamic sitemap + product feed (DB-backed; new SKUs auto-show up)
 from routes import seo as _seo_routes  # noqa: E402
 _seo_routes.set_db(db)

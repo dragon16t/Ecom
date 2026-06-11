@@ -1048,10 +1048,20 @@ EXISTING_PRODUCT_CONCERNS = {
 
 
 async def seed_concerns_and_categories(db):
-    """Seed concerns + categories collections (idempotent — upserts new items)."""
+    """Seed concerns + categories collections (idempotent — upserts new items).
+
+    Respects taxonomy tombstones: if the admin deleted a slug, this seed will
+    NOT resurrect it on the next container boot. Otherwise the admin's deletes
+    would be silently undone every redeploy.
+    """
+    from services.taxonomy_tombstones import get_tombstoned_slugs
     now = datetime.now(timezone.utc).isoformat()
-    # Concerns — insert if missing
+    tombs_concerns = await get_tombstoned_slugs(db, "concern")
+    tombs_categories = await get_tombstoned_slugs(db, "category")
+    # Concerns — insert if missing AND not tombstoned
     for c in CONCERNS:
+        if c["slug"] in tombs_concerns:
+            continue
         existing = await db.concerns.find_one({"slug": c["slug"]})
         if not existing:
             doc = dict(c)
@@ -1059,8 +1069,10 @@ async def seed_concerns_and_categories(db):
             doc["updated_at"] = now
             await db.concerns.insert_one(doc)
 
-    # Categories — insert if missing (so new sub-cats get added on re-seed)
+    # Categories — insert if missing AND not tombstoned
     for c in CATEGORIES:
+        if c["slug"] in tombs_categories:
+            continue
         existing = await db.categories.find_one({"slug": c["slug"]})
         if not existing:
             doc = dict(c)
