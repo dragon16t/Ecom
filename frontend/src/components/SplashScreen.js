@@ -143,7 +143,7 @@ export default function SplashScreen({ onDone }) {
       </div>
 
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500&family=Pinyon+Script&family=Outfit:wght@300;400;500&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500&family=Great+Vibes&family=Outfit:wght@300;400;500&display=swap');
 
         .cg-celesta-text {
           /* Light-weight Cormorant Garamond — matches the website's premium
@@ -205,12 +205,15 @@ export default function SplashScreen({ onDone }) {
           letter-spacing: 0.005em;
         }
         .cg-slogan-text {
-          /* Pinyon Script reads more refined / aristocratic than Caveat —
-             closer to the hand-engraved feel of premium skincare branding. */
-          font-family: 'Pinyon Script', 'Allura', 'Dancing Script', cursive;
+          /* Great Vibes — refined script with much more readable letterforms
+             than Pinyon. Each glyph is open and well-spaced, so "Glow With
+             Confidence" scans cleanly even at smaller widths, while still
+             keeping the luxury hand-engraved feel. */
+          font-family: 'Great Vibes', 'Allura', 'Dancing Script', cursive;
           font-weight: 400;
-          font-size: clamp(2.4rem, 8vw, 3.4rem);
-          line-height: 1;
+          font-size: clamp(2.6rem, 8.5vw, 3.8rem);
+          line-height: 1.05;
+          letter-spacing: 0.01em;
         }
         .cg-slogan-underline {
           position: absolute;
