@@ -69,7 +69,7 @@ export default function SplashScreen({ onDone }) {
   useEffect(() => {
     if (!visible) { onDone?.(); return; }
     // Auto-dismiss after the animation completes
-    const t = setTimeout(finish, 3200);
+    const t = setTimeout(finish, 3500);
     // Also dismiss on any user interaction so impatient shoppers aren't blocked
     const skip = () => finish();
     window.addEventListener('click', skip, { passive: true });
@@ -143,48 +143,79 @@ export default function SplashScreen({ onDone }) {
       </div>
 
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;700;900&family=Caveat:wght@500;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500&family=Pinyon+Script&family=Outfit:wght@300;400;500&display=swap');
 
         .cg-celesta-text {
-          font-family: 'Playfair Display', 'Cormorant Garamond', Georgia, serif;
-          font-weight: 800;
-          font-size: clamp(2.6rem, 9vw, 4.8rem);
-          letter-spacing: clamp(0.4rem, 1.2vw, 0.85rem);
+          /* Light-weight Cormorant Garamond — matches the website's premium
+             serif. Heavy weights read as "bold logo"; on a splash screen we want
+             quiet elegance, so we stay between 300 and 400. */
+          font-family: 'Cormorant Garamond', 'EB Garamond', Georgia, serif;
+          font-weight: 400;
+          font-size: clamp(2.8rem, 9.5vw, 5.2rem);
+          letter-spacing: clamp(0.45rem, 1.3vw, 0.95rem);
           color: #161616;
           line-height: 1;
+          position: relative;
+          /* Make the text itself the clipping mask for the shimmer overlay */
+          background-image: linear-gradient(
+            115deg,
+            #161616 0%,
+            #161616 38%,
+            #d6b275 49%,
+            #f1d9a8 50%,
+            #d6b275 51%,
+            #161616 62%,
+            #161616 100%
+          );
+          background-size: 240% 100%;
+          background-position: 100% 0;
+          background-repeat: no-repeat;
+          -webkit-background-clip: text;
+                  background-clip: text;
+          -webkit-text-fill-color: transparent;
+          animation: cg-celesta-pop .95s cubic-bezier(.22,1,.36,1) .15s both,
+                     cg-shimmer-sweep 1.6s cubic-bezier(.45,.05,.55,.95) 1.4s 1 forwards;
         }
         .cg-glow-text {
-          font-family: 'Playfair Display', Georgia, serif;
-          font-weight: 600;
-          font-size: clamp(1rem, 3vw, 1.4rem);
-          letter-spacing: 0.45em;
+          font-family: 'Cormorant Garamond', Georgia, serif;
+          font-weight: 400;
+          font-size: clamp(0.95rem, 2.6vw, 1.25rem);
+          letter-spacing: 0.55em;
           color: #7FB069;
-          padding: 0 0.85em;
+          padding: 0 1em;
           line-height: 1;
           white-space: nowrap;
         }
         .cg-glowrow-rule {
           flex: 1;
-          height: 1.6px;
+          height: 1.3px;
           background: #7FB069;
           border-radius: 999px;
         }
         .cg-heart-rule {
           flex: 1;
-          height: 1.4px;
+          height: 1.2px;
           background: #b9d6a4;
           border-radius: 999px;
         }
+        .cg-splash-tagline {
+          /* Match the site's body sans family for visual cohesion */
+          font-family: 'Outfit', 'DM Sans', system-ui, sans-serif;
+          font-weight: 400;
+          letter-spacing: 0.005em;
+        }
         .cg-slogan-text {
-          font-family: 'Caveat', 'Dancing Script', cursive;
-          font-weight: 700;
-          font-size: clamp(2.1rem, 7vw, 3rem);
+          /* Pinyon Script reads more refined / aristocratic than Caveat —
+             closer to the hand-engraved feel of premium skincare branding. */
+          font-family: 'Pinyon Script', 'Allura', 'Dancing Script', cursive;
+          font-weight: 400;
+          font-size: clamp(2.4rem, 8vw, 3.4rem);
           line-height: 1;
         }
         .cg-slogan-underline {
           position: absolute;
           left: 50%;
-          bottom: -10px;
+          bottom: -14px;
           transform: translateX(-50%);
           width: clamp(180px, 60vw, 240px);
         }
@@ -192,9 +223,13 @@ export default function SplashScreen({ onDone }) {
         @keyframes cg-fade-in    { from { opacity: 0; } to { opacity: 1; } }
         @keyframes cg-fade-out   { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(1.03); } }
         @keyframes cg-celesta-pop {
-          0%   { opacity: 0; transform: translateY(14px) scale(.94); letter-spacing: 1.1em; }
-          70%  { opacity: 1; transform: translateY(0)    scale(1.02); }
+          0%   { opacity: 0; transform: translateY(14px) scale(.96); letter-spacing: 1.1em; }
+          70%  { opacity: 1; transform: translateY(0)    scale(1.005); }
           100% { opacity: 1; transform: translateY(0)    scale(1); }
+        }
+        @keyframes cg-shimmer-sweep {
+          0%   { background-position: 100% 0; }
+          100% { background-position: 0% 0; }
         }
         @keyframes cg-glowrow-in {
           0%   { opacity: 0; transform: scaleX(0.4); }
@@ -215,20 +250,20 @@ export default function SplashScreen({ onDone }) {
         .cg-splash-out { animation: cg-fade-out .4s ease-in  forwards; }
         .cg-splash-orb { animation: cg-orb-pan 2.4s ease-out forwards; }
 
-        .cg-splash-celesta { animation: cg-celesta-pop .9s cubic-bezier(.22,1,.36,1) .15s both; }
-        .cg-splash-glowrow { animation: cg-glowrow-in .7s cubic-bezier(.22,1,.36,1) .8s both; transform-origin: center; }
-        .cg-splash-tagline { animation: cg-rise-fade .6s ease-out 1.15s both; }
-        .cg-splash-heart   { animation: cg-rise-fade .55s ease-out 1.55s both; }
-        .cg-heart-icon     { animation: cg-heart-pulse 1.6s ease-in-out 2.1s infinite; transform-origin: center; }
-        .cg-splash-slogan  { animation: cg-rise-fade .55s ease-out 1.8s both; }
+        .cg-splash-glowrow { animation: cg-glowrow-in .7s cubic-bezier(.22,1,.36,1) .9s both; transform-origin: center; }
+        .cg-splash-tagline { animation: cg-rise-fade .6s ease-out 1.25s both; }
+        .cg-splash-heart   { animation: cg-rise-fade .55s ease-out 1.65s both; }
+        .cg-heart-icon     { animation: cg-heart-pulse 1.8s ease-in-out 2.3s infinite; transform-origin: center; }
+        .cg-splash-slogan  { animation: cg-rise-fade .6s ease-out 1.95s both; }
         .cg-slogan-underline path {
           stroke-dasharray: 240;
           stroke-dashoffset: 240;
-          animation: cg-underline-draw .9s cubic-bezier(.22,1,.36,1) 2.1s forwards;
+          animation: cg-underline-draw .95s cubic-bezier(.22,1,.36,1) 2.25s forwards;
         }
 
         @media (prefers-reduced-motion: reduce) {
-          .cg-splash-celesta, .cg-splash-glowrow, .cg-splash-tagline,
+          .cg-celesta-text { animation: none; background-position: 0 0; }
+          .cg-splash-glowrow, .cg-splash-tagline,
           .cg-splash-heart, .cg-heart-icon, .cg-splash-slogan,
           .cg-slogan-underline path, .cg-splash-orb {
             animation: none; opacity: 1; transform: none; stroke-dashoffset: 0;
