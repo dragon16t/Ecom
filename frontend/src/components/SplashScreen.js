@@ -69,7 +69,7 @@ export default function SplashScreen({ onDone }) {
   useEffect(() => {
     if (!visible) { onDone?.(); return; }
     // Auto-dismiss after the animation completes
-    const t = setTimeout(finish, 2400);
+    const t = setTimeout(finish, 3200);
     // Also dismiss on any user interaction so impatient shoppers aren't blocked
     const skip = () => finish();
     window.addEventListener('click', skip, { passive: true });
@@ -94,72 +94,145 @@ export default function SplashScreen({ onDone }) {
       aria-label="Celesta Glow"
       role="status"
     >
-      {/* Soft brand gradient orb in the background */}
+      {/* Subtle background wash (kept very faint so the layout matches the brand sheet) */}
       <div className="absolute inset-0 pointer-events-none cg-splash-orb">
-        <div className="absolute -top-32 -left-32 w-[420px] h-[420px] rounded-full bg-gradient-to-br from-emerald-100 via-emerald-50 to-transparent blur-3xl opacity-70" />
-        <div className="absolute -bottom-32 -right-32 w-[480px] h-[480px] rounded-full bg-gradient-to-tl from-amber-100 via-amber-50 to-transparent blur-3xl opacity-60" />
+        <div className="absolute -top-40 -left-40 w-[480px] h-[480px] rounded-full bg-emerald-50/60 blur-3xl" />
+        <div className="absolute -bottom-40 -right-40 w-[520px] h-[520px] rounded-full bg-amber-50/40 blur-3xl" />
       </div>
 
-      {/* Logo + tagline stack */}
+      {/* Brand stack — matches the supplied design (serif CELESTA, mint GLOW with horizontal rules,
+          three-line tagline with "Kerala" in mint, heart-rule divider, cursive slogan with underline). */}
       <div className="relative z-10 flex flex-col items-center text-center px-6 max-w-md">
-        <div className="cg-splash-logo flex items-baseline justify-center gap-[0.18em] mb-3 select-none">
-          <span className="cg-splash-celesta font-serif text-[clamp(2.4rem,9vw,4.6rem)] font-bold tracking-[0.06em] text-emerald-950">
-            CELESTA
-          </span>
-          <span className="cg-splash-glow font-serif italic text-[clamp(2.4rem,9vw,4.6rem)] font-bold tracking-[0.04em]" style={{ color: '#D4A373' }}>
-            GLOW
-          </span>
+        {/* CELESTA — bold serif, very wide letter-spacing */}
+        <div className="cg-splash-celesta select-none">
+          <span className="cg-celesta-text">CELESTA</span>
         </div>
 
-        {/* Animated underline accent */}
-        <div className="cg-splash-rule h-[2px] bg-gradient-to-r from-transparent via-emerald-300 to-transparent mb-6 origin-center" />
+        {/* GLOW row — mint colour, sandwiched between two horizontal rules */}
+        <div className="cg-splash-glowrow mt-3 flex items-center justify-center w-full max-w-[280px] sm:max-w-[340px]" aria-hidden="true">
+          <span className="cg-glowrow-rule" />
+          <span className="cg-glow-text">G L O W</span>
+          <span className="cg-glowrow-rule" />
+        </div>
 
-        <p className="cg-splash-tagline text-sm sm:text-base text-emerald-900/80 font-medium mb-2 leading-snug">
-          The Most Trusted Skincare E-commerce App of Kerala
-        </p>
-        <p className="cg-splash-slogan text-xl sm:text-2xl text-emerald-950 italic font-serif tracking-wide">
-          Glow With <span style={{ color: '#D4A373' }}>Confidence</span>.
+        {/* Tagline — three lines, "Kerala" in mint */}
+        <p className="cg-splash-tagline mt-10 text-[1.05rem] sm:text-[1.15rem] leading-snug font-medium text-stone-800">
+          The Most Trusted
+          <br />
+          Skincare Ecommerce App
+          <br />
+          of <span style={{ color: '#7FB069' }} className="font-semibold">Kerala</span>
         </p>
 
-        {/* Loading shimmer */}
-        <div className="cg-splash-shimmer mt-10 w-32 h-1 rounded-full bg-emerald-100 overflow-hidden">
-          <div className="cg-splash-shimmer-bar h-full w-1/2 rounded-full bg-gradient-to-r from-emerald-400 via-amber-300 to-emerald-400" />
+        {/* Heart-rule divider */}
+        <div className="cg-splash-heart mt-8 flex items-center justify-center w-full max-w-[300px]" aria-hidden="true">
+          <span className="cg-heart-rule" />
+          <svg className="mx-3 cg-heart-icon" width="14" height="14" viewBox="0 0 24 24" fill="#7FB069" aria-hidden="true">
+            <path d="M12 21s-7.2-4.35-9.5-9.1C.83 8.6 2.5 5 6 5c2 0 3.5 1.1 4.5 2.7C11.5 6.1 13 5 15 5c3.5 0 5.17 3.6 3.5 6.9C19.2 16.65 12 21 12 21z" />
+          </svg>
+          <span className="cg-heart-rule" />
+        </div>
+
+        {/* Cursive slogan with underline flourish */}
+        <div className="cg-splash-slogan mt-7 relative inline-block">
+          <span className="cg-slogan-text" style={{ color: '#7FB069' }}>Glow With Confidence</span>
+          <svg className="cg-slogan-underline" width="220" height="14" viewBox="0 0 220 14" fill="none" aria-hidden="true">
+            <path d="M5 8 Q60 1 115 6 T215 8" stroke="#7FB069" strokeWidth="2.2" strokeLinecap="round" fill="none" />
+          </svg>
         </div>
       </div>
 
       <style>{`
-        @keyframes cg-fade-in       { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes cg-fade-out      { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(1.03); } }
-        @keyframes cg-logo-pop {
-          0%   { opacity: 0; transform: translateY(14px) scale(.92); letter-spacing: 0.14em; }
-          60%  { opacity: 1; transform: translateY(0)    scale(1.02); letter-spacing: 0.06em; }
-          100% { opacity: 1; transform: translateY(0)    scale(1);    letter-spacing: 0.06em; }
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;700;900&family=Caveat:wght@500;700&display=swap');
+
+        .cg-celesta-text {
+          font-family: 'Playfair Display', 'Cormorant Garamond', Georgia, serif;
+          font-weight: 800;
+          font-size: clamp(2.6rem, 9vw, 4.8rem);
+          letter-spacing: clamp(0.4rem, 1.2vw, 0.85rem);
+          color: #161616;
+          line-height: 1;
         }
-        @keyframes cg-glow-slide {
-          0%   { opacity: 0; transform: translateX(28px) skewX(-6deg); }
-          70%  { opacity: 1; transform: translateX(0)    skewX(0); }
-          100% { opacity: 1; transform: translateX(0)    skewX(0); }
+        .cg-glow-text {
+          font-family: 'Playfair Display', Georgia, serif;
+          font-weight: 600;
+          font-size: clamp(1rem, 3vw, 1.4rem);
+          letter-spacing: 0.45em;
+          color: #7FB069;
+          padding: 0 0.85em;
+          line-height: 1;
+          white-space: nowrap;
         }
-        @keyframes cg-rule         { from { transform: scaleX(0); opacity: .2; } to { transform: scaleX(1); opacity: 1; } }
-        @keyframes cg-rise-fade    { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes cg-shimmer-move { from { transform: translateX(-120%); } to { transform: translateX(220%); } }
-        @keyframes cg-orb-pan      { from { transform: scale(1); } to { transform: scale(1.08); } }
+        .cg-glowrow-rule {
+          flex: 1;
+          height: 1.6px;
+          background: #7FB069;
+          border-radius: 999px;
+        }
+        .cg-heart-rule {
+          flex: 1;
+          height: 1.4px;
+          background: #b9d6a4;
+          border-radius: 999px;
+        }
+        .cg-slogan-text {
+          font-family: 'Caveat', 'Dancing Script', cursive;
+          font-weight: 700;
+          font-size: clamp(2.1rem, 7vw, 3rem);
+          line-height: 1;
+        }
+        .cg-slogan-underline {
+          position: absolute;
+          left: 50%;
+          bottom: -10px;
+          transform: translateX(-50%);
+          width: clamp(180px, 60vw, 240px);
+        }
+
+        @keyframes cg-fade-in    { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes cg-fade-out   { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(1.03); } }
+        @keyframes cg-celesta-pop {
+          0%   { opacity: 0; transform: translateY(14px) scale(.94); letter-spacing: 1.1em; }
+          70%  { opacity: 1; transform: translateY(0)    scale(1.02); }
+          100% { opacity: 1; transform: translateY(0)    scale(1); }
+        }
+        @keyframes cg-glowrow-in {
+          0%   { opacity: 0; transform: scaleX(0.4); }
+          100% { opacity: 1; transform: scaleX(1); }
+        }
+        @keyframes cg-rise-fade  { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes cg-heart-pulse {
+          0%, 100% { transform: scale(1); }
+          50%      { transform: scale(1.18); }
+        }
+        @keyframes cg-underline-draw {
+          from { stroke-dashoffset: 240; }
+          to   { stroke-dashoffset: 0; }
+        }
+        @keyframes cg-orb-pan     { from { transform: scale(1); } to { transform: scale(1.06); } }
 
         .cg-splash-in  { animation: cg-fade-in  .35s ease-out forwards; }
         .cg-splash-out { animation: cg-fade-out .4s ease-in  forwards; }
         .cg-splash-orb { animation: cg-orb-pan 2.4s ease-out forwards; }
-        .cg-splash-celesta { animation: cg-logo-pop  .85s cubic-bezier(.22,1,.36,1) .15s both; }
-        .cg-splash-glow    { animation: cg-glow-slide .9s cubic-bezier(.22,1,.36,1) .65s both; display: inline-block; }
-        .cg-splash-rule { width: clamp(140px, 24vw, 220px); animation: cg-rule .7s ease-out 1.05s both; }
-        .cg-splash-tagline { animation: cg-rise-fade .6s ease-out 1.2s both; }
-        .cg-splash-slogan  { animation: cg-rise-fade .6s ease-out 1.45s both; }
-        .cg-splash-shimmer { animation: cg-rise-fade .5s ease-out 1.7s both; }
-        .cg-splash-shimmer-bar { animation: cg-shimmer-move 1.4s ease-in-out 1.7s infinite; }
+
+        .cg-splash-celesta { animation: cg-celesta-pop .9s cubic-bezier(.22,1,.36,1) .15s both; }
+        .cg-splash-glowrow { animation: cg-glowrow-in .7s cubic-bezier(.22,1,.36,1) .8s both; transform-origin: center; }
+        .cg-splash-tagline { animation: cg-rise-fade .6s ease-out 1.15s both; }
+        .cg-splash-heart   { animation: cg-rise-fade .55s ease-out 1.55s both; }
+        .cg-heart-icon     { animation: cg-heart-pulse 1.6s ease-in-out 2.1s infinite; transform-origin: center; }
+        .cg-splash-slogan  { animation: cg-rise-fade .55s ease-out 1.8s both; }
+        .cg-slogan-underline path {
+          stroke-dasharray: 240;
+          stroke-dashoffset: 240;
+          animation: cg-underline-draw .9s cubic-bezier(.22,1,.36,1) 2.1s forwards;
+        }
 
         @media (prefers-reduced-motion: reduce) {
-          .cg-splash-celesta, .cg-splash-glow, .cg-splash-rule,
-          .cg-splash-tagline, .cg-splash-slogan, .cg-splash-shimmer,
-          .cg-splash-orb { animation: none; opacity: 1; transform: none; }
+          .cg-splash-celesta, .cg-splash-glowrow, .cg-splash-tagline,
+          .cg-splash-heart, .cg-heart-icon, .cg-splash-slogan,
+          .cg-slogan-underline path, .cg-splash-orb {
+            animation: none; opacity: 1; transform: none; stroke-dashoffset: 0;
+          }
         }
       `}</style>
     </div>
