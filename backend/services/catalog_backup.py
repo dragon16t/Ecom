@@ -347,11 +347,42 @@ async def auto_restore_if_empty(db) -> Dict[str, Any]:
         return {"restored": False, "reason": "no snapshot found", "counts": counts}
 
     restored_counts: Dict[str, int] = {}
+    # ------------------------------------------------------------------
+    # "Sticky" fields per collection — admin-curated values that must NEVER
+    # be reset by a restore.  If the snapshot's value is empty/missing but
+    # the local doc already has a non-empty value, we KEEP the local one.
+    # Why: admin uploads a category icon at 10:00, the next snapshot fires
+    # at 10:15 with the image included. But if the admin uploaded AFTER
+    # the most recent snapshot, a redeploy + restore would wipe the image
+    # back to the snapshot's older state. Treat image / icon / accent
+    # fields as one-way (snapshot fills in blanks, never overwrites).
+    # ------------------------------------------------------------------
+    STICKY_FIELDS: Dict[str, set] = {
+        "concerns":      {"image", "icon", "accent_from", "accent_to", "accent_text", "tagline", "name", "description"},
+        "categories":    {"image", "icon", "tagline", "name", "description"},
+        "subcategories": {"image", "icon", "tagline", "accent_from", "accent_to", "accent_text", "name", "description"},
+        "products":      {"images", "image_url", "thumbnail", "video_url", "video_thumb_url",
+                          "hero_image", "swatches"},
+        "brands":        {"image", "logo", "logo_url", "banner", "banner_url"},
+        "banners":       {"image", "image_url", "mobile_image", "desktop_image"},
+        "site_settings": {"logo", "logo_url", "favicon", "splash_image", "hero_image"},
+    }
+
+    def _is_filled(v) -> bool:
+        if v is None:
+            return False
+        if isinstance(v, str):
+            return v.strip() != ""
+        if isinstance(v, (list, dict, tuple, set)):
+            return len(v) > 0
+        return True
+
     for col in SNAPSHOT_COLLECTIONS:
         docs = (snapshot_data.get("collections") or {}).get(col) or []
         if not docs:
             restored_counts[col] = 0
             continue
+        sticky = STICKY_FIELDS.get(col, set())
         try:
             inserted = 0
             updated = 0
@@ -367,15 +398,23 @@ async def auto_restore_if_empty(db) -> Dict[str, Any]:
                     await db[col].insert_one(d)
                     inserted += 1
                 else:
-                    # Use $set instead of $setOnInsert — auto_restore runs at
-                    # backend startup before any admin writes, and the seed
-                    # creates canonical taxonomy WITHOUT images. With
-                    # $setOnInsert the snapshot's uploaded images / accent
-                    # colours / edits would silently bounce off the seeded
-                    # docs. $set lets the snapshot win, so admin-uploaded
-                    # category / concern / subcategory images come back after
-                    # every redeploy — which is the whole point of the backup.
-                    res = await db[col].update_one(pk, {"$set": d}, upsert=True)
+                    # Look at local first — if local has admin-curated sticky
+                    # values that the snapshot's copy doesn't, preserve them.
+                    if sticky:
+                        local = await db[col].find_one(pk, {"_id": 0, **{f: 1 for f in sticky}})
+                        if local:
+                            payload = dict(d)
+                            for f in sticky:
+                                local_v = local.get(f)
+                                if _is_filled(local_v) and not _is_filled(payload.get(f)):
+                                    # Keep local's curated value
+                                    payload.pop(f, None)
+                            d_to_set = payload
+                        else:
+                            d_to_set = d
+                    else:
+                        d_to_set = d
+                    res = await db[col].update_one(pk, {"$set": d_to_set}, upsert=True)
                     if res.upserted_id is not None:
                         inserted += 1
                     elif res.modified_count:

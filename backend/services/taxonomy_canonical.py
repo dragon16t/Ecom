@@ -1661,6 +1661,203 @@ async def reset_canonical_taxonomy(db) -> dict:
 # ============================================================
 # RECLASSIFY all products (links every product to taxonomy)
 # ============================================================
+# ============================================================
+# MASTER BRAIN — sub-brand detection, brand normalisation,
+# haircare hiding, concern inference.
+# Auto-applied on every backend startup inside reclassify_all_products.
+# Image / icon / media fields are NEVER touched by this engine.
+# ============================================================
+
+# Sub-brand prefix → canonical brand. Real distinct brands that import
+# files lumped under a parent / store brand by mistake.
+_SUB_BRAND_PREFIXES: dict[str, str] = {
+    # HUL family — separate from Lakme
+    "simple ": "Simple",
+    "elle 18": "Elle 18",
+    "elle18": "Elle 18",
+    "ell 18": "Elle 18",
+    "pond's": "Pond's",
+    "ponds": "Pond's",
+    "dove ": "Dove",
+    "vaseline": "Vaseline",
+    # Lakme abbreviations stay Lakme
+    "lakme ": "Lakme", "lkm ": "Lakme", "lkme": "Lakme", "lk ": "Lakme",
+    # Maybelline
+    "maybelline": "Maybelline", "ml ": "Maybelline",
+    # MyGlamm / Renee / Sugar
+    "myglamm": "MyGlamm",
+    "renee ": "Renee",
+    "sugar pop": "Sugar Pop",
+    "sugar ": "Sugar",
+    # Big foreign brands
+    "the ordinary": "The Ordinary",
+    "beauty of joseon": "Beauty of Joseon",
+    "huda beauty": "Huda Beauty", "huda ": "Huda Beauty",
+    "kay beauty": "Kay Beauty", "kay by katrina": "Kay Beauty",
+    "too faced": "Too Faced",
+    "mac ": "Mac", "m.a.c": "Mac",
+    "estee lauder": "Estee Lauder", "estée lauder": "Estee Lauder",
+    "the face shop": "The Face Shop",
+    "laneige": "Laneige",
+    "glow recipe": "Glow Recipe",
+    # Indian D2C
+    "the derma co": "The Derma Co",
+    "fix derma": "Fix Derma", "fixderma": "Fix Derma",
+    "swiss beauty select": "Swiss Beauty Select",
+    "swiss beauty": "Swiss Beauty", "swissbeauty": "Swiss Beauty",
+    "minimalist": "Minimalist", "be minimalist": "Minimalist",
+    "cosrx": "Cosrx",
+    "cetaphil": "Cetaphil",
+    "bioderma": "Bioderma",
+    "sebamed": "Sebamed", "seba med": "Sebamed",
+    "cerave": "Cerave", "cera ve": "Cerave",
+    "pilgrim": "Pilgrim",
+    "lotus": "Lotus",
+    "mamaearth": "Mamaearth", "mama earth": "Mamaearth",
+    "plum ": "Plum",
+    "dot&key": "Dot & Key", "dot & key": "Dot & Key", "dot and key": "Dot & Key",
+    "foxtale": "Foxtale",
+    "auric ": "Auric",
+    "quench": "Quench",
+    "makeup revolution": "Revolution", "revolution ": "Revolution",
+    "pac ": "Pac",
+    "forever52": "Forever52", "forever 52": "Forever52",
+    "colorbar": "Colorbar",
+    "loreal paris": "L'Oreal Paris", "l'oreal paris": "L'Oreal Paris",
+    "loreal ": "L'Oreal Paris",
+    "nykaa ": "Nykaa",
+    "krylon": "Krylon",
+    "mirabella": "Mirabella", "mirabelle": "Mirabella",
+    "aqualogia": "Aqualogia",
+    "aureana": "Aureana",
+    "dr sheth": "Dr. Sheth's", "dr. sheth": "Dr. Sheth's",
+    "dr sheth's": "Dr. Sheth's", "dr. sheth's": "Dr. Sheth's",
+    "celesta glow": "Celesta Glow",
+}
+
+# brand string → canonical (typo / casing normaliser)
+_BRAND_NORMALISE: dict[str, str] = {
+    "derma": "The Derma Co", "dermaco": "The Derma Co",
+    "derma co": "The Derma Co", "the derma co": "The Derma Co",
+    "mirabelle": "Mirabella",
+    "esteelauder": "Estee Lauder", "estée lauder": "Estee Lauder",
+    "laniege": "Laneige",
+    "loreal paris": "L'Oreal Paris", "loreal": "L'Oreal Paris",
+    "dr sheiths": "Dr. Sheth's", "dr sheth": "Dr. Sheth's",
+    "dr sheths": "Dr. Sheth's", "dr. sheth": "Dr. Sheth's",
+    "beauty of joseon": "Beauty of Joseon",
+    "fixderma": "Fix Derma",
+    "fenty beauty": "Fenty Beauty",
+}
+
+# Default concerns by category when a product has none.  Keeps concern-based
+# filters meaningful even for products whose name doesn't hit a concern keyword.
+_CATEGORY_DEFAULT_CONCERNS: dict[str, list[str]] = {
+    "sunscreens": ["sun-protection"],
+    "cleansers": ["barrier-support"],
+    "exfoliators": ["texture-pores", "brightening-glow"],
+    "toners-mists": ["oil-sebum", "texture-pores"],
+    "serums-treatments": ["brightening-glow", "aging"],
+    "moisturizers": ["dryness", "barrier-support"],
+    "masks-packs": ["brightening-glow", "barrier-support"],
+    "spot-treatments": ["acne-breakouts"],
+    "face-oils": ["dryness", "aging"],
+    "eye-care": ["under-eye"],
+    "lip-care": ["dryness"],
+    "essences-ampoules": ["brightening-glow", "barrier-support"],
+    "barrier-care": ["sensitivity", "barrier-support"],
+    "body-skincare": ["dryness"],
+    "brightening-products": ["pigmentation", "brightening-glow"],
+    "anti-aging-products": ["aging"],
+}
+
+_CONCERN_KEYWORD_HINTS: dict[str, list[str]] = {
+    "acne-breakouts":   ["acne", "pimple", "blemish", "salicylic", "bha",
+                         "anti-acne", "anti acne", "spot", "blackhead",
+                         "whitehead"],
+    "pigmentation":     ["dark spot", "pigmentation", "melasma", "uneven tone",
+                         "tan removal", "tanning", "kojic", "alpha arbutin",
+                         "azelaic"],
+    "dryness":          ["dry skin", "moisturiz", "hydrat", "hyaluronic",
+                         "squalane", "shea butter", "ceramide", "nourishing"],
+    "oil-sebum":        ["oily skin", "oil control", "matte ", "sebum",
+                         "niacinamide", "purifying", "anti-shine"],
+    "aging":            ["anti-aging", "anti-ageing", "wrinkle", "firming",
+                         "retinol", "retinal", "bakuchiol", "peptide",
+                         "collagen", "lifting", "rejuven"],
+    "sensitivity":      ["sensitive skin", "calming", "soothing", "redness",
+                         "centella", "cica", "panthenol", "allantoin"],
+    "texture-pores":    ["pores", "smooth", "texture", "polished", "refining",
+                         "minimiz"],
+    "brightening-glow": ["bright", "glow", "radiance", "luminous", "vitamin c",
+                         "vit c", "niacinamide", "alpha arbutin", "lit ",
+                         "illuminat"],
+    "under-eye":        ["under eye", "under-eye", "dark circle", "puffy",
+                         "puffiness", "caffeine eye"],
+    "barrier-support":  ["barrier", "ceramide", "cica", "centella", "panthenol",
+                         "repair"],
+    "sun-protection":   ["spf", "sunscreen", "sunblock", "uva", "uvb",
+                         "broad spectrum"],
+    "mens":             [" men ", "for men", "men's"],
+}
+
+# Image / media field allow-list — these are NEVER part of the canonical
+# taxonomy engine's writes. Belt-and-braces guard against accidental updates.
+_IMAGE_FIELDS = frozenset({
+    "images", "image", "image_url", "thumbnail", "thumb", "thumb_url",
+    "hero_image", "swatches", "swatch", "swatch_image", "video_url",
+    "video_thumb_url", "media", "gallery",
+})
+
+
+def _detect_sub_brand(name: str) -> Optional[str]:
+    """Longest-prefix sub-brand detection in the product name."""
+    n = (name or "").lower().strip()
+    if not n:
+        return None
+    for token in sorted(_SUB_BRAND_PREFIXES.keys(), key=len, reverse=True):
+        # Token may include trailing space already (intentional anchoring)
+        if n.startswith(token) or n == token.strip():
+            return _SUB_BRAND_PREFIXES[token]
+    return None
+
+
+def _normalise_brand_value(brand: Optional[str]) -> Optional[str]:
+    """Case/typo normalisation; returns canonical or input unchanged."""
+    if not brand:
+        return brand
+    bl = brand.lower().strip()
+    return _BRAND_NORMALISE.get(bl, brand)
+
+
+def _infer_concerns(name: str, description: str, category: Optional[str]) -> list[str]:
+    blob = ((name or "") + " " + (description or "")).lower()
+    found: list[str] = []
+    for concern, kws in _CONCERN_KEYWORD_HINTS.items():
+        for k in kws:
+            if k in blob:
+                if concern not in found:
+                    found.append(concern)
+                break
+        if len(found) >= 3:
+            break
+    if not found and category:
+        found = list(_CATEGORY_DEFAULT_CONCERNS.get(category, []))
+    return found[:3]
+
+
+def _safe_set(payload: dict) -> dict:
+    """Strip any image / media fields from an update payload.
+
+    Defensive: this is called immediately before EVERY db.products.update_one
+    inside reclassify_all_products. If a future contributor accidentally adds
+    an image-related key to the update, this filter removes it BEFORE the
+    write hits MongoDB. Image / icon assets remain admin-owned and immune to
+    taxonomy reclassification.
+    """
+    return {k: v for k, v in payload.items() if k not in _IMAGE_FIELDS}
+
+
 async def reclassify_all_products(db, batch_log: int = 500,
                                    job_id: Optional[str] = None) -> dict:
     """Walk all products and re-classify niche/category/subcategory/concerns
@@ -1705,15 +1902,27 @@ async def reclassify_all_products(db, batch_log: int = 500,
     cur = db.products.find(
         {},
         {"_id": 0, "slug": 1, "name": 1, "description": 1, "brand": 1,
-         "niche": 1, "category": 1, "subcategory": 1, "concerns": 1}
+         "niche": 1, "category": 1, "subcategory": 1, "concerns": 1,
+         "is_active": 1}
     )
     async for prod in cur:
+        # ---- BRAND MASTER BRAIN — sub-brand prefix + typo normalisation ----
+        raw_name = prod.get("name") or ""
+        raw_brand = prod.get("brand") or ""
+        # Sub-brand prefix wins over the bulk-import brand (e.g. "Simple Face
+        # Wash" misfiled as Lakme → corrected to Simple).
+        sub_b = _detect_sub_brand(raw_name)
+        if sub_b:
+            effective_brand = sub_b
+        else:
+            effective_brand = _normalise_brand_value(raw_brand) or raw_brand
+
         # Re-classify everything. Flagship anti-aging products are detected
         # by name/description content, not by a sticky niche flag.
         result = classify_product(
-            name=prod.get("name") or "",
+            name=raw_name,
             description=prod.get("description") or "",
-            brand=prod.get("brand") or "",
+            brand=effective_brand,
             current_niche=prod.get("niche"),
         )
         # FLAGSHIP GUARD — the "anti-aging" niche is RESERVED for Celesta Glow
@@ -1746,6 +1955,36 @@ async def reclassify_all_products(db, batch_log: int = 500,
             "needs_review": result.get("unclassified", False),
             "taxonomy_classified_at": _now(),
         }
+
+        # ---- BRAND CORRECTION — apply if changed ----
+        if effective_brand and effective_brand != raw_brand:
+            upd["brand"] = effective_brand
+
+        # ---- HAIRCARE HIDE — this is a skincare/cosmetics store. Hair products
+        # stay in the DB (so the snapshot/restore keeps them) but is_active=False
+        # removes them from the public catalogue / hub tiles. Re-enabling is a
+        # one-flip admin action.
+        if result["niche"] == "haircare" and prod.get("is_active", True) is not False:
+            upd["is_active"] = False
+        # Conversely, if a product was hidden as haircare but is no longer
+        # classified haircare (e.g. classifier improvement), re-enable it.
+        elif result["niche"] != "haircare" and prod.get("is_active") is False:
+            upd["is_active"] = True
+
+        # ---- CONCERN INFERENCE FALLBACK — fill the long tail the keyword
+        # classifier misses, but ONLY for skincare/anti-aging niches.
+        # Cosmetics products legitimately have no concerns.
+        if not result["concerns"] and result["niche"] in ("skincare", "anti-aging"):
+            inferred = _infer_concerns(
+                raw_name, prod.get("description") or "", result["category"]
+            )
+            if inferred:
+                upd["concerns"] = inferred
+                upd["concerns_inferred"] = True
+
+        # ---- IMAGE-SAFETY GUARD — strip any image/media field that may have
+        # crept into the payload before writing to Mongo.
+        upd = _safe_set(upd)
         await db.products.update_one({"slug": prod["slug"]}, {"$set": upd})
         counters["updated"] += 1
         # Convert None to a string sentinel so the dict can be persisted in

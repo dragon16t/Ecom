@@ -3439,6 +3439,19 @@ async def startup_seed():
         restore_res = await _cb.auto_restore_if_empty(db)
         if restore_res.get("restored"):
             logging.info(f"[catalog_backup] auto-restored taxonomy: {restore_res}")
+            # ---- POST-RESTORE MASTER-BRAIN PASS ----
+            # The snapshot may carry stale taxonomy / brand / is_active values
+            # that pre-date our latest engine improvements. Re-run the canonical
+            # reclassifier so the master brain (sub-brand detection, haircare
+            # hiding, concern inference, brand normalisation) deterministically
+            # owns those fields. Image / icon / accent fields are NEVER touched
+            # by this pass — _safe_set() in taxonomy_canonical guarantees it.
+            try:
+                from services.taxonomy_canonical import reclassify_all_products as _rc
+                rerun = await _rc(db)
+                logging.info(f"[taxonomy_canonical] post-restore reclassify: updated={rerun.get('updated')}")
+            except Exception as e:
+                logging.warning(f"[taxonomy_canonical] post-restore reclassify skipped: {e}")
     except Exception as e:
         logging.warning(f"[catalog_backup] auto-restore skipped: {e}")
 
