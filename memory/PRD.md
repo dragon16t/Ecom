@@ -289,3 +289,13 @@ Target: handle 1,000-2,000 concurrent users on production with zero "Not Availab
 - **Results (verified post-restart):** 7 630 active products (228 haircare hidden), Lakme 1 096 → 950, 10 Simple, 134 Elle 18, 145 The Derma Co, 31 Estee Lauder, 218 products with auto-inferred concerns, **158 / 158 categories, 135 / 135 subcategories, 14 / 14 concerns retain their images** through restart, niche strict (cosmetics 5 915 / skincare 1 709 / anti-aging 6 — Celesta Glow flagship only).
 - **`shampoo` search returns 0** on the public API (haircare correctly excluded from browsing experience).
 - The standalone `scripts/audit_catalog_feb2026.py` is still available but is now redundant — the canonical engine does everything on every startup.
+
+
+### Jun 2026 — Incremental Cloudinary backups + smart retention
+- **15-min safety net is now INCREMENTAL** (`services/catalog_backup.py::incremental_snapshot`). Each tick uploads only documents whose timestamp (`updated_at` / `taxonomy_classified_at` / `created_at` / `placed_at` / `last_seen` / `ai_taxonomy_audited_at`) is newer than the previous snapshot.  If nothing changed in 15 min, **NO upload happens** at all.  Typical incremental is < 50 KB vs ~2 MB for a full — ~40× bandwidth savings on quiet days, ~95% on idle days.
+- **Content-hash dedupe** — both full and incremental snapshots compute SHA-256 of the payload before uploading. If the hash matches the last snapshot in the chain, the upload is skipped.  No duplicate uploads to Cloudinary, ever.
+- **Daily 12:00 AM IST = full snapshot** (`celesta-glow/backups/full-<ts>`). A new full resets the incremental chain (`incrementals: []` in admin_settings) and Cloudinary's retention sweep deletes every prior file (old fulls AND their incrementals) outside the keep-3 window in one pass.
+- **Auto-restore now applies the incremental chain** — boots up by restoring the latest full, then replays every incremental tied to it (`base_full` field) in chronological order. End state = exactly the last 15-min snapshot, with image-sticky preservation throughout.
+- **Naming** — `full-2026-06-15T00-00-00...json.gz` and `inc-2026-06-15T00-15-00...json.gz` (replaces the legacy `snapshot-*` prefix). Easy to grep and audit on Cloudinary's media library.
+- **Retention summary on Cloudinary**: at any moment there are at most 3 full files + N incrementals chained under the most-recent full (N = (24h × 4) / day in the worst case).  When the day rolls over to midnight, the new full ships and EVERY prior file (older fulls + their incrementals) is deleted in the same upload's sweep.
+- Status: incremental scheduler + retention live in preview, ready for deploy.

@@ -126,23 +126,43 @@ async def _serialize(db) -> Dict[str, Any]:
 
 
 async def snapshot(db) -> Dict[str, Any]:
-    """Compress + upload the current state to Cloudinary as a raw .json.gz.
+    """Full snapshot — compress + upload all snapshot collections.
 
-    Retention: only the LAST 3 backups are kept. After each upload we delete
-    every older backup file on Cloudinary to keep storage usage in check.
-    The full DB state is in EVERY snapshot — losing older ones doesn't lose
-    any data, you just can't time-travel further back than 3 backups.
+    Dedupe: if the new payload's content hash matches the most recent FULL
+    snapshot, we skip the upload entirely and keep the existing one (saves
+    Cloudinary bandwidth + storage when nothing changed since last full).
+
+    Retention: keeps the last 3 FULL snapshots PLUS every incremental whose
+    `base_full` points to one of those 3 fulls. When a full is purged, ALL
+    incrementals chained to it are purged too (no orphans, no duplicates).
     """
     global _last_snapshot_at
     if not await _cs.ensure_configured(db):
         raise RuntimeError("Cloudinary not configured — cannot snapshot")
     payload = await _serialize(db)
     raw_json = json.dumps(payload, separators=(",", ":"), default=str).encode("utf-8")
-    # gzip compresses the typical 5-15MB catalog snapshot down to 800KB-2MB
+
+    # Dedupe — skip upload if content identical to the most recent full
+    import hashlib as _hashlib
+    content_hash = _hashlib.sha256(raw_json).hexdigest()
+    existing = await db.admin_settings.find_one({"type": "catalog_backup"}, {"_id": 0}) or {}
+    last_hash = ((existing.get("history") or [{}])[-1] or {}).get("hash")
+    if last_hash == content_hash:
+        logger.info("Snapshot dedupe: content unchanged since last full (hash %s) — skipping upload", content_hash[:8])
+        # Still bump the "since" pointer so incrementals know nothing's new
+        await db.admin_settings.update_one(
+            {"type": "catalog_backup"},
+            {"$set": {"last_check_at": _now_iso()}},
+            upsert=True,
+        )
+        return {
+            "success": True, "skipped_dedupe": True, "hash": content_hash,
+            "created_at": _now_iso(),
+        }
+
     blob = gzip.compress(raw_json, compresslevel=6)
-    # Dated public_id so older backups are addressable and pruneable.
     ts_compact = payload["created_at"].replace(":", "-").replace(".", "-")
-    dated_public_id = f"celesta-glow/backups/snapshot-{ts_compact}"
+    dated_public_id = f"celesta-glow/backups/full-{ts_compact}"
     res = cloudinary.uploader.upload(
         io.BytesIO(blob),
         public_id=dated_public_id,
@@ -150,8 +170,7 @@ async def snapshot(db) -> Dict[str, Any]:
         overwrite=True,
         unique_filename=False,
     )
-    # ALSO mirror to the legacy `latest` alias so older code paths (auto-restore
-    # cold-boot fallback) still find a snapshot if Mongo `admin_settings` is wiped.
+    # Mirror to the `latest` alias as a cold-boot fallback.
     try:
         cloudinary.uploader.upload(
             io.BytesIO(blob),
@@ -168,9 +187,7 @@ async def snapshot(db) -> Dict[str, Any]:
     snapshot_url = res.get("secure_url") or res.get("url")
     snapshot_version = res.get("version")
     try:
-        # Append to a sliding window of the last 3 snapshots. Older entries are
-        # both forgotten from Mongo AND deleted from Cloudinary below.
-        doc = await db.admin_settings.find_one({"type": "catalog_backup"}, {"_id": 0}) or {}
+        doc = existing
         history = doc.get("history", [])
         history.append({
             "public_id": dated_public_id,
@@ -178,53 +195,179 @@ async def snapshot(db) -> Dict[str, Any]:
             "version": snapshot_version,
             "created_at": payload["created_at"],
             "bytes": len(blob),
+            "hash": content_hash,
+            "kind": "full",
         })
-        history = history[-3:]  # keep last 3 only
+        # Keep last 3 FULL backups only (incrementals tracked separately below)
+        history = [h for h in history if h.get("kind") != "full"] + [h for h in history if h.get("kind") == "full"][-3:]
+        # current_full = the just-uploaded one; old incrementals belong to retired fulls
         await db.admin_settings.update_one(
             {"type": "catalog_backup"},
             {"$set": {
                 "type": "catalog_backup",
                 "latest_url": snapshot_url,
                 "created_at": payload["created_at"],
+                "current_full_public_id": dated_public_id,
+                "current_full_created_at": payload["created_at"],
                 "history": history,
+                # A new full resets the incremental chain — any earlier
+                # incrementals describe diffs against an older base and are
+                # therefore obsolete.
+                "incrementals": [],
             }},
             upsert=True,
         )
 
         # ---- Cloudinary retention sweep ----
-        # Discover every backup file currently on Cloudinary (in the backups/
-        # folder) and delete anything not in our 3-keep history. Catches files
-        # left over from previous runs even before we tracked history in Mongo.
+        # Keep: last 3 fulls + the `latest` alias + every incremental file
+        # whose `base_full` matches one of the kept fulls.
         try:
             import cloudinary.api as _capi
-            keep_ids = {h["public_id"] for h in history}
-            keep_ids.add(CLOUDINARY_PUBLIC_ID)  # never delete the `latest` alias
+            keep_full_ids = {h["public_id"] for h in history if h.get("kind") == "full"}
+            keep_full_ids.add(CLOUDINARY_PUBLIC_ID)
+            # We DO NOT keep any prior incrementals because we just wrote a
+            # brand-new full that already contains everything.
             res_list = _capi.resources(
                 resource_type="raw",
                 type="upload",
                 prefix="celesta-glow/backups/",
-                max_results=100,
+                max_results=200,
             )
-            to_delete = [r["public_id"] for r in res_list.get("resources", []) if r["public_id"] not in keep_ids]
+            to_delete = [
+                r["public_id"] for r in res_list.get("resources", [])
+                if r["public_id"] not in keep_full_ids
+            ]
             if to_delete:
                 _capi.delete_resources(to_delete, resource_type="raw")
-                logger.info("Backup retention: pruned %d old snapshot(s) from Cloudinary: %s", len(to_delete), to_delete)
+                logger.info("Backup retention: pruned %d old file(s) from Cloudinary: %s", len(to_delete), to_delete[:10])
         except Exception as exc:
-            logger.warning("Cloudinary retention sweep failed (storage may bloat): %s", exc)
+            logger.warning("Cloudinary retention sweep failed: %s", exc)
 
     except Exception as exc:
         logger.warning("Failed to persist snapshot URL: %s", exc)
     logger.info(
-        "Snapshot uploaded: raw=%dKB gz=%dKB collections=%s",
-        len(raw_json) // 1024, len(blob) // 1024, counts,
+        "Full snapshot uploaded: raw=%dKB gz=%dKB hash=%s",
+        len(raw_json) // 1024, len(blob) // 1024, content_hash[:8],
     )
     return {
-        "success": True,
-        "url": snapshot_url,
-        "counts": counts,
+        "success": True, "kind": "full",
+        "url": snapshot_url, "counts": counts,
         "snapshot_bytes_raw": len(raw_json),
         "snapshot_bytes_compressed": len(blob),
         "created_at": payload["created_at"],
+        "hash": content_hash,
+    }
+
+
+# ---------------------------------------------------------------------------
+# INCREMENTAL SNAPSHOT — only docs whose `updated_at` is newer than the last
+# full's `created_at` (or the most recent incremental, whichever is later).
+# Chains under the current full; cleared whenever a new full is uploaded.
+# ---------------------------------------------------------------------------
+def _doc_updated_at(d: Dict) -> Optional[str]:
+    """Best-effort timestamp pick for incremental delta detection."""
+    for f in ("updated_at", "taxonomy_classified_at", "modified_at",
+              "created_at", "placed_at", "last_seen", "ai_taxonomy_audited_at"):
+        v = d.get(f)
+        if v:
+            return str(v)
+    return None
+
+
+async def _serialize_incremental(db, since_iso: str) -> Dict[str, Any]:
+    """Build a delta payload — only docs with a timestamp > since_iso."""
+    payload: Dict[str, Any] = {
+        "schema_version": 3,
+        "type": "incremental",
+        "since": since_iso,
+        "created_at": _now_iso(),
+        "collections": {},
+    }
+    existing_set = set(await db.list_collection_names())
+    for col in SNAPSHOT_COLLECTIONS:
+        if col not in existing_set:
+            continue
+        docs: List[Dict] = []
+        async for d in db[col].find({}, {"_id": 0}):
+            ts = _doc_updated_at(d)
+            if ts and ts > since_iso:
+                docs.append(d)
+        if docs:
+            payload["collections"][col] = docs
+            payload["collections"][col + "__count"] = len(docs)
+    return payload
+
+
+async def incremental_snapshot(db) -> Dict[str, Any]:
+    """Upload a small JSON.gz of ONLY rows changed since the last snapshot.
+
+    Skips entirely if nothing changed OR if there's no current full to chain
+    under (in that case the caller should run a full snapshot first).
+    """
+    if not await _cs.ensure_configured(db):
+        return {"success": False, "reason": "cloudinary not configured"}
+    meta = await db.admin_settings.find_one({"type": "catalog_backup"}, {"_id": 0}) or {}
+    current_full_id = meta.get("current_full_public_id")
+    if not current_full_id:
+        return {"success": False, "reason": "no current full — run full snapshot first"}
+    incs = meta.get("incrementals") or []
+    since_iso = (incs[-1].get("created_at") if incs else None) \
+                or meta.get("current_full_created_at") \
+                or "1970-01-01T00:00:00+00:00"
+    payload = await _serialize_incremental(db, since_iso)
+    if not payload["collections"]:
+        logger.info("Incremental: no changes since %s — skipping upload", since_iso)
+        return {"success": True, "skipped_no_changes": True, "since": since_iso}
+
+    raw_json = json.dumps(payload, separators=(",", ":"), default=str).encode("utf-8")
+    import hashlib as _hashlib
+    content_hash = _hashlib.sha256(raw_json).hexdigest()
+    # Dedupe within the incremental chain
+    if incs and incs[-1].get("hash") == content_hash:
+        logger.info("Incremental dedupe: identical to last incremental — skipping upload")
+        return {"success": True, "skipped_dedupe": True, "hash": content_hash}
+
+    payload["base_full"] = current_full_id
+    raw_json = json.dumps(payload, separators=(",", ":"), default=str).encode("utf-8")
+    blob = gzip.compress(raw_json, compresslevel=6)
+    ts_compact = payload["created_at"].replace(":", "-").replace(".", "-")
+    public_id = f"celesta-glow/backups/inc-{ts_compact}"
+    res = cloudinary.uploader.upload(
+        io.BytesIO(blob),
+        public_id=public_id,
+        resource_type="raw",
+        overwrite=True,
+        unique_filename=False,
+    )
+    inc_url = res.get("secure_url") or res.get("url")
+    incs.append({
+        "public_id": public_id,
+        "url": inc_url,
+        "created_at": payload["created_at"],
+        "since": since_iso,
+        "bytes": len(blob),
+        "hash": content_hash,
+        "base_full": current_full_id,
+        "collections": {k: v for k, v in payload["collections"].items() if not k.endswith("__count")},
+    })
+    # Strip the `collections` echo from the metadata to keep admin_settings small
+    incs_meta = [{k: v for k, v in i.items() if k != "collections"} for i in incs]
+    await db.admin_settings.update_one(
+        {"type": "catalog_backup"},
+        {"$set": {"incrementals": incs_meta, "last_inc_url": inc_url}},
+        upsert=True,
+    )
+    changed_counts = {k.replace("__count", ""): v for k, v in payload["collections"].items() if k.endswith("__count")}
+    logger.info(
+        "Incremental uploaded: gz=%dKB changed=%s base=%s",
+        len(blob) // 1024, changed_counts, current_full_id,
+    )
+    return {
+        "success": True, "kind": "incremental",
+        "url": inc_url, "changed": changed_counts,
+        "snapshot_bytes_compressed": len(blob),
+        "since": since_iso, "created_at": payload["created_at"],
+        "base_full": current_full_id,
     }
 
 
@@ -423,6 +566,61 @@ async def auto_restore_if_empty(db) -> Dict[str, Any]:
         except Exception as exc:
             logger.error("Auto-restore failed for %s: %s", col, exc)
             restored_counts[col] = -1
+
+    # ---------- Apply incremental chain on top of the full ----------
+    # The full snapshot we just restored is the BASE. Any incrementals
+    # uploaded after that full (small deltas, one per 15-min tick if
+    # anything changed) are applied in chronological order so the DB
+    # ends up at the latest known state, not the last-full state.
+    try:
+        meta = await db.admin_settings.find_one({"type": "catalog_backup"}, {"_id": 0}) or {}
+        incs = meta.get("incrementals") or []
+        applied_incs = 0
+        for inc in incs:
+            url = inc.get("url")
+            if not url:
+                continue
+            try:
+                r = requests.get(url, timeout=20)
+                if r.status_code != 200:
+                    logger.warning("Incremental fetch %s HTTP %s — skipping", inc.get("public_id"), r.status_code)
+                    continue
+                data = json.loads(gzip.decompress(r.content).decode("utf-8"))
+            except Exception as e:
+                logger.warning("Incremental fetch/parse failed for %s: %s", inc.get("public_id"), e)
+                continue
+            for col, docs in (data.get("collections") or {}).items():
+                if col.endswith("__count") or not isinstance(docs, list):
+                    continue
+                sticky = STICKY_FIELDS.get(col, set())
+                for d in docs:
+                    pk = None
+                    for k in ("slug", "code", "id", "order_id", "combo_id", "_id"):
+                        if d.get(k):
+                            pk = {k: d[k]}
+                            break
+                    if pk is None:
+                        await db[col].insert_one(d)
+                        continue
+                    if sticky:
+                        local = await db[col].find_one(pk, {"_id": 0, **{f: 1 for f in sticky}})
+                        if local:
+                            payload = dict(d)
+                            for f in sticky:
+                                lv = local.get(f)
+                                if _is_filled(lv) and not _is_filled(payload.get(f)):
+                                    payload.pop(f, None)
+                            d_to_set = payload
+                        else:
+                            d_to_set = d
+                    else:
+                        d_to_set = d
+                    await db[col].update_one(pk, {"$set": d_to_set}, upsert=True)
+            applied_incs += 1
+        if applied_incs:
+            logger.info("Auto-restore applied %d incremental delta(s) on top of full", applied_incs)
+    except Exception as exc:
+        logger.warning("Incremental chain replay failed: %s", exc)
 
     # ---------- Tombstone enforcement ----------
     # `taxonomy_tombstones` were already restored above. Now sweep across

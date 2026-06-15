@@ -3482,28 +3482,31 @@ async def startup_seed():
                 logging.warning(f"[catalog_backup] scheduler error, retrying in 5 min: {exc}")
                 await asyncio.sleep(300)
 
-    # ---- Fast 15-min safety-net snapshot ----
-    # Catches mid-session edits between daily midnight backups. Snapshots only
-    # if there's been a recent write (CatalogBackupTriggerMiddleware sets
-    # _cb._last_write_at on every admin POST/PATCH/DELETE). Skipped if no
-    # writes happened in the last interval — keeps Cloudinary bandwidth in
-    # check on quiet days.
+    # ---- Fast 15-min safety-net INCREMENTAL backup ----
+    # Every 15 minutes we call incremental_snapshot(db) which only uploads
+    # docs whose timestamp moved forward since the last (incremental OR full)
+    # snapshot. If nothing changed it skips the upload entirely.  This
+    # replaces the previous full-backup-every-15-min approach which used
+    # ~50× more Cloudinary bandwidth than needed.
     async def _safety_snapshot_loop():
         import asyncio
         from services import catalog_backup as _cb_local
         await asyncio.sleep(60)  # wait for app warm-up
-        last_seen_write_at = None
         while True:
             try:
                 await asyncio.sleep(15 * 60)
-                cur_write_at = getattr(_cb_local, "_last_write_at", None)
-                if cur_write_at and cur_write_at != last_seen_write_at:
-                    try:
-                        res = await _cb_local.snapshot(db)
-                        last_seen_write_at = cur_write_at
-                        logging.info(f"[catalog_backup] 15-min safety snapshot OK: products={res.get('counts',{}).get('products',0)}")
-                    except Exception as exc:
-                        logging.warning(f"[catalog_backup] 15-min safety snapshot failed: {exc}")
+                try:
+                    res = await _cb_local.incremental_snapshot(db)
+                    if res.get("skipped_no_changes"):
+                        logging.debug("[catalog_backup] 15-min: no changes — no upload")
+                    elif res.get("skipped_dedupe"):
+                        logging.debug("[catalog_backup] 15-min: dedupe — no upload")
+                    elif res.get("success"):
+                        logging.info(f"[catalog_backup] 15-min incremental uploaded: changed={res.get('changed')}")
+                    else:
+                        logging.warning(f"[catalog_backup] 15-min incremental skipped: {res.get('reason')}")
+                except Exception as exc:
+                    logging.warning(f"[catalog_backup] 15-min incremental failed: {exc}")
             except asyncio.CancelledError:
                 break
             except Exception as exc:
