@@ -301,15 +301,31 @@ async def _serialize_incremental(db, since_iso: str) -> Dict[str, Any]:
 async def incremental_snapshot(db) -> Dict[str, Any]:
     """Upload a small JSON.gz of ONLY rows changed since the last snapshot.
 
-    Skips entirely if nothing changed OR if there's no current full to chain
-    under (in that case the caller should run a full snapshot first).
+    Self-healing: if there's no `current_full_public_id` in admin_settings
+    (e.g. backend was deployed before the incremental engine landed), this
+    function will run a full snapshot FIRST so the chain has an anchor,
+    then fall through into the incremental flow. That guarantees admin
+    image / icon uploads are captured the very first time a write happens
+    after deployment.
     """
     if not await _cs.ensure_configured(db):
         return {"success": False, "reason": "cloudinary not configured"}
     meta = await db.admin_settings.find_one({"type": "catalog_backup"}, {"_id": 0}) or {}
     current_full_id = meta.get("current_full_public_id")
     if not current_full_id:
-        return {"success": False, "reason": "no current full — run full snapshot first"}
+        logger.info("Incremental: no current full anchor — bootstrapping with a full snapshot first")
+        try:
+            full_res = await snapshot(db)
+            if not full_res.get("success"):
+                return {"success": False, "reason": "bootstrap full snapshot failed"}
+            # snapshot() just updated admin_settings → refresh meta + chain anchor
+            meta = await db.admin_settings.find_one({"type": "catalog_backup"}, {"_id": 0}) or {}
+            current_full_id = meta.get("current_full_public_id")
+            if not current_full_id:
+                return {"success": False, "reason": "bootstrap snapshot did not produce a full anchor"}
+        except Exception as exc:
+            logger.warning("Bootstrap full snapshot failed: %s", exc)
+            return {"success": False, "reason": f"bootstrap failed: {exc}"}
     incs = meta.get("incrementals") or []
     since_iso = (incs[-1].get("created_at") if incs else None) \
                 or meta.get("current_full_created_at") \
@@ -384,14 +400,43 @@ async def _debounced_snapshot(db):
 
 
 _last_write_at: Optional[float] = None
+_pending_incremental_task: Optional[asyncio.Task] = None
+_incremental_debounce_seconds = 25  # coalesce a burst of admin writes
+
+
+async def _debounced_incremental(db):
+    """Wait briefly to coalesce a burst of admin writes, then incremental."""
+    global _pending_incremental_task
+    try:
+        await asyncio.sleep(_incremental_debounce_seconds)
+        try:
+            res = await incremental_snapshot(db)
+            if res.get("success") and not res.get("skipped_no_changes") and not res.get("skipped_dedupe"):
+                logger.info("Post-write incremental uploaded: %s", res.get("changed") or res.get("kind"))
+        except Exception as exc:
+            logger.warning("Debounced incremental failed: %s", exc)
+    except Exception as exc:
+        logger.warning("Background incremental task crashed: %s", exc)
+    finally:
+        _pending_incremental_task = None
 
 
 def schedule_snapshot(db) -> None:
-    """Mark that a write happened. The actual upload is handled by the
-    15-minute safety-net scheduler in `server.py` (was per-write debounced
-    before, but that pushed too much Cloudinary bandwidth on busy days)."""
-    global _last_write_at
+    """Called by admin write endpoints (image upload / category edit / etc.).
+
+    Marks _last_write_at AND fires a debounced incremental snapshot 25 s
+    later so the admin's freshly-uploaded image is on Cloudinary BEFORE the
+    next pod restart can wipe the DB. Coalesces a burst of writes into one
+    upload — 20 writes in 25 s ⇒ one incremental.
+    """
+    global _last_write_at, _pending_incremental_task
     _last_write_at = asyncio.get_event_loop().time()
+    if _pending_incremental_task is None or _pending_incremental_task.done():
+        try:
+            _pending_incremental_task = asyncio.create_task(_debounced_incremental(db))
+        except RuntimeError:
+            # Called outside an event loop — caller should retry from a task
+            _pending_incremental_task = None
 
 
 async def _fetch_latest_snapshot(db) -> Optional[Dict[str, Any]]:
@@ -488,6 +533,40 @@ async def auto_restore_if_empty(db) -> Dict[str, Any]:
     if not snapshot_data:
         logger.info("No remote snapshot available — first deploy. Local counts: %s", counts)
         return {"restored": False, "reason": "no snapshot found", "counts": counts}
+
+    # ---------- BACKFILL admin_settings current_full anchor ----------
+    # Older snapshots (uploaded by code that pre-dates the incremental engine)
+    # didn't set `current_full_public_id`. Without it, incremental backups
+    # would refuse to chain and admin image uploads would never get backed
+    # up — exactly the bug a user reported losing yesterday's subcategory
+    # image upload. Backfill the anchor here so the very next incremental
+    # call has somewhere to attach.
+    try:
+        meta = await db.admin_settings.find_one({"type": "catalog_backup"}, {"_id": 0}) or {}
+        if not meta.get("current_full_public_id"):
+            history = meta.get("history") or []
+            fulls = [h for h in history if h.get("kind") == "full" or h.get("kind") is None]
+            picked = fulls[-1] if fulls else None
+            if picked and picked.get("public_id"):
+                anchor_id = picked["public_id"]
+                anchor_ts = picked.get("created_at") or snapshot_data.get("created_at") or meta.get("created_at")
+            else:
+                # No history at all → use the legacy `latest` alias as the anchor
+                # and derive the timestamp from the snapshot data we just fetched.
+                anchor_id = CLOUDINARY_PUBLIC_ID
+                anchor_ts = snapshot_data.get("created_at") or meta.get("created_at")
+            await db.admin_settings.update_one(
+                {"type": "catalog_backup"},
+                {"$set": {
+                    "current_full_public_id": anchor_id,
+                    "current_full_created_at": anchor_ts,
+                    "incrementals": meta.get("incrementals") or [],
+                }},
+                upsert=True,
+            )
+            logger.info("Backfilled current_full anchor: %s (created_at=%s)", anchor_id, anchor_ts)
+    except Exception as exc:
+        logger.warning("current_full anchor backfill failed: %s", exc)
 
     restored_counts: Dict[str, int] = {}
     # ------------------------------------------------------------------

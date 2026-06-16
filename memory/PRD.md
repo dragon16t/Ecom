@@ -299,3 +299,17 @@ Target: handle 1,000-2,000 concurrent users on production with zero "Not Availab
 - **Naming** — `full-2026-06-15T00-00-00...json.gz` and `inc-2026-06-15T00-15-00...json.gz` (replaces the legacy `snapshot-*` prefix). Easy to grep and audit on Cloudinary's media library.
 - **Retention summary on Cloudinary**: at any moment there are at most 3 full files + N incrementals chained under the most-recent full (N = (24h × 4) / day in the worst case).  When the day rolls over to midnight, the new full ships and EVERY prior file (older fulls + their incrementals) is deleted in the same upload's sweep.
 - Status: incremental scheduler + retention live in preview, ready for deploy.
+
+
+### Jun 16 2026 — Hot-fix: admin image uploads now backed up within 25 s
+**Bug reported**: user uploaded a subcategory icon (Barrier Repair Cream) yesterday in production; today the tile shows blank. Root-caused to a three-bug interaction in the backup pipeline:
+- `schedule_snapshot()` was only setting an in-memory flag, never producing an upload — the 15-min safety scheduler was the only path, so a pod restart within 15 min of an admin write lost the change.
+- `incremental_snapshot()` refused to run unless `admin_settings.current_full_public_id` was set, but the production June 11 snapshot was written by older code that never set that anchor.
+- On a fresh-restored DB after pod wipe, the sticky-fields restore couldn't help (local image was empty because DB was empty, snapshot image was also empty).
+
+**Fix shipped** (`services/catalog_backup.py`):
+1. `schedule_snapshot(db)` now fires a debounced 25-second incremental upload after each admin write — coalescing bursts. Admin image uploads land on Cloudinary within ~25 s, well before any pod restart.
+2. `incremental_snapshot(db)` is now self-healing: if no current-full anchor exists it bootstraps with a full snapshot first.
+3. `auto_restore_if_empty()` backfills `current_full_public_id` from either the most recent `history` entry OR the legacy `CLOUDINARY_PUBLIC_ID` alias — so existing production deployments are upgraded on first boot without manual intervention.
+
+**Verified**: boot log shows `Backfilled current_full anchor: celesta-glow/db-snapshots/latest (created_at=2026-06-11T15:51:34...)` — incremental chain is now ready to accept admin writes. After redeploy of this fix, any admin image upload will be safely persisted within seconds.
