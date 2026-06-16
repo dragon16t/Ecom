@@ -5,6 +5,8 @@
 """
 from __future__ import annotations
 import os
+import hashlib
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Header, Query, Body
@@ -31,12 +33,54 @@ def _get_db():
     return _db
 
 
-def _verify_admin(x_admin_token: Optional[str], token: Optional[str]):
-    """Accept either header OR ?token=… query (so the PDF opens in a new tab)."""
-    expected = os.environ.get("ADMIN_TOKEN", "celestaglow2024")
+async def _verify_admin(x_admin_token: Optional[str], token: Optional[str]):
+    """Accept header OR ?token=… query; match against the same auth surface as
+    every other admin endpoint:
+      1. An active admin session token (from POST /api/admin/login)
+      2. The plaintext admin password (sha256 → active admin hash)
+      3. Legacy static ADMIN_TOKEN env (fallback for cron / curl scripts)
+
+    Previously this only accepted the static env var, so admins logged-in via
+    the dashboard (which stores a *session* token) hit a hard 401 when
+    printing labels. That bug is fixed here.
+    """
     supplied = x_admin_token or token
-    if not supplied or supplied != expected:
+    if not supplied:
         raise HTTPException(status_code=401, detail="Admin auth required")
+
+    # (1) Active session token
+    try:
+        from server import admin_sessions  # lazy to avoid circular import
+        if supplied in admin_sessions:
+            session = admin_sessions[supplied]
+            expires_at = session.get("expires_at")
+            if isinstance(expires_at, str):
+                expires_at = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+            if isinstance(expires_at, datetime):
+                if expires_at.tzinfo is None:
+                    expires_at = expires_at.replace(tzinfo=timezone.utc)
+                if datetime.now(timezone.utc) < expires_at:
+                    return True
+                # Session expired — fall through to other auth methods
+    except Exception:
+        pass
+
+    # (2) Plaintext admin password vs active hash in DB
+    try:
+        from services.admin_auth import get_active_admin_hash
+        db = _get_db()
+        active_hash = await get_active_admin_hash(db)
+        if active_hash and hashlib.sha256(supplied.encode()).hexdigest() == active_hash:
+            return True
+    except Exception:
+        pass
+
+    # (3) Legacy static ADMIN_TOKEN fallback (for cron / curl)
+    legacy = os.environ.get("ADMIN_TOKEN")
+    if legacy and supplied == legacy:
+        return True
+
+    raise HTTPException(status_code=401, detail="Admin auth required")
 
 
 @router.get("/orders/{order_id}/label.pdf")
@@ -45,7 +89,7 @@ async def get_single_label(
     token: Optional[str] = Query(None, description="Admin token (so the PDF can open in a new tab without setting headers)"),
     x_admin_token: Optional[str] = Header(None, alias="X-Admin-Token"),
 ):
-    _verify_admin(x_admin_token, token)
+    await _verify_admin(x_admin_token, token)
     db = _get_db()
     # Exclude soft-deleted orders so we never print labels for archived rows
     order = await db.orders.find_one(
@@ -79,7 +123,7 @@ async def post_bulk_labels(
 ):
     """Generate an A4 PDF with up to 200 labels (50 pages × 4-up). Soft-deleted
     orders are silently filtered out."""
-    _verify_admin(x_admin_token, token)
+    await _verify_admin(x_admin_token, token)
     ids = [s for s in (payload.order_ids or []) if isinstance(s, str) and s][:200]
     if not ids:
         raise HTTPException(status_code=400, detail="`order_ids` cannot be empty")
