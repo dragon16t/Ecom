@@ -60,6 +60,17 @@ SNAPSHOT_COLLECTIONS = [
     "site_settings", "site_pages", "blogs", "blog_posts",
     # --- Brand / store config ---
     "brands", "store_locations", "site_announcements",
+    # Brand logos/banners uploaded via admin "Shop by Brand" — keyed by slug.
+    # MUST be backed up; otherwise admin-uploaded brand logos are wiped on every
+    # redeploy / DB restore (same class of bug as the earlier subcategory-icon loss).
+    "brand_assets",
+    # --- Other admin-uploaded content ---
+    # before/after gallery images, product groups, physical store locations,
+    # product-specific review docs, customer-routine builder, support notes,
+    # and order audit trail. All admin-writable, all wiped on redeploy without
+    # this entry.
+    "before_after_images", "product_groups", "locations",
+    "product_reviews", "routines", "retention_notes", "order_audit",
     # --- Transactional data (orders, customers, leads, reviews) ---
     # NOTE: these are write-heavy. Snapshots happen on a 25s debounce so an
     # order placed in the last 25s before a redeploy may be lost. For high
