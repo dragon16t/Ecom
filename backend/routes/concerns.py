@@ -164,7 +164,25 @@ async def get_concern_with_products(
     skip_i  = (page_i - 1) * limit_i
 
     total = await db.products.count_documents(query)
-    products = await db.products.find(query, {"_id": 0}).sort(sort_spec).skip(skip_i).limit(limit_i).to_list(length=None)
+    # IMAGE-FIRST SORT (Feb 2026): always lift products that have at least one
+    # image to the TOP of the listing, regardless of the user's chosen sort.
+    # Below the imaged group we honour the requested sort. Done server-side
+    # via aggregation so pagination respects the rank — otherwise page 1
+    # might be mostly placeholders while page 3 had all the photographed
+    # SKUs (the exact bug reported on cosmetics > loose powder).
+    full_sort = [("has_image_rank", -1), *sort_spec, ("slug", 1)]
+    pipeline = [
+        {"$match": query},
+        {"$addFields": {"has_image_rank": {"$cond": [
+            {"$gt": [{"$size": {"$ifNull": ["$images", []]}}, 0]},
+            1, 0,
+        ]}}},
+        {"$sort": dict(full_sort)},
+        {"$skip": skip_i},
+        {"$limit": limit_i},
+        {"$project": {"_id": 0, "has_image_rank": 0}},
+    ]
+    products = await db.products.aggregate(pipeline).to_list(length=None)
     return {
         "concern": concern,
         "products": products,
@@ -337,7 +355,25 @@ async def get_category_with_products(
     skip_i  = (page_i - 1) * limit_i
 
     total = await db.products.count_documents(query)
-    products = await db.products.find(query, {"_id": 0}).sort(sort_spec).skip(skip_i).limit(limit_i).to_list(length=None)
+    # IMAGE-FIRST SORT (Feb 2026): always lift products that have at least one
+    # image to the TOP of the listing, regardless of the user's chosen sort.
+    # Below the imaged group we honour the requested sort. Done server-side
+    # via aggregation so pagination respects the rank — otherwise page 1
+    # might be mostly placeholders while page 3 had all the photographed
+    # SKUs (the exact bug reported on cosmetics > loose powder).
+    full_sort = [("has_image_rank", -1), *sort_spec, ("slug", 1)]
+    pipeline = [
+        {"$match": query},
+        {"$addFields": {"has_image_rank": {"$cond": [
+            {"$gt": [{"$size": {"$ifNull": ["$images", []]}}, 0]},
+            1, 0,
+        ]}}},
+        {"$sort": dict(full_sort)},
+        {"$skip": skip_i},
+        {"$limit": limit_i},
+        {"$project": {"_id": 0, "has_image_rank": 0}},
+    ]
+    products = await db.products.aggregate(pipeline).to_list(length=None)
     return {
         "category": category,
         "products": products,
