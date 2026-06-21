@@ -168,13 +168,19 @@ export default function ConcernCategoryPage({ mode = 'concern' }) {
 
   // Product grid filter based on activeCat (concern mode) or activeSubcat (category mode)
   const visibleProducts = useMemo(() => {
+    let list;
     if (mode === 'concern' && activeCat !== 'all') {
-      return products.filter(p => p.category === activeCat);
+      list = products.filter(p => p.category === activeCat);
+    } else if (mode === 'category' && activeSubcat !== 'all') {
+      list = products.filter(p => p.subcategory === activeSubcat);
+    } else {
+      list = products;
     }
-    if (mode === 'category' && activeSubcat !== 'all') {
-      return products.filter(p => p.subcategory === activeSubcat);
-    }
-    return products;
+    // Image-first override (Feb 2026): products with at least one image
+    // always render before products without an image. Stable sort preserves
+    // the original sort_order tie-break within each group.
+    const hasImg = (p) => !!(p && Array.isArray(p.images) && p.images[0]);
+    return list.slice().sort((a, b) => (hasImg(b) ? 1 : 0) - (hasImg(a) ? 1 : 0));
   }, [products, activeCat, activeSubcat, mode]);
 
   // All subcategories for this category (admin-defined), in sort order.

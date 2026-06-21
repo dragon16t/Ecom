@@ -313,3 +313,27 @@ Target: handle 1,000-2,000 concurrent users on production with zero "Not Availab
 3. `auto_restore_if_empty()` backfills `current_full_public_id` from either the most recent `history` entry OR the legacy `CLOUDINARY_PUBLIC_ID` alias — so existing production deployments are upgraded on first boot without manual intervention.
 
 **Verified**: boot log shows `Backfilled current_full anchor: celesta-glow/db-snapshots/latest (created_at=2026-06-11T15:51:34...)` — incremental chain is now ready to accept admin writes. After redeploy of this fix, any admin image upload will be safely persisted within seconds.
+
+
+
+### Jun 21 2026 — Shop by Brand UX + admin panel + customer-listing fixes
+**Bugs reported by merchant** (all on production celestaglow.com after deploy):
+1. Categories page showed OLD category image for ~1-2 s before swapping to the freshly-uploaded one (apiCache stale-while-revalidate flicker).
+2. "Shop by Brand" rail tiles claimed e.g. "Fix Derma — 94 products", but the brand detail page (`/brands/fix-derma`) said "0 products. No products listed yet."
+3. With image-first sort enabled on a product listing, products with NO image were still appearing between products that had images.
+4. No admin UI for Shop by Brand — could not upload brand logos / banners, edit display name, or add new brands.
+
+**Fixes shipped**:
+1. `/app/frontend/src/pages/CategoriesPage.js` — `/api/categories` and `/api/concerns` now bypass apiCache (axios direct with `Cache-Control: no-cache` + `_v=` cache-bust). Other endpoints still use cache. Eliminates the OLD→NEW image flash entirely on the customer-facing Categories page.
+2. **Brand filter added at the API layer** — `GET /api/products?brand=<slug-or-name>` now does case-insensitive matching that accepts either the URL slug ("fix-derma") OR the full brand string ("Fix Derma"). Previously `BrandDetailPage.js` fetched 60 niche products then filtered client-side, which silently dropped 95% of multi-page brands. Endpoint `limit` cap also bumped from 100 → 1000 so single-brand pages fit (Lakme has 944 SKUs).
+3. **Image-first sort override** added to `ShopPage.js` and `ConcernCategoryPage.js`. Regardless of the chosen sort (price, rating, newest, popular), products with at least one image always render before products without an image. ES2019 stable sort preserves the secondary sort within each group.
+4. **NEW Admin panel — `/admin/brands`** (`/app/frontend/src/pages/admin/AdminBrands.js`). Lists every brand (49 today), per-row shows: logo preview (or auto product-image fallback), banner uploader, product count, niches the brand appears in, editable display name + description, "View on customer site" link, delete brand-asset button. Includes search, stats cards (total / with-products / with-logo / with-banner), and an "Add new brand" modal that pre-creates a `brand_assets` row so admins can upload logo/banner before any product is tagged.
+5. New backend endpoints (`/app/backend/routes/brands_public.py`):
+   - `GET  /api/admin/brands/list` — combined directory (products ∪ brand_assets) with niches per brand.
+   - `POST /api/admin/brands` — create an asset row for a new brand (idempotent on slug).
+   - `PATCH /api/admin/brands/{slug}` — edit display name / description.
+   - `DELETE /api/admin/brands/{slug}` — remove an asset row (products keep their `brand` field).
+
+All five touchpoints (admin upload trigger → backup, incremental snapshot anchor, sticky-fields restore) inherited from the Jun 16 fix, so brand logos / banners survive every redeploy.
+
+**Verified**: `/brands/fix-derma` now lists 95 products on mobile (was 0). Admin panel renders 49 brands with logo previews on first paint. ShopPage / ConcernCategoryPage now interleaves zero unimaged products before imaged ones in the rendered grid.

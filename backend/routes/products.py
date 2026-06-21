@@ -182,13 +182,14 @@ async def get_all_products(
     category: Optional[str] = Query(None),
     concern: Optional[str] = Query(None),
     subcategory: Optional[str] = Query(None),
+    brand: Optional[str] = Query(None, description="Filter by brand — accepts exact brand name OR a slug (e.g. 'fix-derma')"),
     tag: Optional[str] = Query(None, description="Filter by tag: bestseller | luxury | trending | most_bought"),
     # --- NEW: pagination + server-side search ---
     # `page` is 1-indexed. `limit` is the page size.
     # When neither param is passed, the endpoint stays backward-compatible and
     # returns up to 500 items so tiny catalogs (27 products) just work.
     page: Optional[int] = Query(None, ge=1),
-    limit: Optional[int] = Query(None, ge=1, le=100),
+    limit: Optional[int] = Query(None, ge=1, le=1000),
     search: Optional[str] = Query(None, description="Text search on name/description/brand/tags"),
     sort: Optional[str] = Query("sort_order", description="sort_order | price_asc | price_desc | newest | popular"),
     x_admin_token: Optional[str] = Header(None, alias="X-Admin-Token"),
@@ -241,6 +242,23 @@ async def get_all_products(
         query["concerns"] = concern
     if subcategory:
         query["subcategory"] = subcategory
+    if brand:
+        # Accept either the exact brand name (e.g. "Fix Derma") OR the URL slug
+        # (e.g. "fix-derma"). The brand field in DB is stored mixed-case with
+        # spaces, so we match case-insensitively. This powers the BrandDetailPage
+        # — previously it fetched 60 niche products and filtered client-side,
+        # which silently dropped 95% of multi-page brands like Fix Derma (95
+        # products, only 5-15 showed up).
+        import re as _re
+        b = brand.strip()
+        # If it looks like a slug, also try matching the de-slugified form via regex
+        if "-" in b and " " not in b:
+            # "fix-derma" → match "fix derma" / "Fix Derma" / "Fix-Derma" etc.
+            words = [_re.escape(w) for w in b.split("-") if w]
+            pattern = r"^" + r"[\s\-]+".join(words) + r"$"
+            query["brand"] = {"$regex": pattern, "$options": "i"}
+        else:
+            query["brand"] = {"$regex": f"^{_re.escape(b)}$", "$options": "i"}
     if tag:
         query["tags"] = tag
     if search and search.strip():
@@ -279,7 +297,7 @@ async def get_all_products(
     # Whether to paginate
     paginating = page is not None or limit is not None or bool(search and search.strip())
     page_i  = max(1, page or 1)
-    limit_i = min(100, max(1, limit or 24))
+    limit_i = min(1000, max(1, limit or 24))
     skip_i  = (page_i - 1) * limit_i
 
     # Count — cheap because of the index we ensure below

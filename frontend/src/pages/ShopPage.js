@@ -173,6 +173,14 @@ function ShopPage() {
     else if (sortBy === 'rating') list.sort((a, b) => (b.rating || 0) - (a.rating || 0));
     else if (sortBy === 'newest') list.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
     else if (sortBy === 'popular') list.sort((a, b) => (b.reviews_count || 0) - (a.reviews_count || 0));
+
+    // Image-first override (Feb 2026): regardless of the user's chosen sort,
+    // products that have at least one valid image always come before products
+    // without an image. Otherwise the listing page interleaves blank
+    // placeholder tiles with real product tiles which looks broken on the
+    // customer site. (Reported by the merchant on the cosmetics niche.)
+    const hasImg = (p) => !!(p && Array.isArray(p.images) && p.images[0]);
+    list = list.slice().sort((a, b) => (hasImg(b) ? 1 : 0) - (hasImg(a) ? 1 : 0));
     return list;
   }, [products, filter, sortBy, skinType, ingredient, look, minPrice, maxPrice, minRating]);
 

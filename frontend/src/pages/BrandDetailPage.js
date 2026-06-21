@@ -28,16 +28,18 @@ export default function BrandDetailPage() {
     setLoading(true);
     Promise.all([
       cachedGet(`${API}/api/brands/public/${slug}`).catch(() => null),
-      cachedGet(`${API}/api/products?niche=${niche}&page=1&limit=60&sort=images_first`).catch(() => null),
+      // PERF: use the new server-side `brand` filter (Feb 2026) instead of
+      // fetching 60 niche products and filtering client-side. The old
+      // approach silently dropped 95% of multi-page brands (Fix Derma has
+      // 99 products — only the first ~5-15 ever surfaced before).
+      cachedGet(`${API}/api/products?brand=${slug}&limit=1000&sort=images_first`).catch(() => null),
     ]).then(([bRes, lRes]) => {
       if (cancelled) return;
       const b = bRes?.data || bRes;
       const list = lRes?.data || lRes;
       setBrand(b || { brand: slug, logo: null, banner: null });
       const items = Array.isArray(list) ? list : (list?.items || []);
-      // Filter to this brand only (slug-match handles case + special chars)
-      const slugify = s => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-      setProducts(items.filter(p => slugify(p.brand) === slug));
+      setProducts(items);
       setLoading(false);
     });
     return () => { cancelled = true; };

@@ -69,6 +69,7 @@ const AdminRoutines = lazy(() => import('./pages/admin/AdminRoutines'));
 const AdminBulkImport = lazy(() => import('./pages/admin/AdminBulkImport'));
 const AdminMasterTools = lazy(() => import('./pages/admin/AdminMasterTools'));
 const AdminGiftCards = lazy(() => import('./pages/admin/AdminGiftCards'));
+const AdminBrands = lazy(() => import('./pages/admin/AdminBrands'));
 
 // Employee Pages
 const EmployeeLogin = lazy(() => import('./pages/employee/EmployeeLogin'));
@@ -178,6 +179,7 @@ function App() {
         <Route path="/admin/bulk-import" element={<AdminLayout><AdminBulkImport /></AdminLayout>} />
         <Route path="/admin/master-tools" element={<AdminLayout><AdminMasterTools /></AdminLayout>} />
         <Route path="/admin/gift-cards" element={<AdminLayout><AdminGiftCards /></AdminLayout>} />
+        <Route path="/admin/brands" element={<AdminLayout><AdminBrands /></AdminLayout>} />
         
         {/* Employee Routes */}
         <Route path="/employee/login" element={

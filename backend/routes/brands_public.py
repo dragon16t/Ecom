@@ -181,3 +181,144 @@ async def list_brand_assets(x_admin_token: Optional[str] = Header(None, alias="X
     _verify_admin(x_admin_token)
     rows = await db.brand_assets.find({}, {"_id": 0}).sort("brand", 1).to_list(length=None)
     return {"assets": rows, "total": len(rows)}
+
+
+
+# ----------- ADMIN — metadata + bulk listing -----------
+
+@router.get("/admin/brands/list")
+async def admin_brand_directory(x_admin_token: Optional[str] = Header(None, alias="X-Admin-Token")):
+    """Combined directory: every brand that either has products OR a
+    brand_asset row. This powers the Admin → Shop by Brand page.
+
+    Each row carries: slug, name, product_count, logo, banner, description,
+    niches (where the brand has SKUs), and whether a brand_asset row exists.
+    """
+    _verify_admin(x_admin_token)
+    # 1) Aggregate products by brand → counts + niches
+    product_pipeline = [
+        {"$match": {"is_active": True, "brand": {"$nin": [None, "", "nan", "NaN"]}}},
+        {"$group": {
+            "_id": "$brand",
+            "count": {"$sum": 1},
+            "niches": {"$addToSet": "$niche"},
+            "preview_image": {"$first": {"$arrayElemAt": ["$images", 0]}},
+        }},
+        {"$sort": {"count": -1}},
+    ]
+    product_brands = await db.products.aggregate(product_pipeline).to_list(length=None)
+    # 2) Pull every brand_asset row (so brands without products still appear)
+    assets = {a["slug"]: a async for a in db.brand_assets.find({}, {"_id": 0})}
+    # 3) Merge
+    seen = set()
+    out = []
+    for r in product_brands:
+        brand_name = r["_id"]
+        s = _brand_slug(brand_name)
+        seen.add(s)
+        a = assets.get(s, {})
+        out.append({
+            "slug": s,
+            "brand": brand_name,
+            "count": r["count"],
+            "niches": [n for n in (r.get("niches") or []) if n],
+            "logo": a.get("logo") or r.get("preview_image"),
+            "banner": a.get("banner"),
+            "description": a.get("description") or "",
+            "has_asset": bool(a),
+            "updated_at": a.get("updated_at"),
+        })
+    # Brands with only a brand_asset row (no live products yet)
+    for s, a in assets.items():
+        if s in seen:
+            continue
+        out.append({
+            "slug": s,
+            "brand": a.get("brand") or s,
+            "count": 0,
+            "niches": [],
+            "logo": a.get("logo"),
+            "banner": a.get("banner"),
+            "description": a.get("description") or "",
+            "has_asset": True,
+            "updated_at": a.get("updated_at"),
+        })
+    return {"brands": out, "total": len(out)}
+
+
+@router.patch("/admin/brands/{slug}")
+async def update_brand_asset(
+    slug: str,
+    payload: dict,
+    x_admin_token: Optional[str] = Header(None, alias="X-Admin-Token"),
+):
+    """Update brand metadata (description, display name). Used by the
+    Admin → Shop by Brand page. Does NOT touch the `brand` field on products."""
+    _verify_admin(x_admin_token)
+    allowed = {"brand", "description", "sort_order"}
+    set_doc = {k: v for k, v in (payload or {}).items() if k in allowed}
+    if not set_doc:
+        raise HTTPException(status_code=400, detail="No editable fields provided")
+    set_doc["slug"] = slug
+    set_doc["updated_at"] = datetime.now(timezone.utc).isoformat()
+    await db.brand_assets.update_one({"slug": slug}, {"$set": set_doc}, upsert=True)
+    try:
+        from services.catalog_backup import schedule_snapshot
+        schedule_snapshot(db)
+    except Exception:
+        pass
+    row = await db.brand_assets.find_one({"slug": slug}, {"_id": 0})
+    return {"success": True, "brand": row}
+
+
+@router.post("/admin/brands")
+async def create_brand_asset(
+    payload: dict,
+    x_admin_token: Optional[str] = Header(None, alias="X-Admin-Token"),
+):
+    """Create a brand_asset row for a NEW brand (no products yet). Admin can
+    then upload a logo/banner before any product is tagged with it. Existing
+    products can be tagged via the Admin Products page using the brand name."""
+    _verify_admin(x_admin_token)
+    name = (payload.get("brand") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="`brand` (name) is required")
+    s = _brand_slug(name)
+    if not s:
+        raise HTTPException(status_code=400, detail="Brand name produced an empty slug")
+    existing = await db.brand_assets.find_one({"slug": s}, {"_id": 0})
+    if existing:
+        # Idempotent — return the existing row so the admin UI just opens it.
+        return {"success": True, "created": False, "brand": existing}
+    doc = {
+        "slug": s,
+        "brand": name,
+        "description": (payload.get("description") or "").strip(),
+        "logo": None,
+        "banner": None,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.brand_assets.insert_one(dict(doc))
+    try:
+        from services.catalog_backup import schedule_snapshot
+        schedule_snapshot(db)
+    except Exception:
+        pass
+    return {"success": True, "created": True, "brand": doc}
+
+
+@router.delete("/admin/brands/{slug}")
+async def delete_brand_asset(
+    slug: str,
+    x_admin_token: Optional[str] = Header(None, alias="X-Admin-Token"),
+):
+    """Remove a brand_asset row. Products keep their `brand` field — they just
+    fall back to using the product's first image as the rail tile."""
+    _verify_admin(x_admin_token)
+    res = await db.brand_assets.delete_one({"slug": slug})
+    try:
+        from services.catalog_backup import schedule_snapshot
+        schedule_snapshot(db)
+    except Exception:
+        pass
+    return {"success": True, "deleted": res.deleted_count}

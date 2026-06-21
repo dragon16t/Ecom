@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Search, Sparkles, ArrowRight, Star, Flame, Heart, ShieldCheck, Truck, Leaf, ChevronRight } from 'lucide-react';
+import axios from 'axios';
 import BackButton from '../components/BackButton';
 import TrustStrip from '../components/TrustStrip';
 import { prefetchHandlers } from '../utils/routePrefetch';
