@@ -270,6 +270,10 @@ async def get_all_products(
         "price_desc": [("prepaid_price", -1), ("sort_order", 1), ("slug", 1)],
         "newest":     [("created_at", -1), ("sort_order", 1), ("slug", 1)],
         "popular":    [("total_orders", -1), ("sort_order", 1), ("slug", 1)],
+        # NEW: products that have at least one image come first, then sort_order.
+        # Used by both public listings (best-looking products on top) and admin
+        # (lets you find missing-image products by scrolling to the bottom).
+        "images_first": [("has_image_rank", -1), ("sort_order", 1), ("name", 1), ("slug", 1)],
     }.get((sort or "sort_order").lower(), [("sort_order", 1), ("slug", 1)])
 
     # Whether to paginate
@@ -314,7 +318,35 @@ async def get_all_products(
         # operations on the missing tail were impossible. The list view uses
         # react-window virtualization so 20 000 rows render fine.
         cursor = cursor.limit(20000)
-    products = await cursor.to_list(length=None)
+
+    # ---- images_first sort: switch to aggregation so we can rank by has-image
+    # without an extra column on the doc. Adds ~10-25 ms on 8k rows but only
+    # when this sort is selected. Public catalog default sort is unchanged.
+    if (sort or "").lower() == "images_first":
+        proj_stage = {**{k: 1 for k in (projection or {}) if k != "_id"}}
+        proj_stage["_id"] = 0
+        # Map $size of images to a 0/1 rank for sort
+        pipeline = [
+            {"$match": query},
+            {"$addFields": {
+                "has_image_rank": {
+                    "$cond": [
+                        {"$gt": [{"$size": {"$ifNull": ["$images", []]}}, 0]},
+                        1, 0,
+                    ]
+                }
+            }},
+            {"$sort": dict(sort_spec)},
+            {"$project": proj_stage},
+        ]
+        if paginating:
+            pipeline.append({"$skip": skip_i})
+            pipeline.append({"$limit": limit_i})
+        else:
+            pipeline.append({"$limit": 20000})
+        products = await db.products.aggregate(pipeline).to_list(length=None)
+    else:
+        products = await cursor.to_list(length=None)
 
     # Auto-flip TBL → launched on read if launch_date passed (unchanged logic)
     now = datetime.now(timezone.utc)

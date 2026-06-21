@@ -8,6 +8,7 @@ import HeroCarousel from '../components/HeroCarousel';
 import CircularCategoryStrip from '../components/CircularCategoryStrip';
 import CategoryShowcase from '../components/CategoryShowcase';
 import CosmeticsCategoryHub from '../components/CosmeticsCategoryHub';
+import ShopByBrand from '../components/ShopByBrand';
 import { DermatologistSection, FaqSection } from '../components/NicheSections';
 import ReviewsCarousel from '../components/ReviewsCarousel';
 import TrendingLooks from '../components/TrendingLooks';
@@ -221,6 +222,9 @@ export default function CosmeticsHome() {
         accentColor={accentDark}
         testIdPrefix="cosmetics-hub"
       />
+
+      {/* Shop by Brand small banner — top cosmetics houses, theme-matched */}
+      <ShopByBrand niche="cosmetics" accent={accentDark} accentBg={'#fce7f3'} />
 
       {bs.enabled !== false && (
         <section className="max-w-7xl mx-auto px-3 sm:px-6 py-8 sm:py-12">

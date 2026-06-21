@@ -1,8 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Menu, X, Search, ShoppingCart, Stethoscope, Package } from 'lucide-react';
+import axios from 'axios';
 import { prefetchHandlers } from '../utils/routePrefetch';
 import { isProductTbl, isComboTbl, pruneTblItemsFromCart } from '../pages/Homepage';
+
+const API = process.env.REACT_APP_BACKEND_URL;
 
 const getCartCount = () => {
   try {
@@ -23,10 +26,28 @@ function Navigation() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [suggestions, setSuggestions] = useState([]);
+  const [suggesting, setSuggesting] = useState(false);
   const [cartCount, setCartCount] = useState(0);
   const [cartBounce, setCartBounce] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  const suggestTimer = useRef(null);
+
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (suggestTimer.current) clearTimeout(suggestTimer.current);
+    if (q.length < 2) { setSuggestions([]); return; }
+    // Debounce 180ms so we don't fire on every keystroke
+    setSuggesting(true);
+    suggestTimer.current = setTimeout(() => {
+      axios.get(`${API}/api/search/suggest?q=${encodeURIComponent(q)}&limit=8`)
+        .then(r => setSuggestions(r.data?.items || []))
+        .catch(() => setSuggestions([]))
+        .finally(() => setSuggesting(false));
+    }, 180);
+    return () => suggestTimer.current && clearTimeout(suggestTimer.current);
+  }, [searchQuery]);
 
   useEffect(() => {
     const update = () => setCartCount(getCartCount());
@@ -181,7 +202,48 @@ function Navigation() {
                 placeholder="Search products, tips..." className="w-full h-12 px-4 bg-gray-50 rounded-full text-base outline-none focus:ring-2 focus:ring-green-200" autoFocus data-testid="search-input" />
             </form>
           </div>
-          <div className="p-5">
+          <div className="p-5 max-h-[calc(100vh-72px)] overflow-y-auto">
+            {/* Live suggestions */}
+            {searchQuery.trim().length >= 2 && (
+              <div className="mb-5" data-testid="search-suggestions">
+                <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">
+                  {suggesting ? 'Searching…' : (suggestions.length ? 'Top matches' : 'No matches')}
+                </p>
+                <div className="space-y-1">
+                  {suggestions.map(s => {
+                    const img = (s.images && s.images[0]) || null;
+                    return (
+                      <button
+                        key={s.slug}
+                        onClick={() => { navigate(`/product/${s.slug}`); setIsSearchOpen(false); setSearchQuery(''); }}
+                        className="w-full flex items-center gap-3 p-2 rounded-xl hover:bg-gray-50 transition text-left"
+                        data-testid={`search-suggest-${s.slug}`}
+                      >
+                        <div className="w-12 h-12 rounded-lg bg-gray-100 overflow-hidden flex-shrink-0">
+                          {img ? <img src={img} alt={s.name} loading="lazy" className="w-full h-full object-cover" /> : null}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-gray-900 truncate">{s.name}</p>
+                          <p className="text-xs text-gray-500 truncate">{s.brand} · {s.niche}</p>
+                        </div>
+                        {s.prepaid_price ? (
+                          <span className="text-sm font-bold text-emerald-600 whitespace-nowrap">₹{s.prepaid_price}</span>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                  {suggestions.length > 0 && (
+                    <button
+                      onClick={(e) => handleSearch(e)}
+                      className="w-full mt-1 px-3 py-2 text-xs font-bold text-emerald-700 hover:bg-emerald-50 rounded-lg text-center"
+                    >
+                      See all results for &quot;{searchQuery.trim()}&quot; →
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
             <p className="text-xs text-gray-500 uppercase tracking-wider mb-4">Popular Searches</p>
             <div className="flex flex-wrap gap-2">
               {['anti-aging serum', 'sunscreen', 'night cream', 'under eye cream', 'cleanser', 'complete kit'].map(term => (

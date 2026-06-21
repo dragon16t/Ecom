@@ -1199,20 +1199,74 @@ async def create_blog(blog_data: BlogCreate):
 # ==================== SEARCH API ROUTE ====================
 
 @api_router.get("/search")
-async def search_content(q: str = Query(..., min_length=1)):
-    """Search blog posts by keyword"""
-    # Simple text search on title and content
-    query = {
-        "$or": [
-            {"title": {"$regex": q, "$options": "i"}},
-            {"content": {"$regex": q, "$options": "i"}},
-            {"keywords": {"$in": [q.lower()]}}
-        ],
-        "status": "published"
+async def search_content(q: str = Query(..., min_length=1), limit: int = Query(40, le=80)):
+    """Unified site search — products + blogs in one shot.
+
+    Used by the header search overlay AND the `/search?q=…` results page.
+    Previously this endpoint only returned blogs, which made the header
+    search bar look broken because typing a product name returned nothing.
+    """
+    import re as _re
+    safe = _re.escape(q.strip())
+    # ---- Products ----
+    p_query: dict = {"is_active": True}
+    # Use $text on long queries for speed; $regex prefix for short ones.
+    if len(q) >= 3 and _re.search(r"[A-Za-z0-9]", q):
+        p_query["$text"] = {"$search": q}
+    else:
+        p_query["$or"] = [
+            {"name":  {"$regex": safe, "$options": "i"}},
+            {"brand": {"$regex": safe, "$options": "i"}},
+            {"slug":  {"$regex": safe, "$options": "i"}},
+            {"tags":  {"$regex": safe, "$options": "i"}},
+        ]
+    proj = {
+        "_id": 0, "slug": 1, "name": 1, "brand": 1, "niche": 1,
+        "images": {"$slice": 2}, "prepaid_price": 1, "mrp": 1,
+        "discount_percent": 1, "average_rating": 1,
     }
-    
-    blogs = await db.blogs.find(query, {"_id": 0}).to_list(20)
-    return blogs
+    products = await db.products.find(p_query, proj).limit(limit).to_list(length=None)
+
+    # ---- Blogs ----
+    b_query = {
+        "$or": [
+            {"title":   {"$regex": safe, "$options": "i"}},
+            {"content": {"$regex": safe, "$options": "i"}},
+            {"keywords": {"$in": [q.lower()]}},
+        ],
+        "status": "published",
+    }
+    blogs = await db.blogs.find(b_query, {"_id": 0}).limit(20).to_list(length=None)
+
+    return {
+        "products": products,
+        "blogs": blogs,
+        "total": len(products) + len(blogs),
+        "q": q,
+    }
+
+
+@api_router.get("/search/suggest")
+async def search_suggest(q: str = Query(..., min_length=1), limit: int = Query(8, le=20)):
+    """Lightweight autocomplete for the header search bar — returns the top
+    `limit` products that match by name / brand prefix. Snappy (<30 ms) by
+    capping results and projecting only what the dropdown needs."""
+    import re as _re
+    safe = _re.escape(q.strip())
+    query = {
+        "is_active": True,
+        "$or": [
+            {"name":  {"$regex": "^" + safe, "$options": "i"}},
+            {"name":  {"$regex": safe,       "$options": "i"}},
+            {"brand": {"$regex": "^" + safe, "$options": "i"}},
+        ],
+    }
+    proj = {
+        "_id": 0, "slug": 1, "name": 1, "brand": 1, "niche": 1,
+        "images": {"$slice": 1}, "prepaid_price": 1,
+    }
+    rows = await db.products.find(query, proj).limit(limit).to_list(length=None)
+    return {"items": rows, "q": q}
 
 
 # ==================== LOCATION API ROUTES ====================
@@ -3290,6 +3344,8 @@ app.include_router(_admin_revenue.router, prefix="/api")
 # P2: Admin brand grouping, brand-wise pricing, public order tracking, user journey
 from routes import admin_brands as _admin_brands  # noqa: E402
 app.include_router(_admin_brands.router, prefix="/api")
+from routes import brands_public as _brands_public  # noqa: E402
+app.include_router(_brands_public.router, prefix="/api")
 
 # Email service (Gmail → SendGrid auto-failover at 250 emails/day IST)
 from services import email_service as _email_service

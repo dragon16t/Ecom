@@ -20,6 +20,8 @@ const ConcernCategoryPage = lazy(() => import('./pages/ConcernCategoryPage'));
 const SkincareHome = lazy(() => import('./pages/SkincareHome'));
 const CosmeticsHome = lazy(() => import('./pages/CosmeticsHome'));
 const CategoriesPage = lazy(() => import('./pages/CategoriesPage'));
+const BrandsListingPage = lazy(() => import('./pages/BrandsListingPage'));
+const BrandDetailPage = lazy(() => import('./pages/BrandDetailPage'));
 const RoutinePage = lazy(() => import('./pages/RoutinePage'));
 const AccountPage = lazy(() => import('./pages/AccountPage'));
 
@@ -308,6 +310,12 @@ function App() {
               } />
               <Route path="/category/:slug" element={
                 <PublicLayout><Suspense fallback={<PageLoader />}><ConcernCategoryPage mode="category" /></Suspense></PublicLayout>
+              } />
+              <Route path="/brands" element={
+                <PublicLayout><Suspense fallback={<PageLoader />}><BrandsListingPage /></Suspense></PublicLayout>
+              } />
+              <Route path="/brands/:slug" element={
+                <PublicLayout><Suspense fallback={<PageLoader />}><BrandDetailPage /></Suspense></PublicLayout>
               } />
               <Route path="/product/:slug" element={
                 <PublicLayout><Suspense fallback={<PageLoader />}><ProductDetailPage /></Suspense></PublicLayout>

@@ -8,6 +8,7 @@ import HeroCarousel from '../components/HeroCarousel';
 import CircularCategoryStrip from '../components/CircularCategoryStrip';
 import CategoryShowcase from '../components/CategoryShowcase';
 import CosmeticsCategoryHub from '../components/CosmeticsCategoryHub';
+import ShopByBrand from '../components/ShopByBrand';
 import { DermatologistSection, FaqSection } from '../components/NicheSections';
 import ReviewsCarousel from '../components/ReviewsCarousel';
 import IngredientSpotlight from '../components/IngredientSpotlight';
@@ -227,6 +228,9 @@ export default function SkincareHome() {
       )}
 
       {/* Shop by Category hub now rendered ABOVE bestsellers (see top section). */}
+
+      {/* Shop by Brand small banner — pulls top brands curated for this niche */}
+      <ShopByBrand niche="skincare" accent={accent} accentBg={'#cffafe'} />
 
       {/* Legacy CategoryShowcase kept off by default — admin can re-enable via niche.show_category_showcase=true. */}
       {niche.show_category_showcase === true && (

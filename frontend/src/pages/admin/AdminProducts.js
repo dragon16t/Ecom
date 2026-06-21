@@ -663,6 +663,8 @@ function AdminProducts() {
   , [products, filterNiche, filterStatus, searchTerm]);
   const adminToken = sessionStorage.getItem('adminToken');
 
+  const [imagesFirst, setImagesFirst] = useState(true);
+
   const headers = { 'X-Admin-Token': adminToken };
 
   const fetchAll = async () => {
@@ -670,8 +672,13 @@ function AdminProducts() {
     try {
       // Use allSettled so a single 401 (e.g. employees lacking access to
       // /admin/coupons) doesn't blank out the entire products list.
+      // Default sort = images_first so SKUs with photos surface to the top
+      // and the gaps (missing-image rows) cluster at the bottom for batch
+      // uploading. Toggle available via the "Images first" pill in the
+      // toolbar.
+      const sortParam = imagesFirst ? '&sort=images_first' : '';
       const [pR, cR, cpR, sR, cnR, ctR, scR] = await Promise.allSettled([
-        axios.get(`${API}/products?active_only=false`, { headers }),
+        axios.get(`${API}/products?active_only=false${sortParam}`, { headers }),
         axios.get(`${API}/combos?active_only=false`, { headers }),
         axios.get(`${API}/admin/coupons`, { headers }),
         axios.get(`${API}/site-settings`),
@@ -693,7 +700,7 @@ function AdminProducts() {
   useEffect(() => {
     if (!adminToken) { navigate('/admin'); return; }
     fetchAll();
-  }, []);
+  }, [imagesFirst]);
 
   // Refresh taxonomy (concerns/categories/subcategories) every time the product
   // modal opens. Admins often add a new concern or subcategory in another tab
@@ -1435,6 +1442,14 @@ function AdminProducts() {
                 <button key={o.k} onClick={() => setFilterStatus(o.k)} className={`px-3 py-1.5 rounded-full text-xs font-bold ${filterStatus === o.k ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`} data-testid={`filter-status-${o.k}`}>{o.l}</button>
               ))}
             </div>
+            <button
+              onClick={() => setImagesFirst(v => !v)}
+              className={`ml-auto mr-2 px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 border transition ${imagesFirst ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}
+              title="Sort SKUs with images first, missing-image rows at the bottom"
+              data-testid="images-first-toggle"
+            >
+              {imagesFirst ? '✓ ' : ''}Images first
+            </button>
             <button
               onClick={() => {
                 const fresh = {

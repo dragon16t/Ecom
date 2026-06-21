@@ -22,16 +22,17 @@ function SearchResults() {
       return;
     }
     setLoading(true);
-    const productUrl = `${API}/products?q=${encodeURIComponent(query)}&limit=48${nicheFilter ? `&niche=${nicheFilter}` : ''}`;
-    Promise.all([
-      axios.get(productUrl).then(r => r.data).catch(() => []),
-      axios.get(`${API}/search?q=${encodeURIComponent(query)}`).then(r => r.data).catch(() => []),
-    ]).then(([prodData, blogData]) => {
-      const prodList = Array.isArray(prodData) ? prodData : (prodData?.items || []);
-      setProducts(prodList);
-      setBlogs(Array.isArray(blogData) ? blogData : []);
-      setLoading(false);
-    });
+    // Unified search — /api/search now returns { products, blogs } in one call
+    axios.get(`${API}/search?q=${encodeURIComponent(query)}&limit=60`)
+      .then(r => r.data)
+      .catch(() => ({ products: [], blogs: [] }))
+      .then(d => {
+        let prodList = Array.isArray(d?.products) ? d.products : [];
+        if (nicheFilter) prodList = prodList.filter(p => p.niche === nicheFilter);
+        setProducts(prodList);
+        setBlogs(Array.isArray(d?.blogs) ? d.blogs : []);
+        setLoading(false);
+      });
   }, [query, nicheFilter]);
 
   const sortedProducts = useMemo(() => {

@@ -19,9 +19,15 @@ def _optimize_taxonomy_image(item: dict, width: int = 400) -> dict:
     """Rewrite Cloudinary `image` field of a concern/category/subcategory to
     serve f_auto,q_auto,w_<width>. Cuts banner weight 70-90 % with WebP/AVIF
     auto-quality. Concerns get 400px (circular strip), categories 600 px (tiles),
-    hero banners 1200 px. Non-Cloudinary URLs pass through untouched."""
+    hero banners 1200 px. Non-Cloudinary URLs pass through untouched.
+
+    Also appends `?_v=<hash(updated_at)>` so when the admin re-uploads an
+    image at the same Cloudinary public_id the URL string changes — busting
+    the browser and CDN caches instantly so the user sees the new image on
+    first page load instead of "old image flashes then swaps to new"."""
     if isinstance(item, dict) and isinstance(item.get("image"), str):
-        item["image"] = optimize_cloudinary_url(item["image"], width)
+        version = item.get("updated_at") or item.get("modified_at")
+        item["image"] = optimize_cloudinary_url(item["image"], width, version)
     return item
 
 
@@ -97,9 +103,23 @@ async def list_concerns(response: Response):
 
 @router.get("/niches")
 async def list_niches(response: Response):
-    """Public: List all active niches (top-level 3-pill: anti-aging / skincare / cosmetics)"""
+    """Public: List all active niches (top-level 3-pill: anti-aging / skincare / cosmetics).
+
+    Image URLs include `?_v=<hash(updated_at)>` so re-uploads bust CDN cache
+    instantly. We deliberately use a *short* max-age + must-revalidate so any
+    admin change shows up on the very next page load without "old banner
+    flashes for a second then swaps to new"."""
     items = await db.niches.find({"is_active": True}, {"_id": 0}).sort("sort_order", 1).to_list(20)
-    response.headers["Cache-Control"] = "public, max-age=600, stale-while-revalidate=1200"
+    for it in items:
+        _optimize_taxonomy_image(it, width=800)
+        # niches also have hero/banner/secondary images — version them too
+        version = it.get("updated_at") or it.get("modified_at")
+        for f in ("banner_image", "hero_image", "card_image", "secondary_image"):
+            v = it.get(f)
+            if isinstance(v, str) and v:
+                from services.image_optimizer import optimize_cloudinary_url as _opt
+                it[f] = _opt(v, 1200, version)
+    response.headers["Cache-Control"] = "public, max-age=30, stale-while-revalidate=60, must-revalidate"
     return items
 
 
