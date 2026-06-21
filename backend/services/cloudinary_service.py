@@ -40,28 +40,40 @@ def _apply_creds(creds: Dict[str, Optional[str]]) -> None:
 
 
 async def get_cloudinary_credentials(db) -> Dict[str, Optional[str]]:
-    """Return current credentials. Prefers DB values, but falls back to env vars
-    whenever a DB field is empty/missing — protects against the bug where a
-    partially-populated admin_settings doc (e.g. cloud_name="") silently disables
-    Cloudinary and makes uploads land on ephemeral disk."""
+    """Return current credentials.
+
+    Priority (Feb 2026, post Cloudinary migration):
+      1. `.env`  CLOUDINARY_CLOUD_NAME / CLOUDINARY_API_KEY / CLOUDINARY_API_SECRET
+      2. `admin_settings.cloudinary` document in MongoDB (legacy fallback)
+
+    Previously the DB beat the env, which silently kept uploads pinned to the
+    old account even after an operator switched .env credentials. Flipping the
+    priority means the env is now the single source of truth that ops control.
+    Any DB row with stale creds becomes harmless — env wins as long as it's
+    fully populated; otherwise per-field fallback to DB kicks in.
+    """
     doc = await db.admin_settings.find_one({"type": "cloudinary"})
     env_cloud  = (os.environ.get("CLOUDINARY_CLOUD_NAME") or "").strip()
     env_key    = (os.environ.get("CLOUDINARY_API_KEY") or "").strip()
     env_secret = (os.environ.get("CLOUDINARY_API_SECRET") or "").strip()
-    if doc:
-        creds = {
-            "cloud_name": (doc.get("cloud_name") or "").strip() or env_cloud,
-            "api_key":    (doc.get("api_key") or "").strip()    or env_key,
-            "api_secret": (doc.get("api_secret") or "").strip() or env_secret,
-            "loaded_from": "db+env",
-        }
+    db_cloud  = ((doc or {}).get("cloud_name") or "").strip()
+    db_key    = ((doc or {}).get("api_key") or "").strip()
+    db_secret = ((doc or {}).get("api_secret") or "").strip()
+    cloud_name = env_cloud or db_cloud
+    api_key    = env_key or db_key
+    api_secret = env_secret or db_secret
+    if env_cloud and env_key and env_secret:
+        loaded_from = "env"
+    elif doc and (db_cloud or db_key or db_secret):
+        loaded_from = "env+db" if (env_cloud or env_key or env_secret) else "db"
     else:
-        creds = {
-            "cloud_name": env_cloud,
-            "api_key": env_key,
-            "api_secret": env_secret,
-            "loaded_from": "env" if env_key else None,
-        }
+        loaded_from = "env" if api_key else None
+    creds = {
+        "cloud_name": cloud_name,
+        "api_key": api_key,
+        "api_secret": api_secret,
+        "loaded_from": loaded_from,
+    }
     _creds_cache.update(creds)
     return creds
 
