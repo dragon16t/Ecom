@@ -483,14 +483,25 @@ async def _fetch_latest_snapshot(db) -> Optional[Dict[str, Any]]:
         except Exception as exc:
             logger.debug("Cloudinary admin API lookup failed: %s", exc)
 
-    # 3) Fallback to the public `latest` alias (with cache-bust query string).
+    # 3) Fallback to the public `latest` alias (with cache-bust query string)
+    # on the CURRENT (new) Cloudinary account, then on the LEGACY (old) one.
+    # The user migrated to a new Cloudinary in Feb 2026 because the first
+    # account's storage filled up — but all the pre-migration snapshots
+    # still live on the legacy cloud's CDN. Trying both means we recover
+    # cleanly even if the new account's snapshot is missing (e.g. the very
+    # first boot after switching credentials).
     import time as _time
     cb = int(_time.time())
+    legacy_cloud = os.environ.get("CLOUDINARY_LEGACY_CLOUD_NAME") or ""
     candidates = [
         c for c in [
             versioned,
             f"https://res.cloudinary.com/{cloud_name}/raw/upload/{CLOUDINARY_PUBLIC_ID}?_={cb}",
             f"https://res.cloudinary.com/{cloud_name}/raw/upload/{CLOUDINARY_PUBLIC_ID}.json?_={cb}",
+            (f"https://res.cloudinary.com/{legacy_cloud}/raw/upload/{CLOUDINARY_PUBLIC_ID}?_={cb}"
+             if legacy_cloud and legacy_cloud != cloud_name else None),
+            (f"https://res.cloudinary.com/{legacy_cloud}/raw/upload/{CLOUDINARY_PUBLIC_ID}.json?_={cb}"
+             if legacy_cloud and legacy_cloud != cloud_name else None),
         ] if c
     ]
     for candidate in candidates:

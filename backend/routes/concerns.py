@@ -696,6 +696,33 @@ async def catalog_backup_snapshot(x_admin_token: str = Header(None, alias="X-Adm
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+@router.post("/admin/catalog/backup/snapshot-async")
+async def catalog_backup_snapshot_async(x_admin_token: str = Header(None, alias="X-Admin-Token")):
+    """Fire-and-forget snapshot — returns immediately and runs in the background.
+
+    Use this instead of /snapshot when the dataset is large enough that the
+    proxy (Cloudflare 60s) would time out. Poll /admin/catalog/backup/status
+    to know when the new snapshot has landed (the `remote_snapshot_created_at`
+    field will update).
+    """
+    verify_admin(x_admin_token)
+    import asyncio as _asyncio
+    import logging as _logging
+    log = _logging.getLogger("catalog_backup_admin")
+
+    async def _run():
+        try:
+            res = await _catalog_backup.snapshot(db)
+            log.info("[catalog_backup_async] uploaded %s v%s counts=%s",
+                     res.get("public_id"), res.get("version"),
+                     res.get("counts", {}).get("products"))
+        except Exception as exc:
+            log.exception("[catalog_backup_async] snapshot failed: %s", exc)
+
+    _asyncio.create_task(_run())
+    return {"queued": True, "message": "Snapshot running in background — poll /admin/catalog/backup/status."}
+
+
 @router.post("/admin/catalog/backup/restore")
 async def catalog_backup_restore(x_admin_token: str = Header(None, alias="X-Admin-Token")):
     """Manually trigger a restore — used after a redeploy if auto-restore was
