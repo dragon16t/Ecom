@@ -402,11 +402,25 @@ export default function CategoriesPage() {
 
   useEffect(() => {
     let cancelled = false;
+    // PERF + correctness (Feb 2026): fetch /api/categories, /api/concerns AND
+    // /api/site-settings FRESH (no cache) because all three drive the visible
+    // image tiles on this page:
+    //   • /api/categories + /api/concerns → category/concern card icons
+    //   • /api/site-settings.categories_hub.niche_cards.{anti_aging,skincare,cosmetics}.image
+    //     → the 3 big niche-card banners ("Anti-Aging", "Skincare", "Cosmetics")
+    // With apiCache, an admin re-uploading any of these images caused the OLD
+    // image to flash for ~1-2 s before SWR refreshed. /api/products stays
+    // cached — it's only used for the bestsellers strip, no admin-uploaded
+    // tiles depend on it.
+    const fresh = (url) => axios.get(url, {
+      headers: { 'Cache-Control': 'no-cache' },
+      params: { _v: Date.now() },
+    }).then(r => ({ data: r.data }));
     Promise.all([
-      cachedGet(`${API}/api/categories`),
-      cachedGet(`${API}/api/concerns`),
+      fresh(`${API}/api/categories`),
+      fresh(`${API}/api/concerns`),
       cachedGet(`${API}/api/products`),
-      cachedGet(`${API}/api/site-settings`),
+      fresh(`${API}/api/site-settings`),
     ])
       .then(([c, cn, p, s]) => {
         if (cancelled) return;
