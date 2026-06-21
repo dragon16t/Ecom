@@ -1,0 +1,52 @@
+{
+  "summary": "Verified Jan 2026 client-side perf batch: ShopByBrand placement above NicheHero on both niche homes (desktop+mobile), PDP peek() warm-hydration, CartPage validateCart debounce, search regression, and admin login. All critical specs PASS. Backend was untouched — no new backend tests needed (covered by /app/backend/tests/test_perf_reliability_jan2026.py in iteration_10 which was 18/18 green).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "/skincare, /cosmetics (ShopByBrand tiles)",
+        "issues": [
+          "Mixed-content warnings: brand logos requested over http:// (lotus.in, dotandkey.com, thefaceshop.in, lakmeindia.com, swissbeauty.in). Chrome auto-upgrades to https so images load, but several of these third-party CDNs do not serve https for these paths — risk of broken brand tile images on stricter browsers. Sanitize brand.logo_url to force https or proxy via own CDN."
+        ]
+      },
+      {
+        "screen": "Global (React console)",
+        "issues": [
+          "React warning: 'Invalid DOM property fetchpriority. Did you mean fetchPriority?' — JSX attribute needs camelCase fetchPriority. Likely in <img fetchpriority='high' .../>. Cosmetic only.",
+          "React warning: UNSAFE_componentWillMount in strict mode (SideEffect(NullComponent)) — comes from react-helmet dependency. Not actionable in app code."
+        ]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_perf_reliability_jan2026.py (regression from iter10, still green)"
+  ],
+  "action_items": [
+    "(Low) Sanitize brand logo URLs to https or proxy through own CDN — eliminates Mixed Content warnings on niche home pages.",
+    "(Low) Rename fetchpriority -> fetchPriority in JSX <img> tag(s) to silence React DOM warning."
+  ],
+  "critical_code_review_comments": [
+    "SkincareHome.js and CosmeticsHome.js correctly place <ShopByBrand niche=...> above <NicheHero ...> (lines 145-161 and 171-187 respectively). Verified positionally: skincare desktop brand.y=851 < hero.y=1183; skincare mobile 552<796; cosmetics desktop 817<1149; cosmetics mobile 572<816 — all four checks PASS.",
+    "CartPage debounce works as designed: 6 rapid + clicks on the qty button fired only ONE additional /api/cart/validate call (2 -> 3, delta=1). 250ms debounce is effective — backend load saved.",
+    "PDP peek() warm hydration: cold visit /product/anti-aging-serum = 1428ms, warm revisit = 620ms (2.3x speedup), no full-page spinner element observed on warm path — peek() seeding is doing its job. Note: the h1 wasn't yet in DOM at DOMContentLoaded (~250ms) — peek seeds *state* but React still needs one paint cycle. If main agent wants truly-instant h1, they could SSR the first paint, but this is well beyond spec.",
+    "Brand tiles count = 18 on each niche — comfortably above the 3-tile threshold required for ShopByBrand to render. Tile click verified: /brands/plum?niche=skincare loads BrandDetailPage with h1='Plum'.",
+    "Search regression PASS: typing 'serum' in skincare SearchBar surfaces a dropdown with '12 MATCHES' and product rows (Vitamin C Glow Serum, Pore Refiner Serum, etc.) — suggest endpoint healthy.",
+    "Admin login PASS: password celestaglow2024 -> /admin/dashboard -> /admin/products lists 7858 products with thumbnails, prices, stock. The image-first sort is the green 'Images first' chip in the filter row (already active by default in screenshot)."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "n/a (not exercised this iter; iter10 still authoritative 18/18)",
+    "frontend": "100% on spec items (8/8 review_request bullets verified)"
+  },
+  "test_credentials": "Admin password celestaglow2024 (X-Admin-Token) — confirmed working at /admin.",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "ShopByBrand-above-NicheHero ordering verified for both niches on desktop (1280x800) and mobile (420x800) via bounding-box comparison. Use data-testid='shop-by-brand-skincare' / 'shop-by-brand-cosmetics' and 'skincare-hero' / 'cosmetics-hero' for the same assertion in future regressions. PDP testid for Add-to-Cart = 'add-to-cart-btn'. Admin login form has no testid; use input[type='password'] + Enter key. Catalog page has 7858 products; the 'Images first' chip serves as the has-image-first sort. The Mixed Content warnings on brand logos are cosmetic only — images still load.",
+  "rca of the issue": "n/a — no regressions found."
+}

@@ -12,8 +12,14 @@ const API = process.env.REACT_APP_BACKEND_URL;
 function CartPage() {
   const navigate = useNavigate();
   const { trackAction } = useTracking();
-  const [cartData, setCartData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  // PERF: seed cartData from sessionStorage so revisits paint instantly.
+  // Server validation still runs in background and overwrites with fresh data.
+  const _seedCart = (() => {
+    try { return JSON.parse(sessionStorage.getItem('lastCartValidate') || 'null'); }
+    catch (_) { return null; }
+  })();
+  const [cartData, setCartData] = useState(_seedCart);
+  const [loading, setLoading] = useState(!_seedCart);
   const [couponCode, setCouponCode] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState(null);
   const [couponError, setCouponError] = useState('');
@@ -30,11 +36,33 @@ function CartPage() {
   const appliedGiftCardRef = React.useRef(appliedGiftCard);
   appliedGiftCardRef.current = appliedGiftCard;
   const initialLoadRef = React.useRef(true);
+  // Ref-mirror of cartData so callbacks (validateCart) can avoid stale-state flashes
+  const cartDataRef = React.useRef(cartData);
+  cartDataRef.current = cartData;
+  // PERF: debounce timer for validateCart calls triggered by rapid +/- clicks
+  const validateTimerRef = React.useRef(null);
+
+  // Debounced cart re-validation — coalesces rapid quantity changes into a
+  // single network call so the user can mash + / − without UI lag.
+  const validateCartDebounced = useCallback((couponOverride, giftCardOverride, delay = 250) => {
+    if (validateTimerRef.current) clearTimeout(validateTimerRef.current);
+    validateTimerRef.current = setTimeout(() => {
+      validateTimerRef.current = null;
+      validateCart(couponOverride, giftCardOverride);
+    }, delay);
+  }, []);
 
   const validateCart = useCallback(async (couponOverride, giftCardOverride) => {
-    if (initialLoadRef.current) setLoading(true);
+    // Don't flash a skeleton if we already have cartData (seeded from session or prior fetch)
+    if (initialLoadRef.current && !cartDataRef.current) setLoading(true);
     const cart = getCart();
-    if (!cart.items.length) { setCartData(null); setLoading(false); initialLoadRef.current = false; return; }
+    if (!cart.items.length) {
+      setCartData(null);
+      setLoading(false);
+      initialLoadRef.current = false;
+      try { sessionStorage.removeItem('lastCartValidate'); } catch (_) { /* ignore */ }
+      return;
+    }
     const couponCodeToUse = couponOverride !== undefined ? couponOverride : (appliedCouponRef.current?.code || null);
     const giftCardToUse = giftCardOverride !== undefined ? giftCardOverride : (appliedGiftCardRef.current?.code || null);
     try {
@@ -214,16 +242,16 @@ function CartPage() {
         : it);
       return { ...prev, items };
     });
-    validateCart();
+    validateCartDebounced();
   };
   const removeItem = (index) => {
     const cart = getCart();
     cart.items.splice(index, 1);
     saveCart(cart);
     setCartData(prev => prev?.items ? { ...prev, items: prev.items.filter((_, i) => i !== index) } : prev);
-    validateCart();
+    validateCartDebounced(undefined, undefined, 0); // immediate for removals
   };
-  const addUpsellToCart = (slug) => { const cart = getCart(); const e = cart.items.find(i => i.product_slug === slug); if (e) e.quantity += 1; else cart.items.push({ product_slug: slug, quantity: 1 }); saveCart(cart); validateCart(); };
+  const addUpsellToCart = (slug) => { const cart = getCart(); const e = cart.items.find(i => i.product_slug === slug); if (e) e.quantity += 1; else cart.items.push({ product_slug: slug, quantity: 1 }); saveCart(cart); validateCartDebounced(undefined, undefined, 0); };
 
   const applyCouponCode = async (code) => {
     setCouponError('');

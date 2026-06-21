@@ -142,6 +142,9 @@ export default function SkincareHome() {
         </section>
       )}
 
+      {/* Shop by Brand small banner — placed ABOVE the niche hero banner */}
+      <ShopByBrand niche="skincare" accent={accent} accentBg={'#cffafe'} />
+
       <NicheHero
         bgImage={hero.image_desktop}
         mobileBgImage={hero.image_mobile}
@@ -198,8 +201,7 @@ export default function SkincareHome() {
         testIdPrefix="skincare-hub"
       />
 
-      {/* Shop by Brand small banner — placed right after categories, above bestsellers */}
-      <ShopByBrand niche="skincare" accent={accent} accentBg={'#cffafe'} />
+      {/* Shop by Brand moved up (above NicheHero banner) — see top of page. */}
 
       {bs.enabled !== false && (
         <section className="max-w-7xl mx-auto px-3 sm:px-6 py-8 sm:py-12">

@@ -168,6 +168,9 @@ export default function CosmeticsHome() {
         </section>
       )}
 
+      {/* Shop by Brand small banner — placed ABOVE the niche hero banner */}
+      <ShopByBrand niche="cosmetics" accent={accentDark} accentBg={'#fce7f3'} />
+
       <NicheHero
         bgImage={hero.image_desktop}
         mobileBgImage={hero.image_mobile}
@@ -223,8 +226,7 @@ export default function CosmeticsHome() {
         testIdPrefix="cosmetics-hub"
       />
 
-      {/* Shop by Brand small banner — top cosmetics houses, theme-matched */}
-      <ShopByBrand niche="cosmetics" accent={accentDark} accentBg={'#fce7f3'} />
+      {/* Shop by Brand moved up (above NicheHero banner) — see top of page. */}
 
       {bs.enabled !== false && (
         <section className="max-w-7xl mx-auto px-3 sm:px-6 py-8 sm:py-12">

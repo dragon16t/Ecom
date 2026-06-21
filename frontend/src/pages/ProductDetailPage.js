@@ -5,7 +5,7 @@ import { Star, ChevronLeft, ChevronRight, Shield, Truck, Award, Clock, Check, Sp
 import { addToCart, addComboToCart, getCart, saveCart } from './Homepage';
 import { useTracking } from '../providers/TrackingProvider';
 import ReviewsCarousel from '../components/ReviewsCarousel';
-import { cachedGet } from '../utils/apiCache';
+import { cachedGet, peek } from '../utils/apiCache';
 import { getSocialProof } from '../utils/socialProof';
 import SEOHead, { productJsonLd, breadcrumbJsonLd, faqJsonLd, SITE } from '../components/SEOHead';
 
@@ -170,20 +170,33 @@ function ProductDetailPage() {
   const { slug } = useParams();
   const navigate = useNavigate();
   const { trackAction } = useTracking();
-  const [product, setProduct] = useState(null);
+  // PERF: seed product + combos synchronously from in-memory cache so the page
+  // paints instantly when the user navigates here from a list page or comes
+  // back from the cart. We only show the full-page spinner on genuine cold loads.
+  const _cachedProduct = peek(`${API}/api/products/${slug}`);
+  const _cachedCombos = peek(`${API}/api/combos`) || [];
+  const [product, setProduct] = useState(_cachedProduct || null);
   const [allProducts, setAllProducts] = useState([]);
-  const [combos, setCombos] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [combos, setCombos] = useState(_cachedCombos);
+  const [loading, setLoading] = useState(!_cachedProduct);
   const [qty, setQty] = useState(1);
   const [imgIdx, setImgIdx] = useState(0);
   const [openSection, setOpenSection] = useState('desc');
   const [openFaq, setOpenFaq] = useState(null);
-  const [selectedShadeId, setSelectedShadeId] = useState(null);
+  const [selectedShadeId, setSelectedShadeId] = useState(() => {
+    const shadesArr = (_cachedProduct && _cachedProduct.shades) || [];
+    if (!Array.isArray(shadesArr) || shadesArr.length === 0) return null;
+    const firstInStock = shadesArr.find(s => (s.stock_qty ?? 0) > 0) || shadesArr[0];
+    return firstInStock?.id || null;
+  });
   const [zoomOpen, setZoomOpen] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     const load = async () => {
-      setLoading(true); setImgIdx(0);
+      const cached = peek(`${API}/api/products/${slug}`);
+      if (!cached) setLoading(true);
+      setImgIdx(0);
       try {
         // PERF (Feb 2026): fetch the product first; the related-products + combos
         // queries run in parallel as a SEPARATE step so the product page can paint
@@ -191,6 +204,7 @@ function ProductDetailPage() {
         // with `limit=12` instead of pulling the entire 7858-SKU catalog (which
         // was the 16.9 MB JSON download causing the 4-6 s product-page lag).
         const p = await cachedGet(`${API}/api/products/${slug}`);
+        if (cancelled) return;
         setProduct(p.data);
         // Auto-select first in-stock shade for products with shade variants
         const shadesArr = (p.data && p.data.shades) || [];
@@ -218,13 +232,15 @@ function ProductDetailPage() {
           cachedGet(`${API}/api/products?niche=${niche}&page=1&limit=12`),
           cachedGet(`${API}/api/combos`, { ttl: 60_000 }),
         ]).then(([all, c]) => {
+          if (cancelled) return;
           const items = Array.isArray(all.data) ? all.data : (all.data?.items || []);
           setAllProducts(items.filter(x => x.slug !== slug));
           setCombos(c.data);
         }).catch(() => { /* below-the-fold — ok if it fails */ });
-      } catch { navigate('/shop'); setLoading(false); }
+      } catch { if (!cancelled) { navigate('/shop'); setLoading(false); } }
     };
     load();
+    return () => { cancelled = true; };
   }, [slug]);
 
   // Resolve current shade & effective stock
