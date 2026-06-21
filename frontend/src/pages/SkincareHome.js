@@ -198,6 +198,9 @@ export default function SkincareHome() {
         testIdPrefix="skincare-hub"
       />
 
+      {/* Shop by Brand small banner — placed right after categories, above bestsellers */}
+      <ShopByBrand niche="skincare" accent={accent} accentBg={'#cffafe'} />
+
       {bs.enabled !== false && (
         <section className="max-w-7xl mx-auto px-3 sm:px-6 py-8 sm:py-12">
           <div className="flex items-end justify-between mb-4 sm:mb-6 px-1 sm:px-0">
@@ -228,9 +231,7 @@ export default function SkincareHome() {
       )}
 
       {/* Shop by Category hub now rendered ABOVE bestsellers (see top section). */}
-
-      {/* Shop by Brand small banner — pulls top brands curated for this niche */}
-      <ShopByBrand niche="skincare" accent={accent} accentBg={'#cffafe'} />
+      {/* Shop by Brand moved up to sit right after categories (see above). */}
 
       {/* Legacy CategoryShowcase kept off by default — admin can re-enable via niche.show_category_showcase=true. */}
       {niche.show_category_showcase === true && (
