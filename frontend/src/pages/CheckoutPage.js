@@ -206,6 +206,23 @@ function CheckoutPage() {
             backdropclose: false,
           },
         };
+        // Razorpay SDK is no longer pre-loaded globally (removed from
+        // index.html in the Jun 22 2026 perf pass). Inject it on demand
+        // here so the homepage stays light. Subsequent checkouts find the
+        // script already cached and resolve immediately.
+        if (!window.Razorpay) {
+          await new Promise((resolve, reject) => {
+            const existing = document.getElementById('rzp-sdk');
+            if (existing) { existing.addEventListener('load', resolve); existing.addEventListener('error', reject); return; }
+            const s = document.createElement('script');
+            s.id = 'rzp-sdk';
+            s.src = 'https://checkout.razorpay.com/v1/checkout.js';
+            s.async = true;
+            s.onload = resolve;
+            s.onerror = () => reject(new Error('Failed to load Razorpay'));
+            document.head.appendChild(s);
+          });
+        }
         const rzp = new window.Razorpay(options);
         // Failed payment — also reset the button
         rzp.on('payment.failed', (resp) => {

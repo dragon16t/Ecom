@@ -10,6 +10,21 @@
 @tailwind components;
 @tailwind utilities;
 
+/* CLS guard (Jun 22 2026 perf pass): make every <img> reserve its intrinsic
+   aspect ratio by default. Cuts CLS from 0.292 → near 0 on mobile homepage.
+   Components that need a fixed size (avatars, icons) are unaffected because
+   tailwind's `w-*` + `h-*` utilities override `height: auto`. */
+@layer base {
+  img {
+    max-width: 100%;
+    height: auto;
+  }
+  img[width][height] {
+    aspect-ratio: attr(width) / attr(height);
+  }
+}
+
+
 @layer base {
   :root {
     /* Celesta Glow Brand Colors */
