@@ -22,6 +22,23 @@ const BRAND_NAME = 'Celesta Glow';
 const DEFAULT_OG_IMAGE =
   'https://customer-assets.emergentagent.com/job_3e020a22-98fc-4fee-b377-5bacdddf46ce/artifacts/ig243hne_IMG_9115.png';
 
+// Tight SEO keyword set — anti-aging core, plus the Kerala districts that drive
+// the bulk of our orders. Kept short on purpose; Google penalises stuffing.
+const DEFAULT_KEYWORDS = [
+  'anti aging products kerala',
+  'retinol serum kerala',
+  'best skincare brand kerala',
+  'celesta glow',
+  'dermatologist approved skincare',
+  'anti aging cream india',
+  'cosmetics online kerala',
+  'kochi', 'ernakulam', 'thiruvananthapuram', 'kozhikode',
+  'thrissur', 'malappuram', 'kollam', 'palakkad', 'kannur',
+].join(', ');
+
+const DEFAULT_DESCRIPTION =
+  "Celesta Glow — Kerala's trusted anti-aging skincare brand. Clinical retinol, peptides & vitamin-C serums made for Indian skin. Free shipping across Kochi, Thiruvananthapuram, Kozhikode, Thrissur & all Kerala districts. 7-day sealed-bottle return.";
+
 export default function SEOHead({
   title,
   description,
@@ -29,16 +46,16 @@ export default function SEOHead({
   ogImage,
   noindex = false,
   jsonLd = [], // array of plain objects → emitted as <script type="application/ld+json">
+  keywords,
 }) {
   const fullTitle =
     title && title.toLowerCase().includes('celesta')
       ? title
       : title
       ? `${title} | ${BRAND_NAME}`
-      : `${BRAND_NAME} – India's #1 Anti-Aging Skincare Brand`;
-  const desc =
-    description ||
-    "Celesta Glow — India's #1 complete anti-aging skincare brand. Dermatologist-approved formulas for Indian skin. Free shipping. 7-day sealed-bottle return.";
+      : `${BRAND_NAME} – Kerala's Trusted Anti-Aging Skincare Brand`;
+  const desc = description || DEFAULT_DESCRIPTION;
+  const kw = keywords || DEFAULT_KEYWORDS;
   const canonical = `${SITE_URL}${canonicalPath.startsWith('/') ? canonicalPath : '/' + canonicalPath}`;
   const ogImg = ogImage || DEFAULT_OG_IMAGE;
   const ldArray = Array.isArray(jsonLd) ? jsonLd.filter(Boolean) : [jsonLd].filter(Boolean);
@@ -47,6 +64,7 @@ export default function SEOHead({
     <Helmet>
       <title>{fullTitle}</title>
       <meta name="description" content={desc} />
+      <meta name="keywords" content={kw} />
       <link rel="canonical" href={canonical} />
       <link rel="alternate" hrefLang="en-in" href={canonical} />
       <link rel="alternate" hrefLang="x-default" href={canonical} />

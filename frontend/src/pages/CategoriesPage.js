@@ -19,8 +19,11 @@ const HUB_DEFAULTS = {
     title_line1: 'Shop by',
     title_line2: 'Category.',
     subtitle: 'From clinical anti-aging to luxe cosmetics — find what you\'re looking for in seconds.',
-    image_desktop: 'https://images.unsplash.com/photo-1620916566398-39f1143ab7be?auto=format&fit=crop&w=1800&q=80',
-    image_mobile: 'https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=900&q=80',
+    // Defaults intentionally left blank — placeholder gradient renders when
+    // admin hasn't uploaded a custom hero. Avoids the random Unsplash
+    // photos (Curology tube, etc.) showing on a production storefront.
+    image_desktop: '',
+    image_mobile: '',
     accent: '#0f766e',
     search_placeholder: 'Search categories, concerns, products…',
   },
@@ -30,7 +33,7 @@ const HUB_DEFAULTS = {
       eyebrow: 'Youthful Radiance',
       title: 'Anti-Aging',
       subtitle: 'Clinical retinol, peptides & vitamin-C built for Indian skin.',
-      image: 'https://images.unsplash.com/photo-1556228578-8c89e6adf883?auto=format&fit=crop&w=800&q=80',
+      image: '',
       cta_label: 'Discover',
       cta_link: '/',
       accent: '#0f766e',
@@ -42,7 +45,7 @@ const HUB_DEFAULTS = {
       eyebrow: 'Healthy Glowing Skin',
       title: 'Skincare',
       subtitle: 'Acne, pigmentation, dryness, dullness — pick your concern, get the routine.',
-      image: 'https://images.unsplash.com/photo-1570194065650-d99fb4bedf0a?auto=format&fit=crop&w=800&q=80',
+      image: '',
       cta_label: 'Pick your concern',
       cta_link: '/skincare',
       accent: '#0e7490',
@@ -54,7 +57,7 @@ const HUB_DEFAULTS = {
       eyebrow: 'Enhance Your Beauty',
       title: 'Cosmetics',
       subtitle: 'Long-wear lip, satin foundation, hydrating blush — colour that loves your skin.',
-      image: 'https://images.unsplash.com/photo-1596462502278-27bfdc403348?auto=format&fit=crop&w=800&q=80',
+      image: '',
       cta_label: 'Shop the shades',
       cta_link: '/cosmetics',
       accent: '#be185d',
@@ -143,12 +146,18 @@ function HubHero({ hero, query, setQuery }) {
   const accent = hero.accent || '#0f766e';
   return (
     <section className="relative overflow-hidden" data-testid="hub-hero">
-      {/* Background image with gradient veil */}
+      {/* Background image with gradient veil — falls back to a clean gradient
+          when admin hasn't uploaded a hero image, so we never ship a random
+          stock photo on a real customer's storefront. */}
       <div className="absolute inset-0">
-        <picture>
-          <source media="(max-width: 640px)" srcSet={hero.image_mobile || hero.image_desktop} />
-          <img src={hero.image_desktop} alt="" className="w-full h-full object-cover" />
-        </picture>
+        {hero.image_desktop ? (
+          <picture>
+            <source media="(max-width: 640px)" srcSet={hero.image_mobile || hero.image_desktop} />
+            <img src={hero.image_desktop} alt="" className="w-full h-full object-cover" loading="lazy" />
+          </picture>
+        ) : (
+          <div className="w-full h-full" style={{ background: `linear-gradient(135deg, ${accent}10 0%, #fafaf9 60%, #fff 100%)` }} />
+        )}
         <div
           className="absolute inset-0"
           style={{
@@ -228,11 +237,27 @@ function NicheCard({ cfg, layout = 'left', testId }) {
       <div className="grid grid-cols-1 md:grid-cols-2">
         {/* Image side */}
         <div className={`relative aspect-[4/3] md:aspect-auto md:min-h-[320px] ${flip ? 'md:order-2' : ''}`}>
-          <img
-            src={cfg.image}
-            alt={cfg.title}
-            className="absolute inset-0 w-full h-full object-cover transition-transform duration-[1200ms] group-hover:scale-105"
-          />
+          {cfg.image ? (
+            <img
+              src={cfg.image}
+              alt={cfg.title}
+              loading="lazy"
+              className="absolute inset-0 w-full h-full object-cover transition-transform duration-[1200ms] group-hover:scale-105"
+            />
+          ) : (
+            // Graceful fallback when admin hasn't uploaded a hero image yet —
+            // gradient block with the niche title. Avoids the broken-image
+            // icon and the random Unsplash defaults that used to ship.
+            <div
+              className="absolute inset-0 flex items-center justify-center"
+              style={{ background: `linear-gradient(135deg, ${cfg.bg_from || '#fafaf9'}, ${cfg.bg_to || '#fff'})` }}
+            >
+              <span
+                className="text-3xl sm:text-4xl lg:text-5xl font-black italic opacity-80"
+                style={{ color: cfg.accent || '#0f766e' }}
+              >{cfg.title}</span>
+            </div>
+          )}
           <div
             className="absolute inset-0"
             style={{ background: `linear-gradient(${flip ? '270deg' : '90deg'}, rgba(255,255,255,0) 50%, ${cfg.bg_from || '#ffffff'}99 100%)` }}

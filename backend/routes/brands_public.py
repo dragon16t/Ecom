@@ -128,8 +128,8 @@ async def upload_brand_logo(
     if not await ensure_configured(db):
         raise HTTPException(status_code=500, detail="Cloudinary not configured")
     content = await file.read()
-    res = upload_image(content, folder="celesta-glow/brand-logos", public_id=f"{slug}-logo")
-    url = res.get("secure_url")
+    res = await upload_image(db, content, folder="celesta-glow/brand-logos", public_id=f"{slug}-logo")
+    url = res.get("url")
     await db.brand_assets.update_one(
         {"slug": slug},
         {"$set": {
@@ -158,8 +158,8 @@ async def upload_brand_banner(
     if not await ensure_configured(db):
         raise HTTPException(status_code=500, detail="Cloudinary not configured")
     content = await file.read()
-    res = upload_image(content, folder="celesta-glow/brand-banners", public_id=f"{slug}-banner")
-    url = res.get("secure_url")
+    res = await upload_image(db, content, folder="celesta-glow/brand-banners", public_id=f"{slug}-banner")
+    url = res.get("url")
     await db.brand_assets.update_one(
         {"slug": slug},
         {"$set": {
