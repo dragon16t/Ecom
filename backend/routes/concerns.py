@@ -724,29 +724,48 @@ async def catalog_backup_snapshot_async(x_admin_token: str = Header(None, alias=
 
 
 @router.post("/admin/catalog/backup/restore")
-async def catalog_backup_restore(x_admin_token: str = Header(None, alias="X-Admin-Token")):
+async def catalog_backup_restore(
+    x_admin_token: str = Header(None, alias="X-Admin-Token"),
+    force: bool = False,
+):
     """Manually trigger a restore — used after a redeploy if auto-restore was
-    skipped (e.g. seed scripts inserted defaults so collections weren't empty)."""
+    skipped (e.g. seed scripts inserted defaults so collections weren't empty).
+
+    Pass ?force=true to ALWAYS overwrite existing rows by slug — needed when
+    the canonical taxonomy already populated basic skeleton rows but the
+    image / icon fields are missing. Without `force`, the endpoint only
+    inserts brand-new slugs and existing rows keep their (potentially blank)
+    fields, which is the bug that caused all category icons to vanish on the
+    Jun 22 2026 production redeploy.
+    """
     verify_admin(x_admin_token)
-    # Lower the "needs restore" floor by clearing existing taxonomy first? No —
-    # instead we call the same auto path which is idempotent (upsert by slug).
-    res = await _catalog_backup.auto_restore_if_empty(db)
-    if not res.get("restored"):
-        # Force an actual restore even if not "empty"
-        snap = await _catalog_backup._fetch_latest_snapshot(db)
-        if not snap:
-            raise HTTPException(status_code=404, detail="No remote snapshot available")
-        restored = {}
-        for col in _catalog_backup.SNAPSHOT_COLLECTIONS:
-            docs = (snap.get("collections") or {}).get(col) or []
-            for d in docs:
-                slug = d.get("slug")
-                if not slug:
-                    continue
-                await db[col].update_one({"slug": slug}, {"$set": d}, upsert=True)
-            restored[col] = len(docs)
-        return {"restored": True, "force": True, "counts": restored, "snapshot_created_at": snap.get("created_at")}
-    return res
+    if not force:
+        # Legacy behaviour — only fills genuinely empty collections.
+        res = await _catalog_backup.auto_restore_if_empty(db)
+        if res.get("restored"):
+            return res
+    # Force-restore: fetch the latest snapshot from Cloudinary (new first,
+    # then legacy fallback) and UPSERT every doc by slug — overwrites image
+    # / icon URLs in place. Existing IDs aren't deleted, only fields are
+    # refreshed. Safe to run any number of times.
+    snap = await _catalog_backup._fetch_latest_snapshot(db)
+    if not snap:
+        raise HTTPException(status_code=404, detail="No remote snapshot available")
+    restored = {}
+    for col in _catalog_backup.SNAPSHOT_COLLECTIONS:
+        docs = (snap.get("collections") or {}).get(col) or []
+        for d in docs:
+            slug = d.get("slug")
+            if not slug:
+                continue
+            await db[col].update_one({"slug": slug}, {"$set": d}, upsert=True)
+        restored[col] = len(docs)
+    return {
+        "restored": True,
+        "force": True,
+        "counts": restored,
+        "snapshot_created_at": snap.get("created_at"),
+    }
 
 
 @router.delete("/admin/subcategories/{slug}")

@@ -63,7 +63,12 @@ export default function SnapshotBackupWidget({ token }) {
     )) return;
     setBusy(true); setError(''); setJustSucceeded(false);
     try {
-      const r = await axios.post(`${API}/api/admin/catalog/backup/restore`, {}, auth);
+      // Always pass ?force=true so existing rows are upserted (fields like
+      // image URLs / icons get refreshed on rows the canonical taxonomy
+      // already populated). Without force, the restore only inserts brand-new
+      // slugs and silently keeps blank icons on existing rows — that was the
+      // Jun 22 2026 production bug.
+      const r = await axios.post(`${API}/api/admin/catalog/backup/restore?force=true`, {}, auth);
       const counts = r.data?.counts || {};
       const summary = Object.entries(counts)
         .filter(([, v]) => typeof v === 'number' && v > 0)
