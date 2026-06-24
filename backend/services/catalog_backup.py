@@ -680,9 +680,66 @@ async def auto_restore_if_empty(db, force: bool = False) -> Dict[str, Any]:
     # uploaded after that full (small deltas, one per 15-min tick if
     # anything changed) are applied in chronological order so the DB
     # ends up at the latest known state, not the last-full state.
+    #
+    # Recovery mode (Jun 24 2026): we also list Cloudinary's
+    # `celesta-glow/backups/` folder DIRECTLY to find every incremental
+    # ever uploaded — admin_settings.incrementals can be incomplete after
+    # a DB wipe or a buggy restore, but Cloudinary's listing is ground
+    # truth. Both lists are merged + de-duped + sorted by created_at.
     try:
         meta = await db.admin_settings.find_one({"type": "catalog_backup"}, {"_id": 0}) or {}
-        incs = meta.get("incrementals") or []
+        listed_incs = list(meta.get("incrementals") or [])
+        # Map pid -> entry so we can merge with Cloudinary listing
+        seen = {(i.get("public_id") or ""): i for i in listed_incs if i.get("public_id")}
+        # Cloudinary listing across BOTH accounts (current + legacy)
+        import cloudinary as _cld, cloudinary.api as _capi
+        creds_now = _cs._creds_cache  # type: ignore[attr-defined]
+        legacy = os.environ.get("CLOUDINARY_LEGACY_CLOUD_NAME") or ""
+        accounts = []
+        if creds_now.get("cloud_name"):
+            accounts.append(("current", creds_now.get("cloud_name"), creds_now.get("api_key"), creds_now.get("api_secret")))
+        # Legacy account creds may not be available — use API ping-free listing via secure_url public alias
+        # Most installations keep legacy keys in env if migration is recent
+        leg_key = os.environ.get("CLOUDINARY_LEGACY_API_KEY") or ""
+        leg_secret = os.environ.get("CLOUDINARY_LEGACY_API_SECRET") or ""
+        if legacy and leg_key and leg_secret:
+            accounts.append(("legacy", legacy, leg_key, leg_secret))
+        for label, cn, ak, sk in accounts:
+            try:
+                _cld.config(cloud_name=cn, api_key=ak, api_secret=sk)
+                next_cursor = None
+                for _ in range(20):  # up to 10K resources (500 * 20)
+                    kwargs = {"type": "upload", "resource_type": "raw",
+                              "prefix": "celesta-glow/backups", "max_results": 500}
+                    if next_cursor:
+                        kwargs["next_cursor"] = next_cursor
+                    r = _capi.resources(**kwargs)
+                    for x in r.get("resources", []) or []:
+                        pid = x.get("public_id") or ""
+                        if not pid or "/inc-" not in pid:
+                            continue
+                        url = x.get("secure_url") or ""
+                        # Inject any not already in admin_settings.incrementals
+                        if pid not in seen:
+                            seen[pid] = {"public_id": pid, "url": url,
+                                         "created_at": x.get("created_at"),
+                                         "timestamp": x.get("created_at")}
+                        elif not seen[pid].get("url"):
+                            seen[pid]["url"] = url
+                    next_cursor = r.get("next_cursor")
+                    if not next_cursor:
+                        break
+            except Exception as exc:
+                logger.warning("Cloudinary inc listing (%s) failed: %s", label, exc)
+        # Re-apply current account config so subsequent operations don't break
+        try:
+            if creds_now.get("cloud_name"):
+                _cld.config(cloud_name=creds_now["cloud_name"],
+                            api_key=creds_now["api_key"],
+                            api_secret=creds_now["api_secret"])
+        except Exception:
+            pass
+        incs = sorted(seen.values(), key=lambda x: x.get("created_at") or x.get("timestamp") or "")
         applied_incs = 0
         for inc in incs:
             url = inc.get("url")
@@ -727,6 +784,7 @@ async def auto_restore_if_empty(db, force: bool = False) -> Dict[str, Any]:
             applied_incs += 1
         if applied_incs:
             logger.info("Auto-restore applied %d incremental delta(s) on top of full", applied_incs)
+        restored_counts["_incrementals_applied"] = applied_incs
     except Exception as exc:
         logger.warning("Incremental chain replay failed: %s", exc)
 
