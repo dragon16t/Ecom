@@ -727,22 +727,37 @@ async def catalog_backup_snapshot_async(x_admin_token: str = Header(None, alias=
 async def catalog_backup_restore(
     x_admin_token: str = Header(None, alias="X-Admin-Token"),
     force: bool = False,
+    safety_snapshot: bool = False,
 ):
     """Manually trigger a restore — used after a redeploy if auto-restore was
     skipped (e.g. seed scripts inserted defaults so collections weren't empty).
 
-    Pass ?force=true to ALWAYS upsert from the latest snapshot AND apply the
-    incremental delta chain on top. STICKY_FIELDS protection ensures local
-    admin-uploaded images/icons that aren't in the snapshot are preserved.
-    The full incremental chain is applied so the DB lands at the latest
-    captured state — fixing the Jun 24 2026 bug where the previous force-
-    restore implementation only loaded the full snapshot (June 11) and
-    wiped 13 days of admin uploads.
+    Behaviour:
+      • Pulls the latest full snapshot AND replays every incremental delta in
+        chronological order → DB ends at the most recent captured state.
+      • STICKY_FIELDS protection ensures admin-uploaded images / icons that
+        exist locally but not in the snapshot are KEPT (snapshot fills blanks
+        only, never overwrites a non-empty local value).
+      • Optional ?safety_snapshot=true takes a fresh incremental snapshot of
+        the CURRENT state first, so if the restore is wrong the prior state
+        is rollback-able. Off by default because it adds 30-60s to the call
+        and the cleaner UX is to click "Backup Now" first if needed.
     """
     verify_admin(x_admin_token)
-    # Single code path (auto_restore_if_empty) so manual restore inherits
-    # sticky-field protection AND the incremental delta chain. `force=True`
-    # just bypasses the "needs restore" precondition.
+    pre_snapshot_info = None
+    if safety_snapshot:
+        try:
+            pre = await _catalog_backup.incremental_snapshot(db)
+            pre_snapshot_info = {
+                "public_id": pre.get("public_id"),
+                "created_at": pre.get("created_at"),
+            }
+        except Exception as exc:
+            import logging as _logging
+            _logging.getLogger("catalog_backup_admin").warning(
+                "[catalog_backup] safety snapshot failed: %s", exc
+            )
+
     res = await _catalog_backup.auto_restore_if_empty(db, force=force)
     if not res.get("restored") and not force:
         raise HTTPException(
@@ -750,6 +765,7 @@ async def catalog_backup_restore(
             detail=(res.get("reason") or "restore not needed") +
                    " — pass ?force=true to override.",
         )
+    res["safety_snapshot"] = pre_snapshot_info
     return res
 
 

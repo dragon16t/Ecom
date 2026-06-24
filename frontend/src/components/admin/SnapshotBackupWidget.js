@@ -57,11 +57,9 @@ export default function SnapshotBackupWidget({ token }) {
     if (busy) return;
     if (!window.confirm(
       '⚠️ RESTORE FROM BACKUP\n\n' +
-      'This will pull the latest full snapshot from Cloudinary AND replay every ' +
-      'incremental delta on top, bringing the DB back to its last captured state.\n\n' +
+      'This pulls the latest full snapshot AND replays every incremental delta on top — your DB ends up at the most recent captured state.\n\n' +
       'SAFE: existing image / icon / banner fields you uploaded are protected — they will only be filled, never overwritten with blank values from an older snapshot.\n\n' +
-      'WHEN TO USE: only if data looks wrong AFTER a redeploy (missing icons, broken category tiles, lost orders).\n\n' +
-      'WHEN NOT TO USE: do NOT click this just to "refresh" — if the site is working, leave it alone.\n\n' +
+      'TIP: if you want a rollback point first, click "Backup Now" before pressing Restore — that way you can re-restore to the current state if anything looks off.\n\n' +
       'Continue?'
     )) return;
     setBusy(true); setError(''); setJustSucceeded(false);
