@@ -524,11 +524,18 @@ async def _fetch_latest_snapshot(db) -> Optional[Dict[str, Any]]:
     return None
 
 
-async def auto_restore_if_empty(db) -> Dict[str, Any]:
+async def auto_restore_if_empty(db, force: bool = False) -> Dict[str, Any]:
     """Run at backend startup. If the snapshot collections look freshly-wiped
     (≥80% of them have ≤5 docs OR the products collection itself is empty),
     pull the latest Cloudinary snapshot and bulk-upsert. Idempotent — never
     overwrites a doc that already exists with the same slug/id.
+
+    When ``force=True`` (manual admin restore), the "near-empty" precondition
+    is skipped and every snapshot doc is upserted in place. STICKY_FIELDS
+    protection still applies — admin-uploaded images / icons that exist
+    locally but not in the snapshot are KEPT. The incremental chain is also
+    applied, so the DB ends up at the latest known captured state, not just
+    the last full-snapshot state.
     """
     counts: Dict[str, int] = {}
     near_empty = 0
@@ -546,7 +553,7 @@ async def auto_restore_if_empty(db) -> Dict[str, Any]:
     # most collections are near-empty.
     products_empty = counts.get("products", 0) < 5
     threshold = 0.5  # >=50% of snapshot collections look empty
-    needs_restore = products_empty or (near_empty / max(1, len(SNAPSHOT_COLLECTIONS))) >= threshold
+    needs_restore = force or products_empty or (near_empty / max(1, len(SNAPSHOT_COLLECTIONS))) >= threshold
     if not needs_restore:
         logger.info("Snapshot collections look populated %s — skipping auto-restore", counts)
         return {"restored": False, "reason": "already populated", "counts": counts}

@@ -56,18 +56,23 @@ export default function SnapshotBackupWidget({ token }) {
   const restoreNow = async () => {
     if (busy) return;
     if (!window.confirm(
-      'Restore from the last backup?\n\n' +
-      'This will REPLACE existing taxonomy / catalog / orders / customers etc. with the last snapshot. ' +
-      'Existing records with the same slug/id are overwritten. New records added after the snapshot are kept as-is.\n\n' +
-      'Use this only after a redeploy if data looks wrong, or to recover from an accidental bulk delete.'
+      '⚠️ RESTORE FROM BACKUP\n\n' +
+      'This will pull the latest full snapshot from Cloudinary AND replay every ' +
+      'incremental delta on top, bringing the DB back to its last captured state.\n\n' +
+      'SAFE: existing image / icon / banner fields you uploaded are protected — they will only be filled, never overwritten with blank values from an older snapshot.\n\n' +
+      'WHEN TO USE: only if data looks wrong AFTER a redeploy (missing icons, broken category tiles, lost orders).\n\n' +
+      'WHEN NOT TO USE: do NOT click this just to "refresh" — if the site is working, leave it alone.\n\n' +
+      'Continue?'
     )) return;
     setBusy(true); setError(''); setJustSucceeded(false);
     try {
       // Always pass ?force=true so existing rows are upserted (fields like
       // image URLs / icons get refreshed on rows the canonical taxonomy
-      // already populated). Without force, the restore only inserts brand-new
-      // slugs and silently keeps blank icons on existing rows — that was the
-      // Jun 22 2026 production bug.
+      // already populated). STICKY_FIELDS protection in the backend keeps
+      // local admin-uploaded images safe — the snapshot fills blanks only.
+      // Incremental deltas are applied after the full snapshot to land at
+      // the latest captured state. This fixes the Jun 24 2026 bug where a
+      // restore overwrote 13 days of uploads with the older full snapshot.
       const r = await axios.post(`${API}/api/admin/catalog/backup/restore?force=true`, {}, auth);
       const counts = r.data?.counts || {};
       const summary = Object.entries(counts)

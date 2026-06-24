@@ -731,41 +731,26 @@ async def catalog_backup_restore(
     """Manually trigger a restore — used after a redeploy if auto-restore was
     skipped (e.g. seed scripts inserted defaults so collections weren't empty).
 
-    Pass ?force=true to ALWAYS overwrite existing rows by slug — needed when
-    the canonical taxonomy already populated basic skeleton rows but the
-    image / icon fields are missing. Without `force`, the endpoint only
-    inserts brand-new slugs and existing rows keep their (potentially blank)
-    fields, which is the bug that caused all category icons to vanish on the
-    Jun 22 2026 production redeploy.
+    Pass ?force=true to ALWAYS upsert from the latest snapshot AND apply the
+    incremental delta chain on top. STICKY_FIELDS protection ensures local
+    admin-uploaded images/icons that aren't in the snapshot are preserved.
+    The full incremental chain is applied so the DB lands at the latest
+    captured state — fixing the Jun 24 2026 bug where the previous force-
+    restore implementation only loaded the full snapshot (June 11) and
+    wiped 13 days of admin uploads.
     """
     verify_admin(x_admin_token)
-    if not force:
-        # Legacy behaviour — only fills genuinely empty collections.
-        res = await _catalog_backup.auto_restore_if_empty(db)
-        if res.get("restored"):
-            return res
-    # Force-restore: fetch the latest snapshot from Cloudinary (new first,
-    # then legacy fallback) and UPSERT every doc by slug — overwrites image
-    # / icon URLs in place. Existing IDs aren't deleted, only fields are
-    # refreshed. Safe to run any number of times.
-    snap = await _catalog_backup._fetch_latest_snapshot(db)
-    if not snap:
-        raise HTTPException(status_code=404, detail="No remote snapshot available")
-    restored = {}
-    for col in _catalog_backup.SNAPSHOT_COLLECTIONS:
-        docs = (snap.get("collections") or {}).get(col) or []
-        for d in docs:
-            slug = d.get("slug")
-            if not slug:
-                continue
-            await db[col].update_one({"slug": slug}, {"$set": d}, upsert=True)
-        restored[col] = len(docs)
-    return {
-        "restored": True,
-        "force": True,
-        "counts": restored,
-        "snapshot_created_at": snap.get("created_at"),
-    }
+    # Single code path (auto_restore_if_empty) so manual restore inherits
+    # sticky-field protection AND the incremental delta chain. `force=True`
+    # just bypasses the "needs restore" precondition.
+    res = await _catalog_backup.auto_restore_if_empty(db, force=force)
+    if not res.get("restored") and not force:
+        raise HTTPException(
+            status_code=409,
+            detail=(res.get("reason") or "restore not needed") +
+                   " — pass ?force=true to override.",
+        )
+    return res
 
 
 @router.delete("/admin/subcategories/{slug}")
