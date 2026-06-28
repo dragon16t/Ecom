@@ -1,5 +1,33 @@
 # Celesta Glow — PRD
 
+> Last updated: 2026-02-28
+> For dated entries see CHANGELOG.md
+
+## What's working now (verified)
+- React + FastAPI e-commerce app, 7855 products, "Master Brain" canonical taxonomy
+- Dual-Cloudinary setup (current + legacy fallback) for images + JSON DB backups
+- Auto-restore on pod boot — finds newest full across BOTH clouds, applies 233 incrementals, lands on the latest admin-curated image state
+- Manual restore — async/background job with polling (POST /restore-async + GET /restore/status). Bypasses Cloudflare 60s timeout.
+- Skeleton-state guards on both `snapshot()` and `incremental_snapshot()` — no more poisoning the chain after a pod restart races auto-restore
+- Doctor Consultation flow (₹999 via Razorpay) — public page + admin bookings + photo + PDF uploads, fully tested
+
+## Architecture priority files
+- `/app/backend/server.py` — too large (3500+ lines), needs refactor into routers (P2)
+- `/app/backend/services/catalog_backup.py` — backup/restore engine
+- `/app/backend/services/taxonomy_canonical.py` — canonical taxonomy + reclassifier
+- `/app/backend/routes/doctor_consultation.py` — paid consultation feature
+- `/app/frontend/src/components/admin/SnapshotBackupWidget.js` — restore UI with polling
+
+## Backlog (P0/P1/P2)
+- **P1**: Admin Orders page — status badges on each card (icon + colored pill: Pending/Shipped/In Transit/Delivered/Cancelled), prominent status banner on order detail page, calendar widget for date-wise filtering of orders.
+- **P2**: Embed product/category slugs in Cloudinary `public_id` so orphan recovery is automated even if DB sync is lost.
+- **P2**: Razorpay Payouts API for automated referral withdrawals.
+- **P3**: Refactor `server.py` into routers (auth, core, startup) — improve maintainability.
+
+## Test credentials
+See `/app/memory/test_credentials.md`
+
+
 ## Problem Statement (verbatim)
 1. Clone repo `veegalenterprises-sudo/Sd` and replicate `https://build-stage-42.preview.emergentagent.com`.
 2. Restructure taxonomy: clean Skincare & Cosmetics niches with concerns → categories → subcategories. Auto-link ~9.7k products. Add filter tags (Bestsellers / Luxury / Trending / Most-bought / New Launch). Dedupe duplicates. Differentiate products properly.

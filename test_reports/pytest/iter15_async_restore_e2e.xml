@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="4" skipped="0" tests="7" time="1.361" timestamp="2026-06-28T14:18:13.893835+00:00" hostname="agent-env-d71e3c94-e2bd-46fa-a3b7-c4b62227b9c2"><testcase classname="tests.test_restore_async_feb2026.TestE2EAsyncRestore" name="test_kickoff_returns_fast" time="0.150"><failure message="AssertionError: got 409: {&quot;detail&quot;:&quot;A restore is already running (job_id=2e01fe414b31). Poll /admin/catalog/backup/restore/status?job_id=2e01fe414b31&quot;}&#10;assert 409 in (200, 202)&#10; +  where 409 = &lt;Response [409]&gt;.status_code">tests/test_restore_async_feb2026.py:146: in test_kickoff_returns_fast
+    assert r.status_code in (200, 202), f"got {r.status_code}: {r.text[:300]}"
+E   AssertionError: got 409: {"detail":"A restore is already running (job_id=2e01fe414b31). Poll /admin/catalog/backup/restore/status?job_id=2e01fe414b31"}
+E   assert 409 in (200, 202)
+E    +  where 409 = &lt;Response [409]&gt;.status_code</failure></testcase><testcase classname="tests.test_restore_async_feb2026.TestE2EAsyncRestore" name="test_public_apis_available_during_restore" time="0.731" /><testcase classname="tests.test_restore_async_feb2026.TestE2EAsyncRestore" name="test_poll_until_done" time="0.000"><failure message="AssertionError: kickoff test failed; skipping poll&#10;assert None">tests/test_restore_async_feb2026.py:175: in test_poll_until_done
+    assert job_id, "kickoff test failed; skipping poll"
+E   AssertionError: kickoff test failed; skipping poll
+E   assert None</failure></testcase><testcase classname="tests.test_restore_async_feb2026.TestE2EAsyncRestore" name="test_result_counts_and_baseline" time="0.000"><failure message="AssertionError: restored != true: {}&#10;assert None is True&#10; +  where None = &lt;built-in method get of dict object at 0xff77c43fedc0&gt;('restored')&#10; +    where &lt;built-in method get of dict object at 0xff77c43fedc0&gt; = {}.get">tests/test_restore_async_feb2026.py:205: in test_result_counts_and_baseline
+    assert result.get("restored") is True, f"restored != true: {result}"
+E   AssertionError: restored != true: {}
+E   assert None is True
+E    +  where None = &lt;built-in method get of dict object at 0xff77c43fedc0&gt;('restored')
+E    +    where &lt;built-in method get of dict object at 0xff77c43fedc0&gt; = {}.get</failure></testcase><testcase classname="tests.test_restore_async_feb2026.TestE2EAsyncRestore" name="test_post_restore_concerns_have_cloudinary_images" time="0.119" /><testcase classname="tests.test_restore_async_feb2026.TestE2EAsyncRestore" name="test_post_restore_categories_have_https_images" time="0.112" /><testcase classname="tests.test_restore_async_feb2026.TestE2EAsyncRestore" name="test_status_endpoint_still_returns_cached_job" time="0.111"><failure message="assert 404 == 200&#10; +  where 404 = &lt;Response [404]&gt;.status_code">tests/test_restore_async_feb2026.py:243: in test_status_endpoint_still_returns_cached_job
+    assert r.status_code == 200
+E   assert 404 == 200
+E    +  where 404 = &lt;Response [404]&gt;.status_code</failure></testcase></testsuite></testsuites>

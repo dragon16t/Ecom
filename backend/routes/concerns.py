@@ -802,7 +802,7 @@ async def catalog_backup_restore(
 @router.post("/admin/catalog/backup/restore-async")
 async def catalog_backup_restore_async(
     x_admin_token: str = Header(None, alias="X-Admin-Token"),
-    force: bool = True,
+    force: bool = False,
 ):
     """Kick off a manual restore in the background and return immediately.
 
@@ -814,7 +814,9 @@ async def catalog_backup_restore_async(
       3. Returns 202 + {job_id} immediately.
       4. The admin UI polls /restore/status?job_id=... every 3s for progress.
 
-    Cleans up stale job dicts older than 1 hr on each call.
+    Cleans up stale job dicts older than 1 hr on each call. Returns 409 if
+    another restore is already running (prevents concurrent DB writes from
+    racing each other).
     """
     verify_admin(x_admin_token)
     import asyncio as _asyncio
@@ -831,6 +833,15 @@ async def catalog_backup_restore_async(
              and (now_ts - j.get("completed_at", 0)) > _RESTORE_JOB_TTL_SEC]
     for jid in stale:
         _restore_jobs.pop(jid, None)
+
+    # Concurrency guard — only ONE restore in flight at a time.
+    running = [jid for jid, j in _restore_jobs.items() if j.get("status") == "running"]
+    if running:
+        raise HTTPException(
+            status_code=409,
+            detail=f"A restore is already running (job_id={running[0]}). "
+                   f"Poll /admin/catalog/backup/restore/status?job_id={running[0]}",
+        )
 
     job_id = _uuid.uuid4().hex[:12]
     _restore_jobs[job_id] = {

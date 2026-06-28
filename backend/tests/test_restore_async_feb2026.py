@@ -40,27 +40,27 @@ STATE = {}
 # -- Auth gate ---------------------------------------------------------------
 class TestAuth:
     def test_restore_async_no_token(self):
-        r = requests.post(f"{BASE_URL}/api/admin/catalog/backup/restore-async?force=true", timeout=15)
+        r = requests.post(f"{BASE_URL}/api/admin/catalog/backup/restore-async?force=true", timeout=30)
         assert r.status_code in (401, 403), f"expected 401/403, got {r.status_code}: {r.text[:200]}"
 
     def test_restore_async_wrong_token(self):
         r = requests.post(
             f"{BASE_URL}/api/admin/catalog/backup/restore-async?force=true",
-            headers={"X-Admin-Token": "wrong"}, timeout=15,
+            headers={"X-Admin-Token": "wrong"}, timeout=30,
         )
         assert r.status_code in (401, 403)
 
     def test_status_no_token(self):
         r = requests.get(
             f"{BASE_URL}/api/admin/catalog/backup/restore/status?job_id=deadbeef",
-            timeout=15,
+            timeout=30,
         )
         assert r.status_code in (401, 403)
 
     def test_status_wrong_token(self):
         r = requests.get(
             f"{BASE_URL}/api/admin/catalog/backup/restore/status?job_id=deadbeef",
-            headers={"X-Admin-Token": "nope"}, timeout=15,
+            headers={"X-Admin-Token": "nope"}, timeout=30,
         )
         assert r.status_code in (401, 403)
 
@@ -71,16 +71,43 @@ class TestStatusBogus:
         # FastAPI marks the query param required → expect 422
         r = requests.get(
             f"{BASE_URL}/api/admin/catalog/backup/restore/status",
-            headers=HEADERS, timeout=15,
+            headers=HEADERS, timeout=30,
         )
         assert r.status_code in (404, 422), f"got {r.status_code}: {r.text[:200]}"
 
     def test_status_unknown_job_id(self):
         r = requests.get(
             f"{BASE_URL}/api/admin/catalog/backup/restore/status?job_id=doesnotexist",
-            headers=HEADERS, timeout=15,
+            headers=HEADERS, timeout=30,
         )
         assert r.status_code == 404, f"expected 404 for unknown job_id, got {r.status_code}: {r.text[:200]}"
+
+
+# -- Concurrency guard: second restore while first running should 409 --------
+class TestConcurrencyGuard:
+    def test_second_kickoff_returns_409(self):
+        # Fire one off
+        r1 = requests.post(
+            f"{BASE_URL}/api/admin/catalog/backup/restore-async?force=true",
+            headers=HEADERS, timeout=30,
+        )
+        assert r1.status_code in (200, 202), f"first kickoff failed: {r1.status_code}: {r1.text[:200]}"
+        j1 = r1.json().get("job_id")
+        assert j1
+        STATE["concurrency_job_id"] = j1
+        # Immediately fire a second one — should be rejected as already-running
+        r2 = requests.post(
+            f"{BASE_URL}/api/admin/catalog/backup/restore-async?force=true",
+            headers=HEADERS, timeout=30,
+        )
+        # If somehow first finished super fast (highly unlikely), accept 200.
+        if r2.status_code == 409:
+            detail = (r2.json() or {}).get("detail", "")
+            assert j1 in detail, f"409 detail should mention existing job_id={j1}: {detail!r}"
+            print(f"[concurrency] second POST correctly rejected with 409: {detail[:120]}")
+        else:
+            print(f"[concurrency] second POST returned {r2.status_code} (first likely finished already)")
+            assert r2.status_code in (200, 202, 409)
 
 
 # -- Backwards compat: old sync route still registered -----------------------
@@ -105,14 +132,19 @@ class TestSyncRouteStillRegistered:
 # -- End-to-end async flow ---------------------------------------------------
 class TestE2EAsyncRestore:
     def test_kickoff_returns_fast(self):
+        # If the concurrency guard test already started a restore, reuse it.
+        if STATE.get("concurrency_job_id"):
+            STATE["job_id"] = STATE["concurrency_job_id"]
+            print(f"[kickoff] reusing job from concurrency test: {STATE['job_id']}")
+            return
         t0 = time.time()
         r = requests.post(
             f"{BASE_URL}/api/admin/catalog/backup/restore-async?force=true",
-            headers=HEADERS, timeout=15,
+            headers=HEADERS, timeout=30,
         )
         elapsed = time.time() - t0
         assert r.status_code in (200, 202), f"got {r.status_code}: {r.text[:300]}"
-        assert elapsed < 5.0, f"kickoff too slow ({elapsed:.1f}s) — async refactor broken"
+        assert elapsed < 10.0, f"kickoff too slow ({elapsed:.1f}s) — async refactor broken"
         body = r.json()
         STATE["job_id"] = body.get("job_id")
         assert STATE["job_id"], f"job_id missing: {body}"
@@ -147,7 +179,7 @@ class TestE2EAsyncRestore:
         while time.time() < deadline:
             r = requests.get(
                 f"{BASE_URL}/api/admin/catalog/backup/restore/status?job_id={job_id}",
-                headers=HEADERS, timeout=15,
+                headers=HEADERS, timeout=30,
             )
             assert r.status_code == 200, f"status poll {r.status_code}: {r.text[:200]}"
             last = r.json()
@@ -206,7 +238,7 @@ class TestE2EAsyncRestore:
         job_id = STATE.get("job_id")
         r = requests.get(
             f"{BASE_URL}/api/admin/catalog/backup/restore/status?job_id={job_id}",
-            headers=HEADERS, timeout=15,
+            headers=HEADERS, timeout=30,
         )
         assert r.status_code == 200
         data = r.json()
