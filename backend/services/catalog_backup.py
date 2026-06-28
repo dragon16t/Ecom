@@ -77,6 +77,9 @@ SNAPSHOT_COLLECTIONS = [
     # order volumes (>100/day) you still want Atlas — but for the launch
     # phase this safety net catches everything.
     "orders", "order_items", "order_tracking",
+    # --- Doctor consultation bookings (paid via Razorpay) ---
+    # MUST be backed up — losing a paid customer booking would be unacceptable.
+    "doctor_bookings",
     "users", "customers", "customer_addresses",
     "leads", "contact_messages", "otp_records",
     "reviews", "review_reports",

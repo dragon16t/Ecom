@@ -32,6 +32,7 @@ const BlogPost = lazy(() => import('./pages/BlogPost'));
 const LocationPage = lazy(() => import('./pages/LocationPage'));
 const SearchResults = lazy(() => import('./pages/SearchResults'));
 const ConsultationPage = lazy(() => import('./pages/ConsultationPage'));
+const DoctorConsultationPage = lazy(() => import('./pages/DoctorConsultationPage'));
 const TermsPage = lazy(() => import('./pages/TermsPage'));
 const PrivacyPage = lazy(() => import('./pages/PrivacyPage'));
 const TrackOrder = lazy(() => import('./pages/TrackOrder'));
@@ -50,6 +51,7 @@ const AdminLocationEditor = lazy(() => import('./pages/admin/AdminLocationEditor
 const AdminOrders = lazy(() => import('./pages/admin/AdminOrders'));
 const AdminAIStudio = lazy(() => import('./pages/admin/AdminAIStudio'));
 const AdminConsultations = lazy(() => import('./pages/admin/AdminConsultations'));
+const AdminDoctorBookings = lazy(() => import('./pages/admin/AdminDoctorBookings'));
 const AdminUserJourney = lazy(() => import('./pages/admin/AdminUserJourney'));
 const AdminLiveVisitors = lazy(() => import('./pages/admin/AdminLiveVisitors'));
 const AdminWhatsApp = lazy(() => import('./pages/admin/AdminWhatsApp'));
@@ -159,6 +161,7 @@ function App() {
         <Route path="/admin/orders" element={<AdminLayout><AdminOrders /></AdminLayout>} />
         <Route path="/admin/ai-studio" element={<AdminLayout><AdminAIStudio /></AdminLayout>} />
         <Route path="/admin/consultations" element={<AdminLayout><AdminConsultations /></AdminLayout>} />
+        <Route path="/admin/doctor-bookings" element={<AdminLayout><AdminDoctorBookings /></AdminLayout>} />
         <Route path="/admin/user-journey" element={<AdminLayout><AdminUserJourney /></AdminLayout>} />
         <Route path="/admin/live-visitors" element={<AdminLayout><AdminLiveVisitors /></AdminLayout>} />
         <Route path="/admin/whatsapp" element={<AdminLayout><AdminWhatsApp /></AdminLayout>} />
@@ -241,6 +244,11 @@ function App() {
                 <Suspense fallback={<PageLoader />}>
                   <ConsultationPage />
                 </Suspense>
+              } />
+              <Route path="/doctor-consultation" element={
+                <PublicLayout>
+                  <Suspense fallback={<PageLoader />}><DoctorConsultationPage /></Suspense>
+                </PublicLayout>
               } />
               
               {/* Legal Pages */}

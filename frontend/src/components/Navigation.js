@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { Menu, X, Search, ShoppingCart, Stethoscope, Package } from 'lucide-react';
+import { Menu, X, Search, ShoppingCart, Stethoscope, Package, Pill } from 'lucide-react';
 import axios from 'axios';
 import { prefetchHandlers } from '../utils/routePrefetch';
 import { isProductTbl, isComboTbl, pruneTblItemsFromCart } from '../pages/Homepage';
@@ -80,6 +80,7 @@ function Navigation() {
     { path: '/', label: 'Home' },
     { path: '/categories', label: 'Categories' },
     { path: '/routine', label: 'Skin Analysis', icon: Stethoscope, highlight: true },
+    { path: '/doctor-consultation', label: 'Doctor Consult', icon: Pill, doctor: true },
     { path: '/track-order', label: 'Track Order', icon: Package },
     { path: '/blog', label: 'Beauty Tips' },
     { path: '/about', label: 'About Us' },
@@ -126,7 +127,8 @@ function Navigation() {
                 to={link.path}
                 {...prefetchHandlers(link.path)}
                 className={`px-3.5 py-2 rounded-full text-sm font-semibold transition-colors flex items-center gap-1.5 ${
-                  link.highlight ? 'bg-purple-50 text-purple-700 hover:bg-purple-100'
+                  link.doctor ? 'bg-rose-50 text-rose-700 hover:bg-rose-100'
+                    : link.highlight ? 'bg-purple-50 text-purple-700 hover:bg-purple-100'
                     : location.pathname === link.path ? 'bg-green-50 text-green-700'
                     : 'text-gray-700 hover:bg-gray-50'
                 }`}
@@ -135,6 +137,7 @@ function Navigation() {
                 {link.icon && <link.icon size={15} />}
                 {link.label}
                 {link.highlight && <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full">FREE</span>}
+                {link.doctor && <span className="text-[10px] bg-rose-600 text-white px-1.5 py-0.5 rounded-full">₹999</span>}
               </Link>
             ))}
           </nav>
@@ -174,13 +177,15 @@ function Navigation() {
                     <Link to={link.path} onClick={() => setIsMenuOpen(false)}
                       {...prefetchHandlers(link.path)}
                       className={`block py-3.5 px-4 rounded-xl text-base font-medium transition-all flex items-center gap-2 ${
-                        link.highlight ? 'bg-purple-50 text-purple-600 border border-purple-200'
+                        link.doctor ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                          : link.highlight ? 'bg-purple-50 text-purple-600 border border-purple-200'
                           : location.pathname === link.path ? 'bg-green-50 text-green-600'
                           : 'text-gray-700 hover:bg-gray-50'
                       }`} data-testid={`nav-link-${link.label.toLowerCase().replace(/\s/g, '-')}`}>
                       {link.icon && <link.icon size={18} />}
                       {link.label}
                       {link.highlight && <span className="ml-auto text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">FREE</span>}
+                      {link.doctor && <span className="ml-auto text-xs bg-rose-600 text-white px-2 py-0.5 rounded-full">₹999</span>}
                     </Link>
                   </li>
                 ))}

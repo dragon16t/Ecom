@@ -1,0 +1,46 @@
+{
+  "summary": "Full backend + frontend smoke of the new PAID Dermatologist Consultation feature (POST /doctor-consultation/*). Backend pytest suite (23 cases) green covering config, create-order, validation, signature failure path, admin protection, admin config CRUD, bookings list/filter/pagination, status PATCH including invalid value, Cloudinary photo+PDF uploads, wrong-MIME 400, >10MB 413, and file deletion. Frontend Playwright smoke green on /doctor-consultation (title, price ₹999, 3 doctor cards, 6 reviews, disclaimer mentions Medicine, form validation, valid input triggers /create-order=200 and injects/loads Razorpay) and on /admin/doctor-bookings (tab-config opens editor, cfg-price-input=999, save→1099 persists across reload, restored to 999). Desktop + mobile navigation both expose 'Doctor Consult' link with ₹999 badge routing to /doctor-consultation.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "PUT /api/doctor-consultation/admin/config",
+        "issue": "Spec requires price=0 → HTTP 400, but implementation does max(1, int(price)) so price=0 silently becomes 1 and returns 200. Negative numbers behave the same (coerced to 1). Recommend explicit if price <= 0: raise HTTPException(400, 'price must be a positive integer')."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_doctor_consultation_feb2026.py",
+    "/app/test_reports/pytest/doctor_consultation_feb2026.xml"
+  ],
+  "action_items": [
+    "(Minor) Harden price validation in PUT /admin/config to reject price<=0 with explicit 400 instead of coercing to 1.",
+    "(Optional) Razorpay live mode emits CORS-blocked lumberjack.razorpay.com/v1/track XHRs from the checkout overlay — cosmetic only, overlay still opens; mention in QA notes so it isn't mistaken for a real bug.",
+    "(Optional) Add data-testid='cfg-doctor-card-N' on each Expert Doctor card in AdminDoctorBookings so future tests can assert exactly 3 cards without relying on visual count."
+  ],
+  "critical_code_review_comments": [
+    "doctor_consultation.py:189 booking_id format is dc_<12-hex> ✓ and razorpay receipt is also set to the booking_id — matches spec.",
+    "verify-payment correctly flips payment_status to 'failed' on bad signature BEFORE raising 400 (lines 245-249) so admin can audit failed attempts. Confirmed via DB read-back in test_wrong_signature_400.",
+    "Email send is wrapped in try/except inside verify-payment (lines 267-270), so a failing SMTP cannot block payment confirmation. Spec requirement satisfied.",
+    "Cloudinary uploads go to folder celesta-glow/consultations/{booking_id}/ with public_id baked-in (line 477-479). resource_type='raw' is correctly used for PDF reports so the file is downloadable, not transformed.",
+    "MAX_UPLOAD_BYTES=10MB enforced AFTER file.read() — fine for 10MB cap but a malicious 1GB upload would still spool into memory before rejection. Low risk given admin-only endpoint, but could be tightened by checking Content-Length header up front.",
+    "admin/bookings list filter hard-codes payment_status='paid' (line 378). This is intentional per spec (admin only sees paid bookings) but means failed/pending bookings can only be reached via the singleton GET /admin/bookings/{id}. Documented for next agent.",
+    "DoctorConsultationPage.js:14-22 lazy-loads checkout.razorpay.com via DOM injection on first click — confirmed by Playwright: script tag injected, window.Razorpay defined, /create-order returned 200.",
+    "BookingPatch model uses raw string for status; validation done server-side in admin_patch_booking against the allowed set. Cleaner option would be a Literal[...] type in pydantic v2, but current approach works and returns 400 'Invalid status' on bad input (confirmed by test_patch_invalid_status)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_doctor_consultation_feb2026.py (new)"
+  ],
+  "success_rate": {"backend": "100% (23/23)", "frontend": "100% on all spec items"},
+  "test_credentials": "X-Admin-Token: celestaglow2024 (from /app/memory/test_credentials.md) — verified working",
+  "seed_data_creation": "Created 1 test booking dc_<hex> with email TEST_pytest@example.com, status flipped to paid then to consulted via tests. Left in DB as TEST_-prefixed evidence; safe to ignore or clean.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend tests live in /app/backend/tests/test_doctor_consultation_feb2026.py and run in ~3 min via the preview ingress (uses a Session with HTTPAdapter retries and a _req() wrapper that retries ReadTimeouts — the preview URL is flaky on first cold connections). Frontend testids: doctor-consult-title, consult-price, doctor-card-{id}, review-card-{id}, dc-name-input, dc-phone-input, dc-email-input, dc-notes-input, dc-pay-btn, dc-error, booking-success-title, back-to-home-btn, nav-desktop-doctor-consult, nav-link-doctor-consult, menu-button. Admin testids: tab-config, cfg-price-input, save-config-btn. Admin login is via the password field at /admin (no testid; use input[type=password] + Enter). Razorpay is LIVE mode (rzp_live_*) — never auto-complete a real payment.",
+  "rca of the issue": "n/a — no failing functionality; one spec-deviation flagged on price=0 acceptance."
+}
