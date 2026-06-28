@@ -86,7 +86,7 @@ export default function DoctorConsultationPage() {
         description: 'Dermatologist Consultation',
         order_id: order.razorpay_order_id,
         prefill: { name: form.name, email: form.email, contact: phone },
-        theme: { color: '#be185d' },
+        theme: { color: '#059669' },
         handler: async (resp) => {
           try {
             await axios.post(`${API}/doctor-consultation/verify-payment`, {
@@ -124,20 +124,20 @@ export default function DoctorConsultationPage() {
 
   if (!config) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-rose-50 to-white">
-        <Loader2 className="w-8 h-8 animate-spin text-rose-500" />
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-emerald-50 to-white">
+        <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
       </div>
     );
   }
 
   if (success) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-rose-50 via-white to-rose-50 flex flex-col">
+      <div className="min-h-screen bg-gradient-to-b from-emerald-50 via-white to-emerald-50 flex flex-col">
         <div className="max-w-2xl mx-auto px-5 pt-6 w-full">
           <BackButton />
         </div>
         <div className="flex-1 flex items-center justify-center px-5">
-          <div className="max-w-md w-full bg-white rounded-3xl shadow-xl border border-rose-100 p-8 text-center">
+          <div className="max-w-md w-full bg-white rounded-3xl shadow-xl border border-emerald-100 p-8 text-center">
             <div className="w-20 h-20 mx-auto rounded-full bg-emerald-100 flex items-center justify-center mb-5">
               <CheckCircle2 className="w-12 h-12 text-emerald-600" />
             </div>
@@ -148,14 +148,14 @@ export default function DoctorConsultationPage() {
               Hi <strong>{success.name}</strong>, our certified dermatologist will call you on{' '}
               <strong>+91 {success.phone}</strong> within 24 hours.
             </p>
-            <div className="bg-rose-50 border border-rose-100 rounded-xl p-3 text-sm text-rose-800 mb-5">
+            <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-sm text-emerald-800 mb-5">
               Booking ID: <span className="font-mono font-semibold">{success.booking_id}</span>
               <br />
               A confirmation has been sent to <strong>{success.email}</strong>
             </div>
             <button
               onClick={() => navigate('/')}
-              className="w-full py-3 rounded-full bg-gradient-to-r from-rose-600 to-pink-600 text-white font-semibold hover:from-rose-700 hover:to-pink-700 transition-all"
+              className="w-full py-3 rounded-full bg-gradient-to-r from-emerald-600 to-green-600 text-white font-semibold hover:from-emerald-700 hover:to-green-700 transition-all"
               data-testid="back-to-home-btn"
             >
               Back to Home
@@ -167,7 +167,7 @@ export default function DoctorConsultationPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-rose-50 via-white to-pink-50 pb-16">
+    <div className="min-h-screen bg-gradient-to-b from-emerald-50 via-white to-green-50 pb-16">
       <Helmet>
         <title>{`Dermatologist Consultation — Celesta Glow | ₹${config.price} only`}</title>
         <meta
@@ -183,7 +183,7 @@ export default function DoctorConsultationPage() {
       {/* HERO */}
       <section className="max-w-5xl mx-auto px-4 sm:px-6 pt-4 pb-8">
         <div className="text-center max-w-2xl mx-auto">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-rose-100 text-rose-700 text-xs font-semibold tracking-wider uppercase mb-4">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-semibold tracking-wider uppercase mb-4">
             <Stethoscope size={14} />
             Dermatologist Backed
           </div>
@@ -196,9 +196,9 @@ export default function DoctorConsultationPage() {
           </h1>
           <p className="text-gray-600 text-base sm:text-lg mb-6">{config.subtitle}</p>
 
-          <div className="inline-flex items-baseline gap-3 bg-white border border-rose-200 rounded-2xl px-5 py-3 shadow-sm">
+          <div className="inline-flex items-baseline gap-3 bg-white border border-emerald-200 rounded-2xl px-5 py-3 shadow-sm">
             <span className="text-xs text-gray-500 uppercase tracking-widest">Consultation</span>
-            <span className="text-3xl font-bold text-rose-700" data-testid="consult-price">
+            <span className="text-3xl font-bold text-emerald-700" data-testid="consult-price">
               ₹{config.price}
             </span>
             <span className="text-xs text-gray-400 line-through">₹1499</span>
@@ -206,13 +206,13 @@ export default function DoctorConsultationPage() {
 
           <div className="mt-5 flex flex-wrap items-center justify-center gap-3 text-xs sm:text-sm text-gray-600">
             <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-white rounded-full border border-gray-100">
-              <Clock size={14} className="text-rose-500" /> 30-min call
+              <Clock size={14} className="text-emerald-500" /> 30-min call
             </span>
             <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-white rounded-full border border-gray-100">
               <ShieldCheck size={14} className="text-emerald-500" /> Certified MD
             </span>
             <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-white rounded-full border border-gray-100">
-              <MessageSquare size={14} className="text-pink-500" /> WhatsApp follow-up
+              <MessageSquare size={14} className="text-green-500" /> WhatsApp follow-up
             </span>
           </div>
         </div>
@@ -220,12 +220,12 @@ export default function DoctorConsultationPage() {
 
       {/* BOOKING FORM */}
       <section className="max-w-2xl mx-auto px-4 sm:px-6 mb-12">
-        <div className="bg-white rounded-3xl shadow-xl border border-rose-100 overflow-hidden">
-          <div className="bg-gradient-to-r from-rose-600 to-pink-600 px-6 py-5 text-white">
+        <div className="bg-white rounded-3xl shadow-xl border border-emerald-100 overflow-hidden">
+          <div className="bg-gradient-to-r from-emerald-600 to-green-600 px-6 py-5 text-white">
             <h2 className="text-lg font-semibold flex items-center gap-2">
               <Sparkles size={18} /> Book Your Consultation
             </h2>
-            <p className="text-rose-100 text-sm mt-1">
+            <p className="text-emerald-100 text-sm mt-1">
               Fill your details, pay ₹{config.price} securely and a dermatologist will call you within 24 hours.
             </p>
           </div>
@@ -239,7 +239,7 @@ export default function DoctorConsultationPage() {
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 placeholder="As per your prescription"
-                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-transparent outline-none"
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
                 data-testid="dc-name-input"
               />
             </div>
@@ -258,7 +258,7 @@ export default function DoctorConsultationPage() {
                   }
                   placeholder="10-digit mobile"
                   inputMode="numeric"
-                  className="flex-1 px-4 py-3 border border-gray-200 rounded-r-xl focus:ring-2 focus:ring-rose-500 focus:border-transparent outline-none"
+                  className="flex-1 px-4 py-3 border border-gray-200 rounded-r-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
                   data-testid="dc-phone-input"
                 />
               </div>
@@ -272,7 +272,7 @@ export default function DoctorConsultationPage() {
                 value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
                 placeholder="you@email.com"
-                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-transparent outline-none"
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
                 data-testid="dc-email-input"
               />
             </div>
@@ -285,7 +285,7 @@ export default function DoctorConsultationPage() {
                 onChange={(e) => setForm({ ...form, notes: e.target.value })}
                 placeholder="Your skin concern, current routine, allergies, etc."
                 rows={3}
-                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-transparent outline-none resize-none"
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none resize-none"
                 data-testid="dc-notes-input"
               />
             </div>
@@ -299,7 +299,7 @@ export default function DoctorConsultationPage() {
             <button
               onClick={handleBook}
               disabled={submitting}
-              className="w-full py-4 rounded-full bg-gradient-to-r from-rose-600 to-pink-600 text-white font-semibold hover:from-rose-700 hover:to-pink-700 transition-all disabled:opacity-70 flex items-center justify-center gap-2 shadow-lg"
+              className="w-full py-4 rounded-full bg-gradient-to-r from-emerald-600 to-green-600 text-white font-semibold hover:from-emerald-700 hover:to-green-700 transition-all disabled:opacity-70 flex items-center justify-center gap-2 shadow-lg"
               data-testid="dc-pay-btn"
             >
               {submitting ? (
@@ -324,7 +324,7 @@ export default function DoctorConsultationPage() {
       {/* DOCTORS */}
       <section className="max-w-5xl mx-auto px-4 sm:px-6 mb-14">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-2 text-rose-700 text-xs font-semibold tracking-wider uppercase mb-2">
+          <div className="inline-flex items-center gap-2 text-emerald-700 text-xs font-semibold tracking-wider uppercase mb-2">
             <Award size={14} /> Our Experts
           </div>
           <h2
@@ -338,21 +338,21 @@ export default function DoctorConsultationPage() {
           {(config.doctors || []).map((d) => (
             <div
               key={d.id}
-              className="bg-white rounded-2xl border border-rose-100 p-5 hover:shadow-lg transition-shadow"
+              className="bg-white rounded-2xl border border-emerald-100 p-5 hover:shadow-lg transition-shadow"
               data-testid={`doctor-card-${d.id}`}
             >
               <div className="flex items-start gap-3 mb-3">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-rose-100 to-pink-100 flex items-center justify-center overflow-hidden border border-rose-200 shrink-0">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-100 to-green-100 flex items-center justify-center overflow-hidden border border-emerald-200 shrink-0">
                   {d.photo ? (
                     <img src={d.photo} alt={d.name} className="w-full h-full object-cover" />
                   ) : (
-                    <Stethoscope className="w-7 h-7 text-rose-600" />
+                    <Stethoscope className="w-7 h-7 text-emerald-600" />
                   )}
                 </div>
                 <div className="min-w-0">
                   <h3 className="font-semibold text-gray-900 leading-tight">{d.name}</h3>
                   <p className="text-xs text-gray-500 mt-0.5">{d.qualification}</p>
-                  <p className="text-xs text-rose-700 font-medium mt-1">
+                  <p className="text-xs text-emerald-700 font-medium mt-1">
                     {d.experience_years}+ years experience
                   </p>
                 </div>
@@ -382,11 +382,11 @@ export default function DoctorConsultationPage() {
             { icon: Phone, title: 'Doctor calls', desc: 'Within 24 hours' },
             { icon: Pill, title: 'Get routine', desc: 'Custom Rx + WhatsApp follow-up' },
           ].map((s, i) => (
-            <div key={s.title} className="text-center bg-white rounded-2xl border border-rose-50 p-4">
-              <div className="w-12 h-12 mx-auto rounded-full bg-gradient-to-br from-rose-100 to-pink-100 text-rose-600 flex items-center justify-center mb-2">
+            <div key={s.title} className="text-center bg-white rounded-2xl border border-emerald-50 p-4">
+              <div className="w-12 h-12 mx-auto rounded-full bg-gradient-to-br from-emerald-100 to-green-100 text-emerald-600 flex items-center justify-center mb-2">
                 <s.icon size={22} />
               </div>
-              <div className="text-xs text-rose-600 font-semibold mb-1">Step {i + 1}</div>
+              <div className="text-xs text-emerald-600 font-semibold mb-1">Step {i + 1}</div>
               <p className="font-semibold text-gray-900 text-sm">{s.title}</p>
               <p className="text-xs text-gray-500 mt-1">{s.desc}</p>
             </div>
@@ -397,7 +397,7 @@ export default function DoctorConsultationPage() {
       {/* REVIEWS */}
       <section className="max-w-5xl mx-auto px-4 sm:px-6 mb-14">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-2 text-rose-700 text-xs font-semibold tracking-wider uppercase mb-2">
+          <div className="inline-flex items-center gap-2 text-emerald-700 text-xs font-semibold tracking-wider uppercase mb-2">
             <Star size={14} className="fill-amber-400 text-amber-400" /> Patient stories
           </div>
           <h2
@@ -411,13 +411,13 @@ export default function DoctorConsultationPage() {
           {(config.reviews || []).map((r) => (
             <div
               key={r.id}
-              className="bg-white rounded-2xl border border-rose-50 p-5"
+              className="bg-white rounded-2xl border border-emerald-50 p-5"
               data-testid={`review-card-${r.id}`}
             >
               <StarRow rating={r.rating || 5} />
               <p className="text-sm text-gray-700 mt-3 leading-relaxed">{r.text}</p>
               <div className="mt-4 flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-rose-200 to-pink-200 flex items-center justify-center text-rose-700 font-semibold text-sm">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-200 to-green-200 flex items-center justify-center text-emerald-700 font-semibold text-sm">
                   {(r.name || '?').charAt(0)}
                 </div>
                 <div>

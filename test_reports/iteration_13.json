@@ -1,0 +1,93 @@
+{
+  "summary": "Frontend-only smoke test of (1) Doctor Consultation green/emerald theme and (2) AdminOrders P1 — status badges on each card, status banner in detail modal, calendar popover filter, dropdown filter regression. All requested functionality works end-to-end. 37 live orders in the preview DB covered Confirmed/Shipped/In Transit/Delivered statuses.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Hamburger menu (global header)",
+        "issues": [
+          "The hamburger menu still styles the 'Doctor Consult ₹999' link with rose colors (bg-rose-50 text-rose-700 + bg-rose-600 ₹999 badge). The destination /doctor-consultation page is now fully green/emerald, so the rose entry-point feels inconsistent. Functional navigation works (rose link → green page). Decide whether to repaint the menu link to emerald for theme parity."
+        ]
+      }
+    ]
+  },
+  "tests_executed": {
+    "doctor_consultation": {
+      "title_testid_present": true,
+      "title_text": "Dermatologist Consultation",
+      "price_testid_present": true,
+      "price_text": "₹999",
+      "pay_btn_class_includes_emerald_gradient": true,
+      "pay_btn_no_rose_or_pink": true,
+      "dermatologist_pill_class": "bg-emerald-100 text-emerald-700",
+      "book_form_header_gradient": "from-emerald-600 to-green-600",
+      "feature_pills_use_emerald_icons": true,
+      "no_rose_or_pink_inside_doctor_consult_section": true,
+      "rose_pink_in_DOM_outside_page": "Only present in shared header hamburger 'Doctor Consult ₹999' link — see design_issues."
+    },
+    "admin_orders_badges": {
+      "order_status_badge_present_on_each_card": true,
+      "sample_confirmed_badge_class": "bg-amber-100 text-amber-800 border-amber-200",
+      "sample_in_transit_badge_class": "bg-purple-100 text-purple-800 border-purple-200 (shipped + AWB resolves to in_transit)",
+      "delivered_badge_visible_emerald": true,
+      "label_text_correct": "Confirmed, In Transit, Delivered observed in live DOM"
+    },
+    "admin_order_detail_banner": {
+      "data_testid_present": true,
+      "label_ORDER_STATUS_present": true,
+      "status_name_present": "In Transit",
+      "awb_label_and_value_present": true,
+      "awb_value_observed": "37113010001665",
+      "gradient_class_for_in_transit": "from-purple-500 to-fuchsia-500"
+    },
+    "admin_orders_calendar": {
+      "open_calendar_btn_present": true,
+      "popover_opens_on_click": true,
+      "react_day_picker_rendered_day_buttons": 35,
+      "days_with_hasOrders_modifier_classes": ["31","1","11","15"],
+      "modifier_class_includes_after_bg_emerald_500": true,
+      "click_day_sets_from_and_to_to_same_iso_date": true,
+      "example_iso_set": "2026-06-05",
+      "clear_btn_resets_dates_to_empty": true
+    },
+    "admin_orders_dropdown_regression": {
+      "status_filter_shipped_filtered_to_2_orders": true,
+      "export_csv_btn_present": true,
+      "export_xlsx_btn_present": true
+    },
+    "homepage_smoke_mobile_393x852": {
+      "page_renders_without_console_errors": true,
+      "visible_images": 6,
+      "hamburger_menu_opens": true,
+      "doctor_consult_link_navigates_to_green_page": true
+    }
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_13.json",
+    "/app/test_reports/doctor_consult.png",
+    "/app/test_reports/dc_top.png",
+    "/app/test_reports/dc_form.png",
+    "/app/test_reports/admin_orders.png",
+    "/app/test_reports/order_detail.png"
+  ],
+  "action_items": [
+    "(OPTIONAL THEME PARITY) Repaint the 'Doctor Consult ₹999' link inside the hamburger nav (and any other shared-header place) from rose-50/rose-700/rose-600 to emerald-50/emerald-700/emerald-600 so the entry point matches the now-green page."
+  ],
+  "critical_code_review_comments": [
+    "STATUS_CONFIG is clean — single source of truth for icon+color+label across badge/banner/dropdown. Good.",
+    "resolveStatus() correctly auto-promotes 'shipped + awb_number' → 'in_transit'. Confirmed live with CG446980.",
+    "AdminOrders.js is 1071 lines — borderline. STATUS_CONFIG / OrderStatusBadge / OrderStatusBanner could be extracted to /components/admin/OrderStatus.jsx to keep this file under 700 lines (long-term hygiene, not blocking).",
+    "Calendar popover uses a fixed-position invisible overlay (inset-0 z-30) for click-outside — works, but consider closing on Escape key for accessibility.",
+    "modifiersClassNames.hasOrders uses 'after:bg-emerald-500' Tailwind arbitrary — verified rendering in DOM (after-pseudo classes present on 4 day cells). Theme regression for the public site (homepage / brand banner) still loads images and styles correctly — no Tailwind purge collateral damage observed."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (not requested)", "frontend": "100% of requested checks"},
+  "test_credentials": "X-Admin-Token: celestaglow2024 (also used as admin login password). Set via localStorage.setItem('adminToken','celestaglow2024').",
+  "seed_data_creation": "None. Used the existing 37 live orders in the preview DB (covered confirmed/shipped/in_transit/delivered statuses naturally).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Doctor Consult page = fully emerald/green now. Admin Orders: each card has data-testid='order-status-badge-<id>', modal has data-testid='order-detail-status-banner', toolbar has data-testid='open-calendar-btn' / 'orders-calendar-popover' / 'calendar-clear-btn'. resolveStatus auto-converts shipped+AWB → in_transit (purple). The only outstanding (non-blocking) item is whether to repaint the hamburger-menu 'Doctor Consult ₹999' link from rose to emerald for theme parity — functional, just visual inconsistency.",
+  "rca of the issue": "N/A — no bugs found. The only finding is a theme-parity inconsistency in the global hamburger menu (rose link → green page); not a defect, just a UX consistency suggestion."
+}

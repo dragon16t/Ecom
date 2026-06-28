@@ -1,13 +1,89 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { 
   Package, ChevronLeft, Search, Filter, Download,
-  Phone, MapPin, Calendar, IndianRupee, Truck, CheckCircle, X, Edit2, Save, ExternalLink, MessageCircle
+  Phone, MapPin, Calendar, IndianRupee, Truck, CheckCircle, X, Edit2, Save, ExternalLink, MessageCircle,
+  Clock, ShoppingBag, RotateCcw, XCircle, CalendarDays, ChevronRight,
 } from 'lucide-react';
 import { getAdminToken } from '../../utils/adminAuth';
+import { Calendar as CalendarUI } from '../../components/ui/calendar';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+
+// ---------------------------------------------------------------------------
+// Status visual config — single source of truth for icon + color + label.
+// Used by the order card pill, the order detail banner, and the filter pills.
+// ---------------------------------------------------------------------------
+const STATUS_CONFIG = {
+  confirmed: { label: 'Confirmed',  icon: ShoppingBag, pill: 'bg-amber-100 text-amber-800 border-amber-200',
+               banner: 'from-amber-500 to-orange-500', dot: 'bg-amber-500' },
+  processing:{ label: 'Processing', icon: Clock,       pill: 'bg-blue-100 text-blue-800 border-blue-200',
+               banner: 'from-blue-500 to-sky-500',    dot: 'bg-blue-500' },
+  shipped:   { label: 'Shipped',    icon: Truck,       pill: 'bg-indigo-100 text-indigo-800 border-indigo-200',
+               banner: 'from-indigo-500 to-purple-500',dot: 'bg-indigo-500' },
+  in_transit:{ label: 'In Transit', icon: Truck,       pill: 'bg-purple-100 text-purple-800 border-purple-200',
+               banner: 'from-purple-500 to-fuchsia-500',dot: 'bg-purple-500' },
+  delivered: { label: 'Delivered',  icon: CheckCircle, pill: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+               banner: 'from-emerald-500 to-green-500',dot: 'bg-emerald-500' },
+  cancelled: { label: 'Cancelled',  icon: XCircle,     pill: 'bg-rose-100 text-rose-800 border-rose-200',
+               banner: 'from-rose-500 to-red-500',    dot: 'bg-rose-500' },
+  returned:  { label: 'Returned',   icon: RotateCcw,   pill: 'bg-stone-200 text-stone-800 border-stone-300',
+               banner: 'from-stone-500 to-stone-600', dot: 'bg-stone-500' },
+};
+
+function resolveStatus(order) {
+  // Show "In Transit" when an AWB exists + status is shipped (Delhivery picked it up)
+  const s = (order?.status || 'confirmed').toLowerCase();
+  if (s === 'shipped' && order?.awb_number) return 'in_transit';
+  return STATUS_CONFIG[s] ? s : 'confirmed';
+}
+
+function OrderStatusBadge({ order, size = 'sm' }) {
+  const key = resolveStatus(order);
+  const cfg = STATUS_CONFIG[key];
+  const Icon = cfg.icon;
+  const cls = size === 'lg' ? 'px-3 py-1.5 text-sm gap-2' : 'px-2.5 py-1 text-xs gap-1.5';
+  return (
+    <span
+      className={`inline-flex items-center rounded-full font-semibold border ${cls} ${cfg.pill}`}
+      data-testid={`order-status-badge-${order.order_id}`}
+    >
+      <Icon size={size === 'lg' ? 16 : 12} />
+      {cfg.label}
+    </span>
+  );
+}
+
+function OrderStatusBanner({ order }) {
+  const key = resolveStatus(order);
+  const cfg = STATUS_CONFIG[key];
+  const Icon = cfg.icon;
+  return (
+    <div
+      className={`relative overflow-hidden rounded-2xl bg-gradient-to-r ${cfg.banner} text-white px-5 py-4 shadow-md`}
+      data-testid="order-detail-status-banner"
+    >
+      <div className="flex items-center gap-3">
+        <div className="w-11 h-11 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center shrink-0">
+          <Icon size={22} />
+        </div>
+        <div>
+          <p className="text-[10px] tracking-widest font-semibold uppercase text-white/85">Order status</p>
+          <p className="text-xl font-bold leading-tight">{cfg.label}</p>
+        </div>
+        {order?.awb_number && (
+          <div className="ml-auto text-right">
+            <p className="text-[10px] tracking-widest font-semibold uppercase text-white/80">AWB</p>
+            <p className="text-sm font-mono font-semibold">{order.awb_number}</p>
+          </div>
+        )}
+      </div>
+      <span className="absolute -right-6 -top-6 w-24 h-24 rounded-full bg-white/10" />
+      <span className="absolute -right-10 -bottom-10 w-32 h-32 rounded-full bg-white/5" />
+    </div>
+  );
+}
 
 function AdminOrders() {
   const [orders, setOrders] = useState([]);
@@ -29,6 +105,45 @@ function AdminOrders() {
   const [notesLoading, setNotesLoading] = useState(false);
   const navigate = useNavigate();
   const adminToken = getAdminToken();
+  const [calendarOpen, setCalendarOpen] = useState(false);
+
+  // Sorted unique dates that have orders — used by the calendar to highlight
+  // dates with activity. Tapping any of those dates filters orders to that day.
+  const orderDateModifier = useMemo(() => {
+    const set = new Set();
+    for (const o of orders) {
+      if (!o?.created_at) continue;
+      try {
+        const d = new Date(o.created_at);
+        set.add(d.toISOString().slice(0, 10));
+      } catch (_) { /* ignore parse failures */ }
+    }
+    return Array.from(set).map((s) => {
+      const [y, m, d] = s.split('-').map(Number);
+      return new Date(y, m - 1, d);
+    });
+  }, [orders]);
+
+  const selectedCalendarDate = useMemo(() => {
+    if (dateFrom && dateFrom === dateTo) {
+      const [y, m, d] = dateFrom.split('-').map(Number);
+      if (y && m && d) return new Date(y, m - 1, d);
+    }
+    return null;
+  }, [dateFrom, dateTo]);
+
+  const onCalendarPick = (d) => {
+    if (!d) {
+      setDateFrom('');
+      setDateTo('');
+      setCalendarOpen(false);
+      return;
+    }
+    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    setDateFrom(iso);
+    setDateTo(iso);
+    setCalendarOpen(false);
+  };
 
   // Load notes + audit when order detail opens
   useEffect(() => {
@@ -328,6 +443,59 @@ function AdminOrders() {
               <button onClick={() => setDatePreset('week')} className="text-xs font-semibold px-2.5 py-1.5 bg-stone-50 hover:bg-stone-100 text-gray-700 rounded-md">Last 7d</button>
               <button onClick={() => setDatePreset('month')} className="text-xs font-semibold px-2.5 py-1.5 bg-stone-50 hover:bg-stone-100 text-gray-700 rounded-md">Last 30d</button>
               <button onClick={() => setDatePreset('clear')} className="text-xs font-semibold px-2.5 py-1.5 bg-stone-50 hover:bg-stone-100 text-gray-500 rounded-md">All time</button>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setCalendarOpen((v) => !v)}
+                  className={`text-xs font-semibold px-2.5 py-1.5 rounded-md inline-flex items-center gap-1 ${
+                    selectedCalendarDate ? 'bg-emerald-600 text-white' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700'
+                  }`}
+                  data-testid="open-calendar-btn"
+                >
+                  <CalendarDays size={13} />
+                  {selectedCalendarDate
+                    ? selectedCalendarDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+                    : 'Calendar'}
+                </button>
+                {calendarOpen && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-30"
+                      onClick={() => setCalendarOpen(false)}
+                    />
+                    <div
+                      className="absolute left-0 mt-2 z-40 bg-white border border-gray-200 rounded-xl shadow-2xl p-2"
+                      data-testid="orders-calendar-popover"
+                    >
+                      <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider px-2 pt-1 pb-2">
+                        Tap a date to see orders for that day
+                      </p>
+                      <CalendarUI
+                        mode="single"
+                        selected={selectedCalendarDate || undefined}
+                        onSelect={onCalendarPick}
+                        modifiers={{ hasOrders: orderDateModifier }}
+                        modifiersClassNames={{
+                          hasOrders: 'relative font-semibold after:absolute after:bottom-1 after:left-1/2 after:-translate-x-1/2 after:w-1 after:h-1 after:bg-emerald-500 after:rounded-full',
+                        }}
+                      />
+                      <div className="flex items-center justify-between px-2 py-1.5 border-t border-gray-100 text-[11px]">
+                        <span className="text-gray-500">
+                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1" />
+                          Day with orders
+                        </span>
+                        <button
+                          onClick={() => onCalendarPick(null)}
+                          className="text-emerald-700 font-semibold hover:underline"
+                          data-testid="calendar-clear-btn"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
             <div className="flex-1" />
             <div className="flex gap-2">
@@ -474,8 +642,9 @@ function AdminOrders() {
                   <div className="flex-1 cursor-pointer" onClick={() => setSelectedOrder(order)}>
                 <div className="flex items-start justify-between mb-3">
                   <div>
-                    <div className="flex items-center gap-2 mb-1">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <span className="font-bold text-gray-900">{order.order_id}</span>
+                      <OrderStatusBadge order={order} />
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                         order.payment_method === 'COD' 
                           ? 'bg-yellow-100 text-yellow-700' 
@@ -551,7 +720,12 @@ function AdminOrders() {
                 ✕
               </button>
             </div>
-            
+
+            {/* Prominent top-of-page status banner — "In Transit / Delivered" etc. */}
+            <div className="mb-5">
+              <OrderStatusBanner order={selectedOrder} />
+            </div>
+
             <div className="space-y-4">
               <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
                 <span className="text-gray-600">Order ID</span>
@@ -771,7 +945,7 @@ function AdminOrders() {
                         <span>
                           <span className="font-bold text-stone-700">{ev.event}</span>
                           {ev.old_status && <span> · {ev.old_status} → {ev.new_status}</span>}
-                          {ev.note && <span> · "{ev.note.slice(0, 60)}{ev.note.length > 60 ? '…' : ''}"</span>}
+                          {ev.note && <span> · &quot;{ev.note.slice(0, 60)}{ev.note.length > 60 ? '…' : ''}&quot;</span>}
                           {ev.author && <span className="text-stone-400"> by {ev.author}</span>}
                         </span>
                       </li>
