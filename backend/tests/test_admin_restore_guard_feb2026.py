@@ -14,7 +14,7 @@ import asyncio
 import requests
 import pytest
 
-BASE_URL = (os.environ.get("REACT_APP_BACKEND_URL") or "https://weather-preview-6.preview.emergentagent.com").rstrip("/")
+BASE_URL = (os.environ.get("REACT_APP_BACKEND_URL") or "http://localhost:8001").rstrip("/")
 ADMIN_TOKEN = "celestaglow2024"
 TIMEOUT = 30
 
