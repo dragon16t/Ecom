@@ -553,7 +553,43 @@ async def auto_restore_if_empty(db, force: bool = False) -> Dict[str, Any]:
     # most collections are near-empty.
     products_empty = counts.get("products", 0) < 5
     threshold = 0.5  # >=50% of snapshot collections look empty
-    needs_restore = force or products_empty or (near_empty / max(1, len(SNAPSHOT_COLLECTIONS))) >= threshold
+
+    # SKELETON-STATE DETECTION (P0 fix Feb-2026): even if products/concerns
+    # are populated by canonical seeders, the admin-uploaded `image` URLs
+    # may all be missing. That's the failure mode the user reported —
+    # "site reverts to default emojis on pod restart". If a snapshot
+    # anchor exists in admin_settings AND a majority of concerns/categories
+    # have NO `image` field, treat the DB as wiped and trigger restore.
+    skeleton_state = False
+    try:
+        meta = await db.admin_settings.find_one(
+            {"type": "catalog_backup"},
+            {"_id": 0, "current_full_public_id": 1, "incrementals": 1},
+        ) or {}
+        has_snapshot_anchor = bool(meta.get("current_full_public_id")) or bool(meta.get("incrementals"))
+        if has_snapshot_anchor:
+            checks = []
+            for col in ("concerns", "categories", "subcategories"):
+                total = counts.get(col, 0)
+                if total <= 0:
+                    continue
+                with_image = await db[col].count_documents({
+                    "$or": [
+                        {"image": {"$regex": "^https?://", "$options": "i"}},
+                        {"image_url": {"$regex": "^https?://", "$options": "i"}},
+                    ]
+                })
+                # Treat collection as skeleton if <20% of rows carry an image
+                checks.append((with_image / total) < 0.20)
+            if checks and sum(checks) / len(checks) >= 0.5:
+                skeleton_state = True
+                logger.warning(
+                    "[catalog_backup] skeleton-state detected (rows exist but admin images missing) — triggering restore"
+                )
+    except Exception as exc:
+        logger.warning(f"[catalog_backup] skeleton-state probe failed: {exc}")
+
+    needs_restore = force or products_empty or skeleton_state or (near_empty / max(1, len(SNAPSHOT_COLLECTIONS))) >= threshold
     if not needs_restore:
         logger.info("Snapshot collections look populated %s — skipping auto-restore", counts)
         return {"restored": False, "reason": "already populated", "counts": counts}
@@ -692,7 +728,8 @@ async def auto_restore_if_empty(db, force: bool = False) -> Dict[str, Any]:
         # Map pid -> entry so we can merge with Cloudinary listing
         seen = {(i.get("public_id") or ""): i for i in listed_incs if i.get("public_id")}
         # Cloudinary listing across BOTH accounts (current + legacy)
-        import cloudinary as _cld, cloudinary.api as _capi
+        import cloudinary as _cld
+        import cloudinary.api as _capi
         creds_now = _cs._creds_cache  # type: ignore[attr-defined]
         legacy = os.environ.get("CLOUDINARY_LEGACY_CLOUD_NAME") or ""
         accounts = []

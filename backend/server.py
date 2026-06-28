@@ -3450,11 +3450,31 @@ async def startup_seed():
         await run_concerns_seed(db)
     except Exception as e:
         logging.error(f"Failed to seed concerns: {e}", exc_info=True)
+    # ---- Taxonomy auto-restore from Cloudinary snapshot (RUN FIRST) ----
+    # CRITICAL ORDERING (Feb-2026): restore runs BEFORE the canonical taxonomy
+    # reset so the version sentinel + admin-curated images come back FIRST.
+    # If we restore AFTER reset, the version comparison below sees the wrong
+    # sentinel and the canonical reset wipes images on every boot. With this
+    # ordering the restored `site_settings.taxonomy_canonical_version` is
+    # checked next and the reset block becomes a no-op when already applied.
+    try:
+        from services import catalog_backup as _cb
+        restore_res = await _cb.auto_restore_if_empty(db)
+        if restore_res.get("restored"):
+            logging.info(f"[catalog_backup] auto-restored taxonomy: {restore_res}")
+    except Exception as e:
+        logging.warning(f"[catalog_backup] auto-restore skipped: {e}")
     # Apply the CANONICAL taxonomy (Jan 2026 user spec): 13 skincare concerns
     # (each with `subs` array), 16 skincare categories, 7 cosmetics categories.
     # Runs ONCE per version on startup (sentinel: taxonomy_canonical_version).
     # Also re-classifies every product and computes filter tags.
-    CANONICAL_VERSION = "2026-01-cosmetics-v4"
+    #
+    # CRITICAL: this MUST match the version string written by
+    # taxonomy_canonical.reset_canonical_taxonomy (line ~1644). When they
+    # diverge, the reset re-runs on every pod boot and `delete_many` wipes
+    # admin-uploaded image / icon URLs on concerns + categories. This was
+    # the P0 "site reverts to emojis" loophole reported by the user.
+    CANONICAL_VERSION = "2026-02-granular-subs-v5"
     try:
         settings = await db.site_settings.find_one(
             {"_id": "main"},
@@ -3485,31 +3505,17 @@ async def startup_seed():
         await product_routes._refresh_admin_pw_cache()
     except Exception as e:
         logging.error(f"Failed to refresh admin pw cache: {e}")
-    # ---- Taxonomy auto-restore from Cloudinary snapshot ----
-    # Pod-internal MongoDB is ephemeral; on a fresh deploy our taxonomy starts
-    # empty even though seed scripts run. If a previous deploy uploaded a
-    # snapshot to Cloudinary, restore it so admin-curated images / records /
-    # subcategory structure survive across redeploys. Safe + idempotent.
+    # ---- Post-restore master-brain reclassify ----
+    # Now that the snapshot + canonical taxonomy are both applied, run the
+    # reclassifier so master-brain owns taxonomy / brand / is_active fields
+    # deterministically. Image / icon / accent fields are NEVER touched by
+    # this pass — _safe_set() in taxonomy_canonical guarantees it.
     try:
-        from services import catalog_backup as _cb
-        restore_res = await _cb.auto_restore_if_empty(db)
-        if restore_res.get("restored"):
-            logging.info(f"[catalog_backup] auto-restored taxonomy: {restore_res}")
-            # ---- POST-RESTORE MASTER-BRAIN PASS ----
-            # The snapshot may carry stale taxonomy / brand / is_active values
-            # that pre-date our latest engine improvements. Re-run the canonical
-            # reclassifier so the master brain (sub-brand detection, haircare
-            # hiding, concern inference, brand normalisation) deterministically
-            # owns those fields. Image / icon / accent fields are NEVER touched
-            # by this pass — _safe_set() in taxonomy_canonical guarantees it.
-            try:
-                from services.taxonomy_canonical import reclassify_all_products as _rc
-                rerun = await _rc(db)
-                logging.info(f"[taxonomy_canonical] post-restore reclassify: updated={rerun.get('updated')}")
-            except Exception as e:
-                logging.warning(f"[taxonomy_canonical] post-restore reclassify skipped: {e}")
+        from services.taxonomy_canonical import reclassify_all_products as _rc
+        rerun = await _rc(db)
+        logging.info(f"[taxonomy_canonical] post-startup reclassify: updated={rerun.get('updated')}")
     except Exception as e:
-        logging.warning(f"[catalog_backup] auto-restore skipped: {e}")
+        logging.warning(f"[taxonomy_canonical] post-startup reclassify skipped: {e}")
 
     # ---- Daily midnight-IST backup scheduler ----
     # Replaces the previous per-write 25-second debounce. One backup per day,

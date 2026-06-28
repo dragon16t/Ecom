@@ -1541,8 +1541,42 @@ async def reset_canonical_taxonomy(db) -> dict:
 
     Anti-aging concern is preserved (flagship line uses it; we re-create it as
     `aging` for the new spec but keep `anti-aging` as an alias for legacy data).
+
+    SAFETY (P0 fix Feb-2026): admin-curated visual fields — `image`, `icon`
+    overrides, `accent_from`, `accent_to`, `accent_text`, `tagline` — are
+    READ from existing rows BEFORE the delete and MERGED back in after the
+    canonical re-insert. Without this guard, every taxonomy reset wiped the
+    Cloudinary image URLs admins uploaded for category/concern tiles and the
+    live site reverted to the default emoji icons until the next manual
+    restore. Files-of-reference: catalog_backup.py STICKY_FIELDS.
     """
     now = _now()
+
+    # 0. Read existing admin-curated visual fields BEFORE we wipe.
+    # These are the same fields catalog_backup.STICKY_FIELDS protects on
+    # restore — keep both lists in sync.
+    PRESERVE_FIELDS = ("image", "icon", "accent_from", "accent_to",
+                       "accent_text", "tagline", "description")
+
+    async def _snapshot_visuals(collection_name: str) -> dict:
+        out: dict = {}
+        try:
+            proj = {"_id": 0, "slug": 1, **{f: 1 for f in PRESERVE_FIELDS}}
+            async for row in db[collection_name].find({}, proj):
+                slug = row.get("slug")
+                if not slug:
+                    continue
+                kept = {f: row[f] for f in PRESERVE_FIELDS
+                        if row.get(f) not in (None, "", [], {})}
+                if kept:
+                    out[slug] = kept
+        except Exception as exc:
+            logger.warning(f"[taxonomy_canonical] visual snapshot {collection_name} failed: {exc}")
+        return out
+
+    preserved_concerns = await _snapshot_visuals("concerns")
+    preserved_categories = await _snapshot_visuals("categories")
+    preserved_subcategories = await _snapshot_visuals("subcategories")
 
     # 1. Wipe legacy concerns (keep none — full reset).
     await db.concerns.delete_many({})
@@ -1635,6 +1669,34 @@ async def reset_canonical_taxonomy(db) -> dict:
         await db.categories.insert_many(cat_docs, ordered=False)
     if sub_docs:
         await db.subcategories.insert_many(sub_docs, ordered=False)
+
+    # 6b. Re-apply admin-curated visual overrides captured before the wipe.
+    # We only $set fields that have a non-empty preserved value — so the
+    # canonical defaults (icon emojis, tagline, accent colors) survive when
+    # no admin override exists, but Cloudinary image URLs / custom icons /
+    # custom accent colors uploaded by the admin come straight back.
+    async def _reapply(collection_name: str, preserved: dict) -> int:
+        restored = 0
+        for slug, kept in preserved.items():
+            if not kept:
+                continue
+            try:
+                res = await db[collection_name].update_one(
+                    {"slug": slug}, {"$set": kept}
+                )
+                if res.matched_count:
+                    restored += 1
+            except Exception as exc:
+                logger.warning(f"[taxonomy_canonical] reapply {collection_name}/{slug} failed: {exc}")
+        return restored
+
+    re_concerns = await _reapply("concerns", preserved_concerns)
+    re_categories = await _reapply("categories", preserved_categories)
+    re_subcategories = await _reapply("subcategories", preserved_subcategories)
+    logger.info(
+        "[taxonomy_canonical] preserved admin visuals: concerns=%d, categories=%d, subcategories=%d",
+        re_concerns, re_categories, re_subcategories,
+    )
 
     # 7. Sentinel — block the legacy seeders from re-running.
     await db.site_settings.update_one(
