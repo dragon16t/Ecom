@@ -139,7 +139,7 @@ async def _serialize(db) -> Dict[str, Any]:
     return payload
 
 
-async def snapshot(db) -> Dict[str, Any]:
+async def snapshot(db, allow_skeleton: bool = False) -> Dict[str, Any]:
     """Full snapshot — compress + upload all snapshot collections.
 
     Dedupe: if the new payload's content hash matches the most recent FULL
@@ -149,10 +149,36 @@ async def snapshot(db) -> Dict[str, Any]:
     Retention: keeps the last 3 FULL snapshots PLUS every incremental whose
     `base_full` points to one of those 3 fulls. When a full is purged, ALL
     incrementals chained to it are purged too (no orphans, no duplicates).
+
+    SKELETON-STATE GUARD (Feb-2026 P0 fix): refuses to upload a full snapshot
+    while the DB looks like a freshly-seeded skeleton. Otherwise the
+    retention sweep would DELETE all good incrementals and pin a poisoned
+    full as the new baseline — making future restores load imageless data.
+    Pass `allow_skeleton=True` ONLY when you've just restored from chain
+    and explicitly want to anchor the post-restore state.
     """
     global _last_snapshot_at
     if not await _cs.ensure_configured(db):
         raise RuntimeError("Cloudinary not configured — cannot snapshot")
+    if not allow_skeleton:
+        try:
+            for col in ("concerns", "categories"):
+                total = await db[col].count_documents({})
+                if total < 5:
+                    continue
+                with_image = await db[col].count_documents({
+                    "image": {"$regex": "^https?://", "$options": "i"}
+                })
+                if (with_image / total) < 0.20:
+                    logger.warning(
+                        "[catalog_backup] SKELETON-STATE detected (%s: %d/%d with image) — "
+                        "refusing to upload FULL snapshot (would poison the baseline)",
+                        col, with_image, total,
+                    )
+                    return {"success": False, "reason": "skeleton state — full snapshot skipped",
+                            "skipped_skeleton": True}
+        except Exception as exc:
+            logger.warning("[catalog_backup] skeleton guard probe failed in full snapshot: %s", exc)
     payload = await _serialize(db)
     raw_json = json.dumps(payload, separators=(",", ":"), default=str).encode("utf-8")
 
@@ -321,9 +347,35 @@ async def incremental_snapshot(db) -> Dict[str, Any]:
     then fall through into the incremental flow. That guarantees admin
     image / icon uploads are captured the very first time a write happens
     after deployment.
+
+    SKELETON-STATE GUARD (Feb-2026 P0 fix): refuses to upload an incremental
+    while the DB looks like a freshly-seeded skeleton — i.e. concerns or
+    categories have rows but <20% carry an `image` URL. Without this guard,
+    pod restarts that beat the auto-restore would create a poison
+    incremental that captures the imageless state, and that incremental
+    would then "win" in any chain replay, undoing admin uploads.
     """
     if not await _cs.ensure_configured(db):
         return {"success": False, "reason": "cloudinary not configured"}
+    # Skeleton-state guard
+    try:
+        for col in ("concerns", "categories"):
+            total = await db[col].count_documents({})
+            if total < 5:
+                continue
+            with_image = await db[col].count_documents({
+                "image": {"$regex": "^https?://", "$options": "i"}
+            })
+            if (with_image / total) < 0.20:
+                logger.warning(
+                    "[catalog_backup] SKELETON-STATE detected (%s: %d/%d with image) — "
+                    "refusing to upload incremental to avoid poisoning the chain",
+                    col, with_image, total,
+                )
+                return {"success": False, "reason": "skeleton state — skipping to protect data integrity",
+                        "skipped_skeleton": True}
+    except Exception as exc:
+        logger.warning("[catalog_backup] skeleton guard probe failed: %s", exc)
     meta = await db.admin_settings.find_one({"type": "catalog_backup"}, {"_id": 0}) or {}
     current_full_id = meta.get("current_full_public_id")
     if not current_full_id:
@@ -455,70 +507,103 @@ def schedule_snapshot(db) -> None:
 
 async def _fetch_latest_snapshot(db) -> Optional[Dict[str, Any]]:
     """Pull the latest snapshot down from Cloudinary. Supports both gzipped
-    (current) and plain JSON (legacy v1) snapshots transparently."""
+    (current) and plain JSON (legacy v1) snapshots transparently.
+
+    P0 fix Feb-2026: searches BOTH the new and legacy Cloudinary accounts and
+    picks the NEWEST full snapshot by `created_at`, instead of trusting the
+    `latest_url` pinned in admin_settings (which can be stale — pinned to
+    a versioned URL like /v1780322944/latest that always serves the OLD
+    snapshot, even after a newer one is uploaded with the same public_id).
+    """
     if not await _cs.ensure_configured(db):
         return None
     creds = _cs._creds_cache  # type: ignore[attr-defined]
     cloud_name = creds.get("cloud_name") or os.environ.get("CLOUDINARY_CLOUD_NAME")
     if not cloud_name:
         return None
-    # 1) Prefer the versioned URL we persisted in Mongo on last snapshot
-    #    upload — bypasses Cloudinary's `latest` alias CDN cache entirely.
-    versioned: Optional[str] = None
+
+    import cloudinary as _cld
+    import cloudinary.api as _capi
+    import time as _time
+
+    # Build the list of accounts to search (current + legacy if configured)
+    accounts: List[tuple] = []
+    if cloud_name:
+        accounts.append((cloud_name, creds.get("api_key"), creds.get("api_secret")))
+    leg_cn = os.environ.get("CLOUDINARY_LEGACY_CLOUD_NAME") or ""
+    leg_k = os.environ.get("CLOUDINARY_LEGACY_API_KEY") or ""
+    leg_s = os.environ.get("CLOUDINARY_LEGACY_API_SECRET") or ""
+    if leg_cn and leg_k and leg_s and leg_cn != cloud_name:
+        accounts.append((leg_cn, leg_k, leg_s))
+
+    # 1) Find the NEWEST `full-*` snapshot across both accounts.
+    candidates_full: List[tuple] = []  # (created_at, url)
+    for cn, ak, sk in accounts:
+        try:
+            _cld.config(cloud_name=cn, api_key=ak, api_secret=sk)
+            r = _capi.resources(
+                type="upload", resource_type="raw",
+                prefix="celesta-glow/backups/full-", max_results=50,
+            )
+            for x in r.get("resources", []) or []:
+                if x.get("secure_url"):
+                    candidates_full.append((x.get("created_at", ""), x["secure_url"]))
+            # Also fetch the `latest` alias as a fallback anchor
+            try:
+                info = _capi.resource(CLOUDINARY_PUBLIC_ID, resource_type="raw")
+                if info and info.get("secure_url"):
+                    candidates_full.append((info.get("created_at", ""), info["secure_url"]))
+            except Exception:
+                pass
+        except Exception as exc:
+            logger.debug("Cloudinary listing failed for %s: %s", cn, exc)
+    # Restore original creds
+    if accounts:
+        try:
+            _cld.config(cloud_name=accounts[0][0], api_key=accounts[0][1], api_secret=accounts[0][2])
+        except Exception:
+            pass
+
+    # Sort newest-first by created_at, then fall back to the stored URL
+    candidates_full.sort(key=lambda x: x[0] or "", reverse=True)
+    cb = int(_time.time())
+    candidate_urls: List[str] = [u for _, u in candidates_full]
+
+    # Add the historical stored URL + cache-busted aliases as last-resort fallbacks
     try:
-        meta = await db.admin_settings.find_one({"type": "catalog_backup"}, {"_id": 0, "latest_url": 1})
+        meta = await db.admin_settings.find_one(
+            {"type": "catalog_backup"}, {"_id": 0, "latest_url": 1}
+        )
         if meta and meta.get("latest_url"):
-            versioned = meta["latest_url"]
+            candidate_urls.append(meta["latest_url"])
     except Exception:
         pass
+    candidate_urls.extend([
+        f"https://res.cloudinary.com/{cloud_name}/raw/upload/{CLOUDINARY_PUBLIC_ID}?_={cb}",
+        f"https://res.cloudinary.com/{cloud_name}/raw/upload/{CLOUDINARY_PUBLIC_ID}.json?_={cb}",
+    ])
+    if leg_cn and leg_cn != cloud_name:
+        candidate_urls.extend([
+            f"https://res.cloudinary.com/{leg_cn}/raw/upload/{CLOUDINARY_PUBLIC_ID}?_={cb}",
+            f"https://res.cloudinary.com/{leg_cn}/raw/upload/{CLOUDINARY_PUBLIC_ID}.json?_={cb}",
+        ])
 
-    # 2) If Mongo doesn't have the URL (e.g. fresh boot after redeploy where
-    #    admin_settings was wiped), ask Cloudinary directly for the current
-    #    version of the snapshot resource. This dodges the CDN edge cache
-    #    on `latest` aliases that previously made auto-restore pick up
-    #    stale snapshots after a redeploy.
-    if not versioned:
-        try:
-            import cloudinary.api as _capi
-            info = _capi.resource(CLOUDINARY_PUBLIC_ID, resource_type="raw")
-            if info and info.get("secure_url"):
-                versioned = info["secure_url"]
-        except Exception as exc:
-            logger.debug("Cloudinary admin API lookup failed: %s", exc)
+    if candidates_full:
+        logger.info(
+            "[catalog_backup] _fetch_latest_snapshot picked NEWEST full at %s",
+            candidates_full[0][0],
+        )
 
-    # 3) Fallback to the public `latest` alias (with cache-bust query string)
-    # on the CURRENT (new) Cloudinary account, then on the LEGACY (old) one.
-    # The user migrated to a new Cloudinary in Feb 2026 because the first
-    # account's storage filled up — but all the pre-migration snapshots
-    # still live on the legacy cloud's CDN. Trying both means we recover
-    # cleanly even if the new account's snapshot is missing (e.g. the very
-    # first boot after switching credentials).
-    import time as _time
-    cb = int(_time.time())
-    legacy_cloud = os.environ.get("CLOUDINARY_LEGACY_CLOUD_NAME") or ""
-    candidates = [
-        c for c in [
-            versioned,
-            f"https://res.cloudinary.com/{cloud_name}/raw/upload/{CLOUDINARY_PUBLIC_ID}?_={cb}",
-            f"https://res.cloudinary.com/{cloud_name}/raw/upload/{CLOUDINARY_PUBLIC_ID}.json?_={cb}",
-            (f"https://res.cloudinary.com/{legacy_cloud}/raw/upload/{CLOUDINARY_PUBLIC_ID}?_={cb}"
-             if legacy_cloud and legacy_cloud != cloud_name else None),
-            (f"https://res.cloudinary.com/{legacy_cloud}/raw/upload/{CLOUDINARY_PUBLIC_ID}.json?_={cb}"
-             if legacy_cloud and legacy_cloud != cloud_name else None),
-        ] if c
-    ]
-    for candidate in candidates:
+    for candidate in candidate_urls:
         try:
             r = requests.get(candidate, timeout=15)
             if r.status_code != 200:
                 continue
             body = r.content
-            # Try gzip first (current format)
             try:
                 decompressed = gzip.decompress(body)
                 return json.loads(decompressed.decode("utf-8"))
             except (OSError, json.JSONDecodeError):
-                # Fall back to plain JSON (legacy v1 snapshots)
                 txt = body.decode("utf-8", errors="ignore")
                 if txt.startswith("{"):
                     return json.loads(txt)

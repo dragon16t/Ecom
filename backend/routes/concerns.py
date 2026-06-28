@@ -766,6 +766,27 @@ async def catalog_backup_restore(
                    " — pass ?force=true to override.",
         )
     res["safety_snapshot"] = pre_snapshot_info
+
+    # POST-RESTORE FRESH BASELINE (Feb-2026 P0 fix): after a successful
+    # manual restore, take a NEW full snapshot. The skeleton-state guard
+    # inside snapshot() will refuse if the restore didn't fully bring back
+    # images. When it succeeds, the retention sweep prunes any
+    # skeleton-tainted incrementals from Cloudinary so future restores
+    # don't have to wade through poisoned files to find a good chain.
+    try:
+        fresh = await _catalog_backup.snapshot(db)
+        res["fresh_baseline"] = {
+            "uploaded": bool(fresh.get("success") and not fresh.get("skipped_skeleton")
+                             and not fresh.get("skipped_dedupe")),
+            "skipped_reason": fresh.get("reason"),
+            "created_at": fresh.get("created_at"),
+        }
+    except Exception as exc:
+        import logging as _logging
+        _logging.getLogger("catalog_backup_admin").warning(
+            "[catalog_backup] post-restore fresh snapshot failed: %s", exc
+        )
+        res["fresh_baseline"] = {"uploaded": False, "error": str(exc)}
     return res
 
 
