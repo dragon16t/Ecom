@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { cldOptim } from '../utils/productImage';
 
 /**
  * CircularCategoryStrip — Flipkart-Minutes-style horizontal strip of circular tiles.
@@ -140,7 +141,7 @@ function CircleItem({ item: it, routePrefix, fromColor, toColor, accent, testIdP
                 </span>
               ) : (
                 <img
-                  src={it.image}
+                  src={cldOptim(it.image, {w:200})}
                   alt={it.name}
                   loading="lazy"
                   decoding="async"

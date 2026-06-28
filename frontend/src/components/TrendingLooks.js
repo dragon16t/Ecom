@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { Sparkles } from 'lucide-react';
+import { cldOptim } from '../utils/productImage';
 
 /**
  * TrendingLooks — 4-tile grid for cosmetics home page showcasing different

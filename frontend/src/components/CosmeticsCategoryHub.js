@@ -18,6 +18,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronRight, ArrowRight } from 'lucide-react';
 import { cachedGet } from '../utils/apiCache';
+import { cldOptim } from '../utils/productImage';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -72,7 +73,7 @@ function SubcatTile({ subcat, count, accent, testIdPrefix }) {
         <div className="absolute inset-0" style={{ background: `linear-gradient(155deg, white 30%, ${accent}10)` }} />
         {subcat.image && (
           <img
-            src={subcat.image}
+            src={cldOptim(subcat.image, {w:400})}
             alt={subcat.name}
             className="absolute inset-0 w-full h-full object-cover opacity-90 group-hover:opacity-100 group-hover:scale-105 transition-all duration-700"
             loading="lazy"

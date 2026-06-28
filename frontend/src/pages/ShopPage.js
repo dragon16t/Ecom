@@ -10,6 +10,7 @@ import { shareProduct } from '../utils/shareProduct';
 import { cachedGet } from '../utils/apiCache';
 import { getSocialProof } from '../utils/socialProof';
 import SEOHead, { breadcrumbJsonLd } from '../components/SEOHead';
+import { cldOptim } from '../utils/productImage';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 

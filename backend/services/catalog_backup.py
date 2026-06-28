@@ -743,6 +743,29 @@ async def auto_restore_if_empty(db, force: bool = False) -> Dict[str, Any]:
         "site_settings": {"logo", "logo_url", "favicon", "splash_image", "hero_image"},
     }
 
+    # ------------------------------------------------------------------
+    # ADMIN_AUTHORITATIVE fields — these are SO sticky that even if the
+    # snapshot has a non-empty value for them, LOCAL ALWAYS WINS. Used for
+    # state the admin explicitly toggles (soft-delete via is_active=false,
+    # hide-from-niche flags, taxonomy reassignments). Restore must NOT
+    # undo these — otherwise admin "delete" / "hide" actions silently
+    # revert on the next manual restore.
+    # Bug fix Feb-2026: user reported "many deleted products coming back"
+    # and "anti-aging showing on skincare niche after restore".
+    # ------------------------------------------------------------------
+    ADMIN_AUTHORITATIVE: Dict[str, set] = {
+        "products":      {"is_active", "archived", "hidden", "is_deleted",
+                          "niche", "category", "subcategory", "hidden_niches"},
+        "concerns":      {"is_active", "hidden", "archived", "niche", "hidden_niches",
+                          "alias_of", "sort_order"},
+        "categories":    {"is_active", "hidden", "archived", "niche", "hidden_niches",
+                          "sort_order"},
+        "subcategories": {"is_active", "hidden", "archived", "niche", "hidden_niches",
+                          "sort_order", "parent_slug"},
+        "brands":        {"is_active", "hidden", "archived"},
+        "banners":       {"is_active", "hidden", "archived", "sort_order"},
+    }
+
     def _is_filled(v) -> bool:
         if v is None:
             return False
@@ -758,6 +781,7 @@ async def auto_restore_if_empty(db, force: bool = False) -> Dict[str, Any]:
             restored_counts[col] = 0
             continue
         sticky = STICKY_FIELDS.get(col, set())
+        authoritative = ADMIN_AUTHORITATIVE.get(col, set())
         try:
             inserted = 0
             updated = 0
@@ -773,16 +797,25 @@ async def auto_restore_if_empty(db, force: bool = False) -> Dict[str, Any]:
                     await db[col].insert_one(d)
                     inserted += 1
                 else:
-                    # Look at local first — if local has admin-curated sticky
-                    # values that the snapshot's copy doesn't, preserve them.
-                    if sticky:
-                        local = await db[col].find_one(pk, {"_id": 0, **{f: 1 for f in sticky}})
+                    # Look at local first — preserve admin-curated values.
+                    if sticky or authoritative:
+                        proj = {"_id": 0, **{f: 1 for f in (sticky | authoritative)}}
+                        local = await db[col].find_one(pk, proj)
                         if local:
                             payload = dict(d)
+                            # ADMIN_AUTHORITATIVE: local wins unconditionally
+                            # when set — protects soft-deletes (is_active=False),
+                            # hidden flags, niche reassignments etc. from being
+                            # silently reverted by an older snapshot.
+                            for f in authoritative:
+                                if f in local:  # admin has explicitly set it
+                                    payload.pop(f, None)
+                            # STICKY: local wins only when payload is empty
+                            # (so blank fills from a fresh full snapshot are
+                            # allowed, but admin uploads / overrides stay).
                             for f in sticky:
                                 local_v = local.get(f)
                                 if _is_filled(local_v) and not _is_filled(payload.get(f)):
-                                    # Keep local's curated value
                                     payload.pop(f, None)
                             d_to_set = payload
                         else:
@@ -883,6 +916,7 @@ async def auto_restore_if_empty(db, force: bool = False) -> Dict[str, Any]:
                 if col.endswith("__count") or not isinstance(docs, list):
                     continue
                 sticky = STICKY_FIELDS.get(col, set())
+                authoritative = ADMIN_AUTHORITATIVE.get(col, set())
                 for d in docs:
                     pk = None
                     for k in ("slug", "code", "id", "order_id", "combo_id", "_id"):
@@ -892,10 +926,14 @@ async def auto_restore_if_empty(db, force: bool = False) -> Dict[str, Any]:
                     if pk is None:
                         await db[col].insert_one(d)
                         continue
-                    if sticky:
-                        local = await db[col].find_one(pk, {"_id": 0, **{f: 1 for f in sticky}})
+                    if sticky or authoritative:
+                        proj = {"_id": 0, **{f: 1 for f in (sticky | authoritative)}}
+                        local = await db[col].find_one(pk, proj)
                         if local:
                             payload = dict(d)
+                            for f in authoritative:
+                                if f in local:
+                                    payload.pop(f, None)
                             for f in sticky:
                                 lv = local.get(f)
                                 if _is_filled(lv) and not _is_filled(payload.get(f)):

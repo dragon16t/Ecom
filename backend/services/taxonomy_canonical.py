@@ -1594,6 +1594,12 @@ async def reset_canonical_taxonomy(db) -> dict:
             "created_at": now, "updated_at": now,
         })
     # Legacy alias concern so old products tagged "anti-aging" still resolve.
+    # IMPORTANT (Feb-2026): kept under niche="anti-aging" (its OWN flagship
+    # niche) — never "skincare" — so it does NOT pollute the skincare niche's
+    # concern carousel. The `aging` concern is the canonical entry on
+    # skincare. Without this guard, both "Anti-Aging (Flagship)" and "Aging
+    # Concerns" would render side-by-side on /skincare which the user
+    # explicitly does not want.
     concern_docs.append({
         "slug": "anti-aging",
         "name": "Anti-Aging (Flagship)",
@@ -1603,7 +1609,7 @@ async def reset_canonical_taxonomy(db) -> dict:
         "accent_from": "#dcfce7", "accent_to": "#bbf7d0", "accent_text": "#14532d",
         "sort_order": 0,
         "is_active": True,
-        "niche": "skincare",
+        "niche": "anti-aging",
         "alias_of": "aging",
         "created_at": now, "updated_at": now,
     })

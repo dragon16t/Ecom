@@ -6,6 +6,7 @@ import BackButton from '../components/BackButton';
 import TrustStrip from '../components/TrustStrip';
 import { prefetchHandlers } from '../utils/routePrefetch';
 import { cachedGet } from '../utils/apiCache';
+import { cldOptim } from '../utils/productImage';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -153,7 +154,7 @@ function HubHero({ hero, query, setQuery }) {
         {hero.image_desktop ? (
           <picture>
             <source media="(max-width: 640px)" srcSet={hero.image_mobile || hero.image_desktop} />
-            <img src={hero.image_desktop} alt="" className="w-full h-full object-cover" loading="lazy" />
+            <img src={cldOptim(hero.image_desktop, {w:1600})} alt="" className="w-full h-full object-cover" loading="lazy" />
           </picture>
         ) : (
           <div className="w-full h-full" style={{ background: `linear-gradient(135deg, ${accent}10 0%, #fafaf9 60%, #fff 100%)` }} />
@@ -239,7 +240,7 @@ function NicheCard({ cfg, layout = 'left', testId }) {
         <div className={`relative aspect-[4/3] md:aspect-auto md:min-h-[320px] ${flip ? 'md:order-2' : ''}`}>
           {cfg.image ? (
             <img
-              src={cfg.image}
+              src={cldOptim(cfg.image, {w:500})}
               alt={cfg.title}
               loading="lazy"
               className="absolute inset-0 w-full h-full object-cover transition-transform duration-[1200ms] group-hover:scale-105"
@@ -330,7 +331,7 @@ function EditorPicksRow({ cfg, products }) {
             data-testid={`hub-pick-${p.slug}`}
           >
             <div className="relative aspect-[4/5] rounded-2xl overflow-hidden bg-stone-100 ring-1 ring-stone-200 shadow-sm group-hover:shadow-xl transition-all duration-500">
-              {p.images?.[0] && <img src={p.images[0]} alt={p.short_name || p.name} loading="lazy" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />}
+              {p.images?.[0] && <img src={cldOptim(p.images[0], {w:400})} alt={p.short_name || p.name} loading="lazy" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />}
               {i < 3 && (
                 <span className="absolute top-2.5 left-2.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black text-white shadow-md tracking-wider uppercase" style={{ background: i === 0 ? '#dc2626' : i === 1 ? '#ea580c' : '#ca8a04' }}>
                   <Flame size={9} /> #{i + 1}

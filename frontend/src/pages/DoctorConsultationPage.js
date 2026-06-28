@@ -50,6 +50,20 @@ export default function DoctorConsultationPage() {
       .catch(() => setError('Could not load consultation details. Please refresh.'));
   }, []);
 
+  // Skeleton placeholder data used while the API call is in flight. Lets the
+  // page render INSTANTLY (no blank screen / spinner) with the price, copy
+  // and form already visible — admin-customised values just replace these
+  // when the network response lands.
+  const cfg = config || {
+    price: 999,
+    currency: 'INR',
+    title: 'Dermatologist Consultation',
+    subtitle: 'Personalised skincare backed by certified dermatologists',
+    disclaimer: 'Consultation fee covers the doctor call & report. Medicine cost (if prescribed) is not included.',
+    doctors: [],
+    reviews: [],
+  };
+
   const validate = () => {
     if (!form.name.trim() || form.name.trim().length < 2) return 'Please enter your full name';
     const phone = form.phone.replace(/\D/g, '');
@@ -122,12 +136,9 @@ export default function DoctorConsultationPage() {
     }
   };
 
-  if (!config) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-emerald-50 to-white">
-        <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
-      </div>
-    );
+  if (!cfg) {
+    // Defensive — shouldn't hit this since cfg has skeleton defaults
+    return null;
   }
 
   if (success) {
@@ -169,7 +180,7 @@ export default function DoctorConsultationPage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-emerald-50 via-white to-green-50 pb-16">
       <Helmet>
-        <title>{`Dermatologist Consultation — Celesta Glow | ₹${config.price} only`}</title>
+        <title>{`Dermatologist Consultation — Celesta Glow | ₹${cfg.price} only`}</title>
         <meta
           name="description"
           content="Book a ₹999 dermatologist consultation with Celesta Glow. Certified doctors, personalised skincare prescription, and WhatsApp follow-up."
@@ -192,14 +203,14 @@ export default function DoctorConsultationPage() {
             style={{ fontFamily: '"Cormorant Garamond", serif', fontWeight: 500 }}
             data-testid="doctor-consult-title"
           >
-            {config.title || 'Dermatologist Consultation'}
+            {cfg.title || 'Dermatologist Consultation'}
           </h1>
-          <p className="text-gray-600 text-base sm:text-lg mb-6">{config.subtitle}</p>
+          <p className="text-gray-600 text-base sm:text-lg mb-6">{cfg.subtitle}</p>
 
           <div className="inline-flex items-baseline gap-3 bg-white border border-emerald-200 rounded-2xl px-5 py-3 shadow-sm">
             <span className="text-xs text-gray-500 uppercase tracking-widest">Consultation</span>
             <span className="text-3xl font-bold text-emerald-700" data-testid="consult-price">
-              ₹{config.price}
+              ₹{cfg.price}
             </span>
             <span className="text-xs text-gray-400 line-through">₹1499</span>
           </div>
@@ -226,7 +237,7 @@ export default function DoctorConsultationPage() {
               <Sparkles size={18} /> Book Your Consultation
             </h2>
             <p className="text-emerald-100 text-sm mt-1">
-              Fill your details, pay ₹{config.price} securely and a dermatologist will call you within 24 hours.
+              Fill your details, pay ₹{cfg.price} securely and a dermatologist will call you within 24 hours.
             </p>
           </div>
 
@@ -308,7 +319,7 @@ export default function DoctorConsultationPage() {
                 </>
               ) : (
                 <>
-                  Pay ₹{config.price} & Book Consultation
+                  Pay ₹{cfg.price} & Book Consultation
                   <ChevronRight size={18} />
                 </>
               )}
@@ -335,7 +346,7 @@ export default function DoctorConsultationPage() {
           </h2>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {(config.doctors || []).map((d) => (
+          {(cfg.doctors || []).map((d) => (
             <div
               key={d.id}
               className="bg-white rounded-2xl border border-emerald-100 p-5 hover:shadow-lg transition-shadow"
@@ -408,7 +419,7 @@ export default function DoctorConsultationPage() {
           </h2>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {(config.reviews || []).map((r) => (
+          {(cfg.reviews || []).map((r) => (
             <div
               key={r.id}
               className="bg-white rounded-2xl border border-emerald-50 p-5"
@@ -434,7 +445,7 @@ export default function DoctorConsultationPage() {
       <section className="max-w-3xl mx-auto px-4 sm:px-6">
         <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-sm text-amber-900 flex items-start gap-3">
           <Pill className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-          <p>{config.disclaimer}</p>
+          <p>{cfg.disclaimer}</p>
         </div>
       </section>
     </div>

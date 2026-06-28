@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { cldOptim } from '../utils/productImage';
 
 /**
  * HeroCarousel
@@ -79,7 +80,7 @@ function HeroCarousel({ banners = [], autoplayMs = 2000, className = '' }) {
               aria-label={b.title || `Banner ${i + 1}`}
             >
               <img
-                src={b.image}
+                src={cldOptim(b.image, {w:1200})}
                 alt={b.title || `Banner ${i + 1}`}
                 className="absolute inset-0 w-full h-full object-cover"
                 loading={i === 0 ? 'eager' : 'lazy'}
