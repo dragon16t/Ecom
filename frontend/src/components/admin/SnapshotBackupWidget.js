@@ -64,23 +64,51 @@ export default function SnapshotBackupWidget({ token }) {
     )) return;
     setBusy(true); setError(''); setJustSucceeded(false);
     try {
-      // Always pass ?force=true so existing rows are upserted (fields like
-      // image URLs / icons get refreshed on rows the canonical taxonomy
-      // already populated). STICKY_FIELDS protection in the backend keeps
-      // local admin-uploaded images safe — the snapshot fills blanks only.
-      // Incremental deltas are applied after the full snapshot to land at
-      // the latest captured state. This fixes the Jun 24 2026 bug where a
-      // restore overwrote 13 days of uploads with the older full snapshot.
-      const r = await axios.post(`${API}/api/admin/catalog/backup/restore?force=true`, {}, auth);
+      // ASYNC PATTERN (Feb-2026 P0): the sync restore endpoint takes ~3 min
+      // and dies at the Cloudflare 60s proxy timeout. The async wrapper
+      // returns a job_id immediately; we poll /restore/status every 3s.
+      const queue = await axios.post(`${API}/api/admin/catalog/backup/restore-async?force=true`, {}, auth);
+      const jobId = queue.data?.job_id;
+      if (!jobId) throw new Error('Restore could not be queued (no job_id returned)');
+      setError('Restore running… this can take 2–3 minutes. Do not close this tab.');
+
+      let lastJob = null;
+      const startedAt = Date.now();
+      // Poll for up to 8 minutes
+      for (let i = 0; i < 160; i++) {
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((r) => setTimeout(r, 3000));
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          const statusRes = await axios.get(
+            `${API}/api/admin/catalog/backup/restore/status?job_id=${encodeURIComponent(jobId)}`,
+            auth,
+          );
+          lastJob = statusRes.data;
+          if (lastJob.status === 'done' || lastJob.status === 'error') break;
+          setError(`Restore running… (phase: ${lastJob.phase || 'working'}, ${Math.round((Date.now() - startedAt) / 1000)}s elapsed)`);
+        } catch (pollErr) {
+          // 404 means the job expired or never registered — break out.
+          if (pollErr?.response?.status === 404) {
+            throw new Error('Restore job was lost — please try again.');
+          }
+          // Otherwise transient — keep polling.
+        }
+      }
+      if (!lastJob || lastJob.status !== 'done') {
+        throw new Error(lastJob?.error || 'Restore did not finish in time (still running in background — try again in a minute)');
+      }
+      const r = { data: lastJob.result || {} };
       const counts = r.data?.counts || {};
       const summary = Object.entries(counts)
         .filter(([, v]) => typeof v === 'number' && v > 0)
         .map(([k, v]) => `${k}: ${v}`)
         .join(' · ');
-      alert(`Restore complete!\n\nRestored:\n${summary || '(nothing — snapshot was empty)'}\n\nSnapshot from: ${r.data?.snapshot_created_at || 'unknown'}\n\nReloading the page so the restored images, categories, and product data appear...`);
-      // Wipe the local apiCache + force a hard reload — otherwise the admin
-      // sees stale image URLs / category slugs cached in memory from BEFORE
-      // the restore landed. The snapshot is now in Mongo; the UI must refetch.
+      const fb = r.data?.fresh_baseline;
+      const fbLine = fb?.uploaded
+        ? `\n\n✓ Fresh baseline snapshot saved at ${fb.created_at || 'just now'}.`
+        : fb?.skipped_reason ? `\n\n(Baseline skipped: ${fb.skipped_reason})` : '';
+      alert(`Restore complete!\n\nRestored:\n${summary || '(nothing — snapshot was empty)'}\n\nSnapshot from: ${r.data?.snapshot_created_at || 'unknown'}${fbLine}\n\nReloading the page so the restored images appear...`);
       try { window.dispatchEvent(new Event('admin-data-changed')); } catch (_) { /* noop */ }
       setJustSucceeded(true);
       setTimeout(() => { window.location.reload(); }, 500);

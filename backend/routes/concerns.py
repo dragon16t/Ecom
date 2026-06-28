@@ -44,6 +44,15 @@ router = APIRouter()
 db = None
 admin_sessions = {}
 
+# Cloudflare proxy in front of preview / production has a 60s read timeout
+# which kills the synchronous /admin/catalog/backup/restore endpoint
+# mid-flight (chain replay takes ~3 min). _restore_jobs tracks the state
+# of background restore jobs so the admin UI can poll for completion.
+# Keyed by job_id, value is a dict with: status, progress_pct, started_at,
+# completed_at, result (when done), error (on failure).
+_restore_jobs: dict = {}
+_RESTORE_JOB_TTL_SEC = 60 * 60  # keep finished jobs for an hour
+
 
 def set_db(database):
     global db
@@ -788,6 +797,98 @@ async def catalog_backup_restore(
         )
         res["fresh_baseline"] = {"uploaded": False, "error": str(exc)}
     return res
+
+
+@router.post("/admin/catalog/backup/restore-async")
+async def catalog_backup_restore_async(
+    x_admin_token: str = Header(None, alias="X-Admin-Token"),
+    force: bool = True,
+):
+    """Kick off a manual restore in the background and return immediately.
+
+    The synchronous /restore endpoint times out at the Cloudflare 60s proxy
+    boundary because the full chain replay (full snapshot + 200+ incrementals
+    + fresh-baseline upload) takes ~3 min. This async wrapper:
+      1. Generates a job_id.
+      2. Starts the restore in a `asyncio.create_task`.
+      3. Returns 202 + {job_id} immediately.
+      4. The admin UI polls /restore/status?job_id=... every 3s for progress.
+
+    Cleans up stale job dicts older than 1 hr on each call.
+    """
+    verify_admin(x_admin_token)
+    import asyncio as _asyncio
+    import logging as _logging
+    import time as _time
+    import uuid as _uuid
+
+    log = _logging.getLogger("catalog_backup_admin")
+
+    # Prune old jobs first.
+    now_ts = _time.time()
+    stale = [jid for jid, j in _restore_jobs.items()
+             if (j.get("completed_at") or 0)
+             and (now_ts - j.get("completed_at", 0)) > _RESTORE_JOB_TTL_SEC]
+    for jid in stale:
+        _restore_jobs.pop(jid, None)
+
+    job_id = _uuid.uuid4().hex[:12]
+    _restore_jobs[job_id] = {
+        "status": "running",
+        "phase": "starting",
+        "started_at": now_ts,
+        "completed_at": None,
+        "result": None,
+        "error": None,
+    }
+
+    async def _run():
+        job = _restore_jobs[job_id]
+        try:
+            job["phase"] = "fetching_snapshot"
+            res = await _catalog_backup.auto_restore_if_empty(db, force=force)
+            job["phase"] = "fresh_baseline_snapshot"
+            try:
+                fresh = await _catalog_backup.snapshot(db)
+                res["fresh_baseline"] = {
+                    "uploaded": bool(fresh.get("success")
+                                     and not fresh.get("skipped_skeleton")
+                                     and not fresh.get("skipped_dedupe")),
+                    "skipped_reason": fresh.get("reason"),
+                    "created_at": fresh.get("created_at"),
+                }
+            except Exception as exc:
+                log.warning("[catalog_backup_async_restore] fresh_baseline failed: %s", exc)
+                res["fresh_baseline"] = {"uploaded": False, "error": str(exc)}
+            job["status"] = "done"
+            job["phase"] = "complete"
+            job["result"] = res
+        except Exception as exc:
+            log.exception("[catalog_backup_async_restore] failed: %s", exc)
+            job["status"] = "error"
+            job["error"] = str(exc)
+        finally:
+            job["completed_at"] = _time.time()
+
+    _asyncio.create_task(_run())
+    return {"job_id": job_id, "status": "running",
+            "message": "Restore running in background — poll /admin/catalog/backup/restore/status?job_id=<id>"}
+
+
+@router.get("/admin/catalog/backup/restore/status")
+async def catalog_backup_restore_status(
+    job_id: str,
+    x_admin_token: str = Header(None, alias="X-Admin-Token"),
+):
+    """Poll for the status of an async restore job."""
+    verify_admin(x_admin_token)
+    job = _restore_jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found or expired")
+    import time as _time
+    out = {**job}
+    out["elapsed_sec"] = round(_time.time() - job.get("started_at", _time.time()), 1)
+    return out
 
 
 @router.delete("/admin/subcategories/{slug}")
