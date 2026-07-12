@@ -4,7 +4,7 @@ import axios from 'axios';
 import { 
   Package, ChevronLeft, Search, Filter, Download,
   Phone, MapPin, Calendar, IndianRupee, Truck, CheckCircle, X, Edit2, Save, ExternalLink, MessageCircle,
-  Clock, ShoppingBag, RotateCcw, XCircle, CalendarDays, ChevronRight,
+  Clock, ShoppingBag, RotateCcw, XCircle, CalendarDays, ChevronRight, Zap, Bike,
 } from 'lucide-react';
 import { getAdminToken } from '../../utils/adminAuth';
 import { Calendar as CalendarUI } from '../../components/ui/calendar';
@@ -103,6 +103,10 @@ function AdminOrders() {
   const [orderAudit, setOrderAudit] = useState([]);
   const [newNote, setNewNote] = useState('');
   const [notesLoading, setNotesLoading] = useState(false);
+  // Delivery-men roster + per-order selection (persisted server-side via `assigned_delivery_man_id`).
+  const [deliveryMen, setDeliveryMen] = useState([]);
+  const [dmSelection, setDmSelection] = useState({}); // { [order_id]: delivery_man_id }
+  const [assigningOrder, setAssigningOrder] = useState(null);
   const navigate = useNavigate();
   const adminToken = getAdminToken();
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -183,6 +187,81 @@ function AdminOrders() {
     if (!adminToken) return;
     fetchOrders();
   }, [adminToken, dateFrom, dateTo, filterStatus]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Load delivery-men roster once — used by every order card's dropdown.
+  useEffect(() => {
+    if (!adminToken) return;
+    axios.get(`${API}/admin/delivery-men`, { headers: { 'X-Admin-Token': adminToken } })
+      .then(r => setDeliveryMen((r.data || []).filter(m => m.active !== false)))
+      .catch(() => setDeliveryMen([]));
+  }, [adminToken]);
+
+  // ------------------------------------------------------------------
+  // Delivery-man selection + WhatsApp handoff helpers
+  // ------------------------------------------------------------------
+  const setOrderDm = (orderId, dmId) => {
+    setDmSelection(prev => ({ ...prev, [orderId]: dmId }));
+    // Persist to backend (best-effort, non-blocking).
+    axios.patch(`${API}/admin/orders/${orderId}/delivery-assign`,
+      { delivery_man_id: dmId || null },
+      { headers: { 'X-Admin-Token': adminToken } }
+    ).catch(() => { /* soft-fail — UI already updated */ });
+  };
+
+  const toggleInstantDelivery = async (order) => {
+    setAssigningOrder(order.order_id);
+    const nextType = order.delivery_type === 'instant' ? 'standard' : 'instant';
+    try {
+      await axios.patch(`${API}/admin/orders/${order.order_id}/delivery-assign`,
+        { delivery_type: nextType },
+        { headers: { 'X-Admin-Token': adminToken } }
+      );
+      setOrders(prev => prev.map(o => o.order_id === order.order_id ? { ...o, delivery_type: nextType } : o));
+      if (selectedOrder?.order_id === order.order_id) {
+        setSelectedOrder({ ...selectedOrder, delivery_type: nextType });
+      }
+    } catch (_) { alert('Failed to update delivery type'); }
+    finally { setAssigningOrder(null); }
+  };
+
+  const buildAddress = (o) => [o.house_number, o.area, o.state, o.pincode]
+    .filter(Boolean).join(', ');
+
+  const buildMapsLink = (o) => {
+    // Prefer stored coords if we ever add them; fall back to address search URL.
+    if (o.delivery_lat && o.delivery_lng) {
+      return `https://www.google.com/maps/search/?api=1&query=${o.delivery_lat},${o.delivery_lng}`;
+    }
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(buildAddress(o))}`;
+  };
+
+  const buildWhatsAppMessage = (o) => {
+    const items = (o.items || []).map(it => `• ${it.name || it.short_name || it.slug || 'Product'} × ${it.quantity || 1}`).join('\n');
+    const lines = [
+      `*Celesta Glow — Delivery Handoff*`,
+      ``,
+      `*Order:* ${o.order_id}`,
+      items ? `*Items:*\n${items}` : `*Items:* Celesta Glow order`,
+      ``,
+      `*Customer:* ${o.name || '-'}`,
+      `*Phone:* +91 ${o.phone || '-'}`,
+      `*Address:* ${buildAddress(o) || '-'}`,
+      ``,
+      `*Amount:* ₹${o.amount || 0} (${o.payment_method || 'Prepaid'})`,
+      o.delivery_type === 'instant' ? `*Type:* ⚡ INSTANT DELIVERY` : null,
+      ``,
+      `*Google Maps:* ${buildMapsLink(o)}`,
+    ].filter(Boolean);
+    return lines.join('\n');
+  };
+
+  const sendToDeliveryMan = (o) => {
+    const dmId = dmSelection[o.order_id] || o.assigned_delivery_man_id;
+    const dm = deliveryMen.find(m => m.id === dmId);
+    if (!dm) { alert('Select a delivery man first'); return; }
+    const url = `https://wa.me/${dm.whatsapp_number}?text=${encodeURIComponent(buildWhatsAppMessage(o))}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
 
   const fetchOrders = async () => {
     setLoading(true);
@@ -652,6 +731,21 @@ function AdminOrders() {
                       }`}>
                         {order.payment_method}
                       </span>
+                      {order.delivery_type === 'instant' ? (
+                        <span
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-gradient-to-r from-amber-400 to-orange-500 text-white shadow-sm"
+                          data-testid={`instant-badge-${order.order_id}`}
+                        >
+                          <Zap size={11} /> INSTANT
+                        </span>
+                      ) : (
+                        <span
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-600"
+                          data-testid={`standard-badge-${order.order_id}`}
+                        >
+                          <Truck size={11} /> Standard
+                        </span>
+                      )}
                     </div>
                     <p className="text-gray-600">{order.name}</p>
                   </div>
@@ -698,6 +792,51 @@ function AdminOrders() {
                       </button>
                     )}
                   </div>
+                </div>
+
+                {/* Delivery-man handoff row — pick rider, send WhatsApp with order + maps link */}
+                <div
+                  className="mt-3 pt-3 border-t border-gray-100 flex flex-wrap items-center gap-2"
+                  onClick={(e) => e.stopPropagation()}
+                  data-testid={`delivery-row-${order.order_id}`}
+                >
+                  <Bike size={14} className="text-emerald-600" />
+                  <select
+                    value={dmSelection[order.order_id] || order.assigned_delivery_man_id || ''}
+                    onChange={(e) => setOrderDm(order.order_id, e.target.value)}
+                    className="text-xs font-semibold px-2 py-1.5 border border-gray-200 rounded-md bg-white hover:bg-gray-50 max-w-[190px]"
+                    data-testid={`dm-select-${order.order_id}`}
+                  >
+                    <option value="">Select delivery man…</option>
+                    {deliveryMen.map(m => (
+                      <option key={m.id} value={m.id}>{m.name}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => sendToDeliveryMan(order)}
+                    disabled={!(dmSelection[order.order_id] || order.assigned_delivery_man_id)}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg font-bold text-xs transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
+                    data-testid={`send-whatsapp-${order.order_id}`}
+                  >
+                    <MessageCircle size={12} /> Send on WhatsApp
+                  </button>
+                  <button
+                    onClick={() => toggleInstantDelivery(order)}
+                    disabled={assigningOrder === order.order_id}
+                    className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg font-bold text-xs transition-colors ${
+                      order.delivery_type === 'instant'
+                        ? 'bg-amber-500 hover:bg-amber-600 text-white'
+                        : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+                    }`}
+                    data-testid={`instant-toggle-${order.order_id}`}
+                  >
+                    <Zap size={12} /> {order.delivery_type === 'instant' ? 'Instant ✓' : 'Mark Instant'}
+                  </button>
+                  {deliveryMen.length === 0 && (
+                    <Link to="/admin/delivery-men" className="text-[11px] text-emerald-700 hover:underline font-semibold">
+                      + Add delivery men
+                    </Link>
+                  )}
                 </div>
                   </div>
                 </div>

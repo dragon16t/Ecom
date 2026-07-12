@@ -10,6 +10,7 @@ import {
 const NAV_ITEMS = [
   { to: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard, color: 'green' },
   { to: '/admin/orders', label: 'Orders', icon: Package, color: 'amber' },
+  { to: '/admin/delivery-men', label: 'Delivery Men', icon: Users, color: 'emerald' },
   { to: '/admin/products', label: 'Products', icon: Package, color: 'green' },
   { to: '/admin/bulk-import', label: 'Bulk Import (Excel)', icon: Upload, color: 'indigo' },
   { to: '/admin/master-tools', label: 'Master Tools', icon: Sparkles, color: 'emerald' },

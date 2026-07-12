@@ -51,6 +51,7 @@ const AdminBlogEditor = lazy(() => import('./pages/admin/AdminBlogEditor'));
 const AdminLocations = lazy(() => import('./pages/admin/AdminLocations'));
 const AdminLocationEditor = lazy(() => import('./pages/admin/AdminLocationEditor'));
 const AdminOrders = lazy(() => import('./pages/admin/AdminOrders'));
+const AdminDeliveryMen = lazy(() => import('./pages/admin/AdminDeliveryMen'));
 const AdminAIStudio = lazy(() => import('./pages/admin/AdminAIStudio'));
 const AdminConsultations = lazy(() => import('./pages/admin/AdminConsultations'));
 const AdminDoctorBookings = lazy(() => import('./pages/admin/AdminDoctorBookings'));
@@ -162,6 +163,7 @@ function App() {
         <Route path="/admin/locations/new" element={<AdminLayout><AdminLocationEditor /></AdminLayout>} />
         <Route path="/admin/locations/edit/:id" element={<AdminLayout><AdminLocationEditor /></AdminLayout>} />
         <Route path="/admin/orders" element={<AdminLayout><AdminOrders /></AdminLayout>} />
+        <Route path="/admin/delivery-men" element={<AdminLayout><AdminDeliveryMen /></AdminLayout>} />
         <Route path="/admin/ai-studio" element={<AdminLayout><AdminAIStudio /></AdminLayout>} />
         <Route path="/admin/consultations" element={<AdminLayout><AdminConsultations /></AdminLayout>} />
         <Route path="/admin/doctor-bookings" element={<AdminLayout><AdminDoctorBookings /></AdminLayout>} />
