@@ -59,22 +59,28 @@ export default function SkincareHome() {
     const sig = ctrl.signal;
 
     // ---- 1) Taxonomy first (concerns + categories + settings) ----
-    // These are tiny + heavily CDN-cached, so the concerns strip & category hub
-    // render instantly even if the products fetch is still going.
     Promise.all([
-      cachedGet(`${API}/api/concerns`, { signal: sig }),
-      cachedGet(`${API}/api/site-settings`, { signal: sig }),
-      cachedGet(`${API}/api/categories`, { signal: sig }),
-      cachedGet(`${API}/api/shop-by-category?niche=skincare`, { signal: sig }).catch(() => ({ data: [] })),
+      cachedGet(`${API}/api/concerns`, { signal: sig }).catch(() => ({ data: [] })),
+      cachedGet(`${API}/api/site-settings`, { signal: sig }).catch(() => ({ data: {} })),
+      cachedGet(`${API}/api/categories`, { signal: sig }).catch(() => ({ data: [] })),
     ])
-      .then(([c, s, cats, sbc]) => {
+      .then(([c, s, cats]) => {
         if (sig.aborted) return;
         setConcerns(c.data || []);
         setSettings(s.data || {});
         setCategories(cats.data || []);
-        setShopByCategoryTiles(Array.isArray(sbc.data) ? sbc.data : (sbc.data?.items || []));
       })
       .catch(() => { /* aborted or network — swallow */ });
+
+    // ---- 1b) Shop-by-category tiles fetched separately so a failure in the
+    //      taxonomy chain above can never prevent the tiles from rendering. ----
+    cachedGet(`${API}/api/shop-by-category?niche=skincare`, { signal: sig, force: true })
+      .then((sbc) => {
+        if (sig.aborted) return;
+        const arr = Array.isArray(sbc.data) ? sbc.data : (sbc.data?.items || []);
+        setShopByCategoryTiles(arr);
+      })
+      .catch(() => { /* ignore */ });
 
     // ---- 2) Products after (only 20 — the rest lives at /shop) ----
     cachedGet(`${API}/api/products?niche=skincare&page=1&limit=20`, { signal: sig })

@@ -1,4 +1,47 @@
 # Changelog
+## 2026-02-12b — Geo proxy · Iteration B · Shop-by-Category fix · Employee seed
+
+### Fixed: location detection & search suggestions
+- Root cause: browser CORS on Google Maps REST APIs (Places/Geocoding
+  don't send Access-Control-Allow-Origin).
+- Fix: new backend proxy `routes/geo.py` with three endpoints
+  (`/api/geo/autocomplete`, `/api/geo/place-details`, `/api/geo/reverse-geocode`).
+  Key now lives server-side only (`GOOGLE_MAPS_API_KEY` in backend .env).
+- Verified from the browser: "kozhikode" → 4 real suggestions, current-location
+  detect resolves to "Kozhikode, Kerala, 673001".
+
+### Iteration B leftovers — shipped
+- **Anti-Aging landing banner** (independent of sale toggle): new fields
+  `landing_banner_anti_aging_desktop/mobile` on `sale_mode` config. Two more
+  uploaders in admin extras → Flat 50% tab. Rendered at the top of
+  `/shop?niche=anti-aging` via `<img data-testid="anti-aging-landing-banner">`.
+- **Routine Generator upgrade**: selfie is now **mandatory** (blocks Generate
+  with an alert), new required 10-digit mobile input (data-testid
+  `routine-mobile-input`), product pull widened to `limit=500` so
+  suggestions cover skincare + anti-aging + cosmetics.
+- **Warehouse admin UI**: new `Warehouse` tab in `/admin/extras` with
+  Name / Address / Pincode / Phone / Maps-link fields. Persisted via
+  new backend endpoints `GET/PUT /api/admin/warehouse`.
+- **Sale Campaigns tab removed** (user called it "bullshit").
+
+### Shop-by-Category not appearing on /skincare — fixed
+- Root cause: the tiles fetch was inside a shared `Promise.all` with
+  concerns/settings/categories; a StrictMode abort on ANY sibling nuked
+  the tiles state. Now fetched in its own promise with `force:true`.
+- Verified: tile section (data-testid `skincare-shop-by-category-section`)
+  now renders whenever there is >=1 active tile.
+
+### Employee login re-seeded
+- Created `emp@celestaglow.com` / `emp1234` with permissions=`products,retention`.
+- Verified via `POST /api/employee/login` — returns 200 with token +
+  permissions. Role-based route guards in `EmployeeLayout.js` were already
+  in place (verified: unauthorised routes redirect to `/employee/dashboard`).
+
+### Public lead-form links removed
+- `/partner-with-us`, `/invest-now`, `/free-skin-advice` deleted from
+  `AppRouter` + `Navigation` menu. All submitted leads still visible in
+  Admin Extras → Leads tab.
+
 ## 2026-02-12 — Delivery-men + LocationStrip + WhatsApp handoff
 
 ### Location strip below header (replaces the tiny header pill)

@@ -115,6 +115,17 @@ export default function RoutinePage() {
   const clearPhoto = () => setPhoto(null);
 
   const handleGenerate = () => {
+    // MANDATORY: selfie helps the skincare team personalize the follow-up.
+    if (!photo) {
+      alert('Please upload a selfie first — it helps us personalize your routine.');
+      return;
+    }
+    // MANDATORY: 10-digit mobile so our team can reach you.
+    const cleanMobile = (mobile || '').replace(/\D/g, '');
+    if (cleanMobile.length !== 10) {
+      alert('Please enter a valid 10-digit mobile number.');
+      return;
+    }
     setGenerating(true);
     setRoutine(null);
     // Simulated "AI" pick — pleasant 1.6s delay then pick products by category slot

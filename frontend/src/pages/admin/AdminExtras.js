@@ -25,8 +25,8 @@ export default function AdminExtras() {
             {[
               { k: 'tiles', label: 'Shop by Category Tiles', icon: Layers },
               { k: 'leads', label: 'Leads', icon: Users },
-              { k: 'sales', label: 'Sale Campaigns', icon: Percent },
               { k: 'flat50', label: 'Flat 50% OFF Switch', icon: Percent },
+              { k: 'warehouse', label: 'Warehouse', icon: WarehouseIcon },
             ].map(t => (
               <button key={t.k} onClick={() => setTab(t.k)}
                 className={`px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap flex items-center gap-1.5 ${tab === t.k ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
@@ -40,8 +40,8 @@ export default function AdminExtras() {
       <div className="max-w-6xl mx-auto px-4 py-5">
         {tab === 'tiles' && <TilesTab auth={auth} />}
         {tab === 'leads' && <LeadsTab auth={auth} />}
-        {tab === 'sales' && <SalesTab auth={auth} />}
         {tab === 'flat50' && <Flat50Tab auth={auth} />}
+        {tab === 'warehouse' && <WarehouseTab auth={auth} />}
       </div>
     </div>
   );
