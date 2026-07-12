@@ -1,5 +1,39 @@
 # Changelog
 
+## 2026-02 Session — Iteration A (Flat 50% + Location pill)
+### Global sale mode (anti-aging only)
+- New `sale_mode` collection in admin_settings with fields: enabled,
+  discount_percent, applies_to_niches, badge_label, banner_text,
+  urgency_line, zero_shipping, zero_tax, banner_image_desktop,
+  banner_image_mobile. Public read at `GET /api/sale-mode`. Admin CRUD
+  at `PUT /api/admin/sale-mode` + banner upload at
+  `POST /api/admin/sale-mode/banner?field=banner_image_desktop|mobile`.
+- Frontend `useSaleMode()` hook cached in-memory, notifies subscribers.
+- `applySale(saleMode, niche, price)` helper — returns discounted price
+  + `saved` amount when the niche qualifies.
+- `<HomepageSaleStrip />` mounted on the Homepage top — appears
+  automatically when the admin toggles the switch ON.
+- Admin `/admin/extras` → new "Flat 50% OFF Switch" tab with big toggle,
+  live copy editors (badge, banner text, urgency), % editor, and dual
+  banner uploaders (desktop + mobile).
+
+### Location pill (Iteration A skeleton)
+- `<LocationPill />` in the header — matches your reference design pill.
+  Tap → modal with "Use my current location" (browser geolocation +
+  Google reverse-geocode) or search box (Google Places Autocomplete,
+  India-only). Result stored in localStorage. Shows locality + district
+  in the pill.
+- Google Maps API key stored in both `.env` files:
+  `REACT_APP_GOOGLE_MAPS_API_KEY` (frontend) and `GOOGLE_MAPS_API_KEY`
+  (backend, for Iteration B serviceability calls).
+- **Iteration B TODO**: full multi-warehouse system, serviceability
+  engine, delivery ETA, warehouse admin CRUD, order snapshot, warehouse
+  dashboard, coverage map.
+
+### Testing
+- iteration_16.json: 9/9 backend PASS, all frontend flows PASS, 0 issues,
+  retest=false.
+
 ## 2026-02 Session — Growth batch (Phase 1 + 2 + 3)
 ### Phase 1
 - **Pinterest domain verification** meta tag added to `public/index.html` (`p:domain_verify=932ef79d89721ec0b913511dbea52c73`).
