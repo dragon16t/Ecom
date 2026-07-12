@@ -35,6 +35,21 @@ function Navigation() {
   const navigate = useNavigate();
   const location = useLocation();
   const suggestTimer = useRef(null);
+  // Dynamic spacer — measures the fixed header (including the sale strip when
+  // the anti-aging Flat 50% is ON) so the first section under the header never
+  // gets clipped. Fixes the "niche cards hidden behind sale strip" bug.
+  const headerRef = useRef(null);
+  const [headerH, setHeaderH] = useState(108);
+  useEffect(() => {
+    if (!headerRef.current || typeof ResizeObserver === 'undefined') return;
+    const el = headerRef.current;
+    setHeaderH(el.getBoundingClientRect().height);
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) setHeaderH(entry.contentRect.height);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   useEffect(() => {
     const q = searchQuery.trim();
@@ -91,7 +106,7 @@ function Navigation() {
 
   return (
     <>
-      <header className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-100 shadow-sm">
+      <header ref={headerRef} className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-100 shadow-sm">
         {/* Mobile + Tablet header (hidden on lg) */}
         <div className="flex items-center justify-between px-4 h-14 lg:hidden">
           <button onClick={() => setIsMenuOpen(true)} className="p-2 -ml-2 w-10" data-testid="menu-button" aria-label="Open menu">
@@ -161,8 +176,10 @@ function Navigation() {
         {/* Location strip — sits directly under the header, matches reference. */}
         <LocationStrip />
       </header>
-      {/* Spacer for fixed header (+ location strip ≈ 44px) */}
-      <div className="h-[102px] lg:h-[108px]" />
+      {/* Spacer for the fixed header — grows automatically when the sale strip
+          is added on top of the location strip so content underneath never gets
+          hidden. Extra breathing room (16px) so the niche cards sit neatly. */}
+      <div style={{ height: headerH + 16 }} aria-hidden="true" />
 
       {/* Mobile Menu */}
       {isMenuOpen && (

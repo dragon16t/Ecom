@@ -1,0 +1,23 @@
+{
+  "summary": "Verified fix for 'niche cards hidden behind sale strip' layout bug on Homepage. Header now uses ResizeObserver-driven spacer height + 16px breathing gap, so niche cards remain fully visible whether the Flat 50% sale strip is ON or OFF. Also re-ran key regressions: admin route auth-guards, admin/orders delivery-type-filter options, and sale-strip toggle behavior.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_21.json"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Review request selector 'a[href=\\\"/anti-aging\\\"]' is ambiguous: HomepageSaleStrip wraps its entire strip in <Link to=\\\"/anti-aging\\\">, so that anchor lives INSIDE the header when sale is ON. The niche card (NicheCardSwitcher.js) for anti-aging uses route '/' with data-testid 'niche-card-anti-aging'. For future assertions, use data-testid selectors, not '/anti-aging' href.",
+    "Could not verify per-product sale-badge (data-testid='sale-badge-<slug>') because concern/<slug> pages currently have 0 seeded products for the flagship concerns; badge component only renders in ConcernCategoryPage.js. Not a regression of this iteration."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend-only)", "frontend": "100% on tested scenarios"},
+  "test_credentials": "Admin: X-Admin-Token=celestaglow2024 (also used as sessionStorage 'adminToken')",
+  "seed_data_creation": "None. localStorage seeded: cg_delivery_prompted_v1='1', cg_delivery_location={Bengaluru}",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Layout measurements at 430x900 viewport with sale-mode toggled via PUT /api/admin/sale-mode: (Sale ON) header.bottom=169.5px, niche-card-anti-aging.top=191.94px, gap=22.44px. (Sale OFF) header.bottom=109px, niche-card top=131.44px, gap=22.44px. Both >=12px breathing room and non-clipping requirement satisfied. Admin routes /admin/offers, /admin/warehouses, /admin/delivery-men correctly redirect to /admin login when no token. /admin/orders delivery-type-filter renders with options ['all','instant','standard']. Sale-mode reset to enabled=false at end of run. Backend has 30s in-process cache on products endpoint (_get_sale_cfg) — wait ~31s between sale toggles when validating product-side effects.",
+  "rca of the issue": "Prior code hard-coded the header spacer to h-[102px]/h-[108px]. When the FLAT 50% sale strip was mounted inside <header>, header height grew to ~157–170px but the spacer stayed static, causing the first section (niche cards) to slide up under the fixed header. Fix in Navigation.js uses a headerRef + ResizeObserver to set spacer height = actual header height + 16px, which auto-grows with the sale strip and adds a visible breathing gap."
+}
