@@ -509,16 +509,20 @@ export function ProductCard({ product, compact = false }) {
             style={{ background: 'radial-gradient(circle at 50% 55%, rgba(34,197,94,0.10) 0%, transparent 62%)' }}
           />
 
+          {/* Golden sale badge — top-right so it never overlaps the existing
+              Bestseller/New/Custom pill on the left. Higher z-index + safe
+              padding on both edges so it can't clip the product image. */}
+          {product.sale_active && (
+            <span
+              className="absolute top-3 right-3 z-30 bg-gradient-to-br from-amber-400 via-yellow-500 to-amber-600 text-white text-[10px] font-black px-2.5 py-1 rounded-full flex items-center gap-1 tracking-[0.12em] uppercase shadow-lg ring-1 ring-amber-300/60"
+              data-testid={`sale-badge-${product.slug}`}
+            >
+              <Sparkles size={9} /> {product.sale_badge_label || 'FLAT 50% OFF'}
+            </span>
+          )}
+
           {/* Single badge — only the primary badge chosen in admin (no discount %, no extras) */}
           <div className="absolute top-3 left-3 z-20 flex items-start gap-1.5">
-            {product.sale_active && (
-              <span
-                className="bg-gradient-to-br from-amber-400 via-yellow-500 to-amber-600 text-white text-[10px] font-black px-2.5 py-1 rounded-full flex items-center gap-1 tracking-[0.12em] uppercase shadow-lg ring-1 ring-amber-300/60"
-                data-testid={`sale-badge-${product.slug}`}
-              >
-                <Sparkles size={9} /> {product.sale_badge_label || 'FLAT 50% OFF'}
-              </span>
-            )}
             {!product.is_to_be_launched && product.badge && (
               product.badge === 'Bestseller' ? (
                 <span className="bg-amber-100/95 text-amber-800 text-[9px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 tracking-[0.12em] uppercase shadow-sm backdrop-blur-sm border border-amber-200/70" data-testid={`badge-${product.slug}`}>

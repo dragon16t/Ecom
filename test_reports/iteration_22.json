@@ -1,0 +1,30 @@
+{
+  "summary": "Frontend regression testing for badge placement fix and Sync-from-catalog verification. Bug fix 2 (Sync button) verified working. Bug fix 1 (badge placement) PARTIALLY passes: sale-badge is correctly moved to top-right, but on cards where the left badge has long text (product.badge='Daily Essential'), the two badges' bounding boxes still intersect at the top of the image (28px x-overlap) because both badges together exceed the 230px card width at desktop 5-column layout. For short badges (Bestseller/New) there is NO overlap. All regressions pass.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "ConcernCategoryPage product card", "issue": "sale-badge (top-right) overlaps left badge when left badge text is long (e.g. 'Daily Essential'). Overlap ~28px on cards `sunscreen` and `cleanser`. sale x=[696,813] vs left x=[606,724] (both y=[2000,2020]). Card width is only 230px in 5-col desktop grid while each pill is ~118px, so they collide. Verified via getBoundingClientRect intersection. Bestseller/New short badges do NOT overlap.", "selector": "[data-testid='sale-badge-sunscreen'] vs [data-testid='badge-sunscreen']", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/shop?niche=anti-aging combo section", "issues": ["No combo-sale-badge-<id> rendered on the two combo cards (Day & Night Power Duo, Glow Essentials Trio) even with sale mode enabled. combo testids present are shop-combo-card-* but no combo-sale-badge-*. May or may not be a regression – flagging for main agent verification."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Address remaining overlap for LONG left-badge labels (e.g. 'Daily Essential') on narrow 230px cards. Options: truncate/shorten the sale-badge text on small cards, hide the left badge when a long custom badge is present, or reduce padding/widths so both fit in 230px.",
+    "Verify whether combo-sale-badge-<id> is expected to render on /shop?niche=anti-aging combo cards when sale mode is ON – it is currently absent."
+  ],
+  "critical_code_review_comments": [
+    "ConcernCategoryPage.js line 517-521: the fixed-position sale badge uses `right-3` (12px from right) and the left badge uses `left-3` (12px from left). With a card inner width of 230px and each pill ~118px wide, total 236 + 24 padding = ~260 which exceeds card width. Need width-aware guard (e.g., only show left badge if !sale_active OR use smaller badge variant).",
+    "TilesPanel `tile-sync-btn` verified functional with alert 'Synced from catalog · 16 new tiles added.'"
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "83%"},
+  "test_credentials": "Admin: X-Admin-Token=celestaglow2024 / Admin login password same",
+  "seed_data_creation": "Sync-from-catalog created 16 new tiles in admin/concerns shop-tiles tab (side-effect of button-click verification).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Sale mode has been reset to enabled=false. Cache TTL 30s. If retesting, PUT /api/admin/sale-mode enabled=true and wait 31s. Badge overlap only reproduces on cards whose product.badge is a long custom string like 'Daily Essential' (sunscreen, cleanser products in anti-aging niche).",
+  "rca of the issue": "For BUG FIX 1: The fix moved the sale badge to top-right which resolves overlap for short left badges (Bestseller/New) but does not account for cards where product.badge is a long custom string. The sum of both pill widths (~236px + 24px horizontal padding) exceeds the desktop 5-col card width (~230px), so they intersect horizontally at the top-image area. Reproduction: sale mode ON → visit /shop?niche=anti-aging → inspect sale-badge-sunscreen bounding-rect vs badge-sunscreen bounding-rect."
+}
