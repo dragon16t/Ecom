@@ -136,6 +136,10 @@ export function WarehouseTab({ auth }) {
   const [rows, setRows] = useState(null);
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({ name: '', address: '', pincode: '', phone: '', lat: '', lng: '', service_radius_km: 15, is_active: true });
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState({});
+  const [dmForms, setDmForms] = useState({}); // per-warehouse quick-add delivery agent forms
+  const [dmBusy, setDmBusy] = useState(false);
 
   const load = async () => {
     try {
@@ -173,6 +177,38 @@ export function WarehouseTab({ auth }) {
     if (!window.confirm(`Delete warehouse "${name}"?`)) return;
     try { await axios.delete(`${API}/admin/warehouses/${id}`, auth); await load(); }
     catch (_) { alert('Delete failed'); }
+  };
+
+  const startEdit = (w) => {
+    setEditingId(w.id);
+    setEditForm({ ...w, lat: w.lat ?? '', lng: w.lng ?? '', service_radius_km: w.service_radius_km ?? 15 });
+  };
+  const saveEdit = async () => {
+    try {
+      await axios.patch(`${API}/admin/warehouses/${editingId}`, {
+        name: editForm.name, address: editForm.address, pincode: editForm.pincode, phone: editForm.phone,
+        lat: editForm.lat === '' ? null : parseFloat(editForm.lat),
+        lng: editForm.lng === '' ? null : parseFloat(editForm.lng),
+        service_radius_km: parseFloat(editForm.service_radius_km) || 15,
+      }, auth);
+      setEditingId(null);
+      await load();
+    } catch (e) { alert(e?.response?.data?.detail || 'Save failed'); }
+  };
+
+  // Quick-add delivery agent inside a warehouse row — pre-assigns the rider to
+  // this warehouse. Uses the same /admin/delivery-men endpoint.
+  const setDmForm = (wid, patch2) => setDmForms(prev => ({ ...prev, [wid]: { ...(prev[wid] || {}), ...patch2 } }));
+  const addAgent = async (wid) => {
+    const f = dmForms[wid] || {};
+    if (!f.name?.trim() || !f.whatsapp_number?.trim()) return alert('Rider name + WhatsApp required');
+    setDmBusy(true);
+    try {
+      await axios.post(`${API}/admin/delivery-men`, { name: f.name, whatsapp_number: f.whatsapp_number, assigned_warehouse_id: wid, active: true }, auth);
+      setDmForms(prev => ({ ...prev, [wid]: {} }));
+      alert(`Rider added and linked to this warehouse`);
+    } catch (e) { alert(e?.response?.data?.detail || 'Failed to add rider'); }
+    finally { setDmBusy(false); }
   };
 
   if (rows === null) return <Loader2 className="w-6 h-6 animate-spin mx-auto text-emerald-500" />;
@@ -233,29 +269,86 @@ export function WarehouseTab({ auth }) {
           <ul className="divide-y divide-gray-100" data-testid="warehouse-list">
             {rows.map(w => (
               <li key={w.id} className="p-4 sm:p-5" data-testid={`wh-row-${w.id}`}>
-                <div className="flex items-start justify-between gap-3 flex-wrap">
-                  <div className="min-w-0 flex-1">
-                    <p className="font-bold text-gray-900">{w.name}
-                      {w.is_active === false && <span className="ml-2 text-[10px] font-semibold uppercase text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">inactive</span>}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-0.5">{w.address}</p>
-                    <p className="text-[11px] text-gray-400 mt-1 font-mono">
-                      {w.lat && w.lng ? `${w.lat.toFixed?.(4) || w.lat}, ${w.lng.toFixed?.(4) || w.lng}` : '⚠ no coords'} · radius {w.service_radius_km ?? 15} km
-                      {w.phone ? ` · ${w.phone}` : ''}
-                    </p>
+                {editingId === w.id ? (
+                  <div className="space-y-2" data-testid={`wh-edit-${w.id}`}>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <input value={editForm.name || ''} onChange={e => setEditForm({ ...editForm, name: e.target.value })} placeholder="Name" className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                      <input value={editForm.phone || ''} onChange={e => setEditForm({ ...editForm, phone: e.target.value })} placeholder="Phone" className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                      <textarea value={editForm.address || ''} onChange={e => setEditForm({ ...editForm, address: e.target.value })} placeholder="Address" rows={2} className="sm:col-span-2 px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                      <input value={editForm.pincode || ''} onChange={e => setEditForm({ ...editForm, pincode: e.target.value })} placeholder="Pincode" className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                      <input type="number" step="0.5" value={editForm.service_radius_km ?? 15} onChange={e => setEditForm({ ...editForm, service_radius_km: e.target.value })} placeholder="Radius km" className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                      <input type="number" step="0.000001" value={editForm.lat ?? ''} onChange={e => setEditForm({ ...editForm, lat: e.target.value })} placeholder="Latitude" className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                      <input type="number" step="0.000001" value={editForm.lng ?? ''} onChange={e => setEditForm({ ...editForm, lng: e.target.value })} placeholder="Longitude" className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                    </div>
+                    <LocationPicker
+                      value={editForm.lat && editForm.lng ? { lat: parseFloat(editForm.lat), lng: parseFloat(editForm.lng) } : null}
+                      onChange={({ lat, lng }) => setEditForm({ ...editForm, lat: lat.toFixed(6), lng: lng.toFixed(6) })}
+                      height="h-40"
+                    />
+                    <div className="flex gap-2">
+                      <button onClick={saveEdit} className="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-600 text-white rounded-lg font-bold text-sm" data-testid={`wh-save-${w.id}`}>
+                        <Save size={13} /> Save
+                      </button>
+                      <button onClick={() => setEditingId(null)} className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm font-semibold text-gray-600">
+                        Cancel
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => patch(w.id, { is_active: !(w.is_active !== false) })}
-                      className="px-2.5 py-1 rounded-lg text-xs font-bold border border-gray-200 hover:bg-gray-50"
-                      data-testid={`wh-toggle-${w.id}`}>
-                      {w.is_active === false ? 'Enable' : 'Disable'}
-                    </button>
-                    <button onClick={() => remove(w.id, w.name)}
-                      className="p-2 rounded-lg text-rose-500 hover:bg-rose-50" data-testid={`wh-delete-${w.id}`}>
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </div>
+                ) : (
+                  <>
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-bold text-gray-900">{w.name}
+                          {w.is_active === false && <span className="ml-2 text-[10px] font-semibold uppercase text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">inactive</span>}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-0.5">{w.address}</p>
+                        <p className="text-[11px] text-gray-400 mt-1 font-mono">
+                          {w.lat && w.lng ? `${w.lat.toFixed?.(4) || w.lat}, ${w.lng.toFixed?.(4) || w.lng}` : '⚠ no coords'} · radius {w.service_radius_km ?? 15} km
+                          {w.phone ? ` · ${w.phone}` : ''}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => startEdit(w)} className="px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-700 hover:bg-emerald-100" data-testid={`wh-edit-btn-${w.id}`}>
+                          Edit
+                        </button>
+                        <button onClick={() => patch(w.id, { is_active: !(w.is_active !== false) })}
+                          className="px-2.5 py-1 rounded-lg text-xs font-bold border border-gray-200 hover:bg-gray-50"
+                          data-testid={`wh-toggle-${w.id}`}>
+                          {w.is_active === false ? 'Enable' : 'Disable'}
+                        </button>
+                        <button onClick={() => remove(w.id, w.name)}
+                          className="p-2 rounded-lg text-rose-500 hover:bg-rose-50" data-testid={`wh-delete-${w.id}`}>
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                    {/* Quick-add delivery agent for this warehouse */}
+                    <div className="mt-3 pt-3 border-t border-gray-100 grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-2">
+                      <input
+                        value={dmForms[w.id]?.name || ''}
+                        onChange={e => setDmForm(w.id, { name: e.target.value })}
+                        placeholder="Rider name"
+                        className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs"
+                        data-testid={`wh-agent-name-${w.id}`}
+                      />
+                      <input
+                        value={dmForms[w.id]?.whatsapp_number || ''}
+                        onChange={e => setDmForm(w.id, { whatsapp_number: e.target.value })}
+                        placeholder="Rider WhatsApp"
+                        className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs"
+                        data-testid={`wh-agent-phone-${w.id}`}
+                      />
+                      <button
+                        onClick={() => addAgent(w.id)}
+                        disabled={dmBusy}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs disabled:bg-gray-300"
+                        data-testid={`wh-agent-add-${w.id}`}
+                      >
+                        <Plus size={11} /> Assign rider
+                      </button>
+                    </div>
+                  </>
+                )}
               </li>
             ))}
           </ul>

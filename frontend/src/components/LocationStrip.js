@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import axios from 'axios';
-import { MapPin, ChevronDown, Loader2, Search, X, Navigation as NavIcon, Truck } from 'lucide-react';
+import { MapPin, ChevronDown, Loader2, Search, X, Navigation as NavIcon, Truck, Star, Sparkles, Quote } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const STORAGE_KEY = 'cg_delivery_location';
@@ -125,6 +125,91 @@ export default function LocationStrip() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Rotating slogan + review carousel — shown inside the LocationModal so the
+// user has something engaging to look at while we detect / search location.
+// Content is baked in on purpose (fast, no API round-trip while modal loads).
+// ---------------------------------------------------------------------------
+const AD_SLIDES = [
+  {
+    kind: 'slogan',
+    body: 'Celesta Glow products loved by 50,000+ customers',
+    sub: 'Clinical-grade anti-aging • cruelty-free • dermatologist tested',
+  },
+  {
+    kind: 'review',
+    body: 'Fine lines faded in 3 weeks. Skin honestly looks a decade younger.',
+    author: 'Priya · verified buyer',
+    stars: 5,
+    tag: 'Anti-Aging Serum',
+  },
+  {
+    kind: 'review',
+    body: 'Order landed in 45 mins. Genuinely quicker than my food delivery!',
+    author: 'Aditi · Bengaluru',
+    stars: 5,
+    tag: 'Delivery',
+  },
+  {
+    kind: 'review',
+    body: 'Rich formula, no sticky finish. My Retinol night routine is set.',
+    author: 'Rekha · Mumbai',
+    stars: 5,
+    tag: 'Age Reset Cream',
+  },
+  {
+    kind: 'review',
+    body: 'Packaging is premium and the ingredients list is finally transparent.',
+    author: 'Sameera · Kochi',
+    stars: 5,
+    tag: 'Quality',
+  },
+];
+
+function AdCarousel() {
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setI((n) => (n + 1) % AD_SLIDES.length), 3500);
+    return () => clearInterval(t);
+  }, []);
+  const s = AD_SLIDES[i];
+  return (
+    <div className="mt-1 rounded-2xl overflow-hidden bg-gradient-to-br from-emerald-50 via-white to-amber-50/40 border border-emerald-100" data-testid="location-modal-ads">
+      <div key={i} className="p-4 min-h-[110px] flex flex-col justify-center animate-[fadeIn_.5s_ease-out]">
+        {s.kind === 'slogan' ? (
+          <div className="flex items-start gap-2">
+            <Sparkles size={16} className="text-emerald-600 mt-0.5 shrink-0" />
+            <div>
+              <p className="text-[13px] font-black text-emerald-900 leading-snug">{s.body}</p>
+              <p className="text-[11px] text-emerald-700/80 mt-1">{s.sub}</p>
+            </div>
+          </div>
+        ) : (
+          <div>
+            <div className="flex items-center gap-1 mb-1">
+              {Array.from({ length: s.stars }).map((_, k) => <Star key={k} size={11} className="fill-amber-400 text-amber-400" />)}
+              <span className="ml-1 text-[10px] font-bold uppercase tracking-widest text-emerald-700">{s.tag}</span>
+            </div>
+            <div className="flex items-start gap-2">
+              <Quote size={14} className="text-emerald-300 mt-0.5 shrink-0" />
+              <div>
+                <p className="text-[13px] italic text-gray-800 leading-snug">&ldquo;{s.body}&rdquo;</p>
+                <p className="text-[11px] text-gray-500 mt-1">— {s.author}</p>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+      <div className="flex gap-1 justify-center pb-2">
+        {AD_SLIDES.map((_, k) => (
+          <span key={k} className={`h-1 rounded-full transition-all ${k === i ? 'w-4 bg-emerald-600' : 'w-1.5 bg-emerald-200'}`} />
+        ))}
+      </div>
+      <style>{`@keyframes fadeIn { from { opacity:0; transform: translateY(4px);} to { opacity:1; transform:translateY(0);} }`}</style>
+    </div>
+  );
+}
+
 function LocationModal({ onClose, onDetect, onSelect }) {
   const [q, setQ] = useState('');
   const [predictions, setPredictions] = useState([]);
@@ -193,6 +278,9 @@ function LocationModal({ onClose, onDetect, onSelect }) {
               ))}
             </div>
           )}
+          {/* Ad carousel — keeps the user engaged while they choose location */}
+          <AdCarousel />
+
         </div>
       </div>
     </div>

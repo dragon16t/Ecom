@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
-import { Image as ImageIcon, Plus, Trash2, Loader2 } from 'lucide-react';
+import { Image as ImageIcon, Plus, Trash2, Loader2, RefreshCw } from 'lucide-react';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -8,10 +8,15 @@ const API = process.env.REACT_APP_BACKEND_URL;
  * TilesPanel — "Shop by Category" tile CRUD for the Skincare niche.
  * Extracted so it can live where category-editing already lives
  * (AdminConcerns → Categories tab) instead of the separate Extras page.
+ *
+ * "Sync from catalog" walks the product taxonomy and creates a tile record
+ * for every unique parent category that doesn't already have one — so admins
+ * can upload images for EVERY category derived from the actual catalog.
  */
 export default function TilesPanel({ auth }) {
   const [tiles, setTiles] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [creating, setCreating] = useState({ slug: '', name: '', niche: 'skincare', sort_order: 0 });
 
   const load = async () => {
@@ -53,13 +58,60 @@ export default function TilesPanel({ auth }) {
     load();
   };
 
+  // Sync from catalog: pull /api/categories (skincare) and create a tile for
+  // every parent category that doesn't yet have one. This unlocks image-upload
+  // for EVERY derived category shown on /skincare Shop by Category.
+  const syncFromCatalog = async () => {
+    setSyncing(true);
+    try {
+      const r = await axios.get(`${API}/api/categories`);
+      const cats = (r.data || []).filter(c => (c.group === 'skincare' || c.niche === 'skincare' || (!c.group && !c.niche)) && c.is_active !== false);
+      // Prefer explicit parents; fall back to any unique parent slug referenced.
+      let picks = cats.filter(c => c.is_parent === true);
+      if (picks.length < 6) {
+        const parentSlugs = [...new Set(cats.map(c => c.parent).filter(Boolean))];
+        const byParent = parentSlugs.map(slug => cats.find(c => c.slug === slug)
+          || { slug, name: slug.replace(/-/g, ' ').replace(/\b\w/g, m => m.toUpperCase()) });
+        picks = [...picks, ...byParent.filter(p => !picks.some(x => x.slug === p.slug))];
+      }
+      const existing = new Set(tiles.map(t => t.slug));
+      const toCreate = picks.filter(p => !existing.has(p.slug));
+      let added = 0;
+      for (const p of toCreate) {
+        try {
+          await axios.post(`${API}/api/admin/shop-by-category`,
+            { slug: p.slug, name: p.name, niche: 'skincare', sort_order: added, is_active: true, image: p.image || null },
+            auth);
+          added += 1;
+        } catch (_) { /* skip conflicts */ }
+      }
+      alert(`Synced from catalog · ${added} new tile${added === 1 ? '' : 's'} added.`);
+      load();
+    } catch (e) { alert(e?.response?.data?.detail || 'Sync failed'); }
+    finally { setSyncing(false); }
+  };
+
   if (loading) return <Loader2 className="w-6 h-6 animate-spin mx-auto text-emerald-500" />;
 
   return (
     <div className="space-y-4" data-testid="tiles-panel">
       <div className="bg-white rounded-2xl p-4 border border-gray-100">
-        <h3 className="font-semibold mb-1 text-sm">Skincare "Shop by Category" tiles</h3>
-        <p className="text-xs text-gray-500 mb-3">These circular tiles show above your Skincare landing page. Upload a photo per tile — it replaces the placeholder icon.</p>
+        <div className="flex items-start justify-between gap-3 flex-wrap mb-3">
+          <div>
+            <h3 className="font-semibold mb-0.5 text-sm">Skincare &ldquo;Shop by Category&rdquo; tiles</h3>
+            <p className="text-xs text-gray-500">Upload an image per tile — replaces the placeholder icon.</p>
+          </div>
+          <button
+            onClick={syncFromCatalog}
+            disabled={syncing}
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg font-bold text-xs border border-emerald-200 disabled:opacity-60"
+            data-testid="tile-sync-btn"
+            title="Create tile records for every parent category in the product catalog so you can upload images for them"
+          >
+            {syncing ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+            Sync from catalog
+          </button>
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
           <input
             placeholder="slug (sunscreens)"

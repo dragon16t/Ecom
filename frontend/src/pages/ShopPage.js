@@ -624,11 +624,21 @@ function ShopPage() {
                           </div>
                         )}
                         <div className="absolute inset-x-0 top-0 p-2.5 flex flex-wrap gap-1.5 justify-between">
-                          {combo.badge && (
-                            <span className={`text-[10px] font-black px-2.5 py-1 rounded-full shadow-md tracking-wide ${combo.badge === 'Popular' ? 'bg-amber-400 text-amber-950' : 'bg-green-700 text-white'}`}>
-                              {combo.badge.toUpperCase()}
-                            </span>
-                          )}
+                          <div className="flex flex-wrap gap-1.5">
+                            {combo.sale_active && (
+                              <span
+                                className="bg-gradient-to-br from-amber-400 via-yellow-500 to-amber-600 text-white text-[10px] font-black px-2.5 py-1 rounded-full shadow-lg ring-1 ring-amber-300/60 tracking-[0.12em] uppercase"
+                                data-testid={`combo-sale-badge-${combo.combo_id}`}
+                              >
+                                {combo.sale_badge_label || 'FLAT 50% OFF'}
+                              </span>
+                            )}
+                            {combo.badge && (
+                              <span className={`text-[10px] font-black px-2.5 py-1 rounded-full shadow-md tracking-wide ${combo.badge === 'Popular' ? 'bg-amber-400 text-amber-950' : 'bg-green-700 text-white'}`}>
+                                {combo.badge.toUpperCase()}
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <div className="absolute inset-x-0 bottom-0 p-2.5 flex justify-between items-end">
                           <span className="bg-white/95 backdrop-blur text-green-900 text-[10px] font-black px-2.5 py-1 rounded-full shadow-md flex items-center gap-1">
