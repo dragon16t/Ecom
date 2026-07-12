@@ -1,0 +1,27 @@
+{
+  "summary": "Verified badge placement fix on /shop?niche=anti-aging with sale mode enabled. All 5 sale-badge cards (sunscreen, celesta-glow-advanced-face-serum, anti-aging-cream, under-eye-cream, cleanser) satisfy all 5 acceptance criteria: (a) badge is inside the card content section, (b) sb.top > img.bottom (below image), (c) sb.top < product-name.top (above name), (d) width ratio to inner content 0.86 (>0.80), (e) no intersection with the top-left badge (data-testid=badge-<slug>). Notably, the previously problematic 'sunscreen' and 'cleanser' cards with the long 'Daily Essential' left badge now show zero overlap. Combo sale badges (combo-sale-badge-<id>) are still NOT rendered on the two combo cards on /shop?niche=anti-aging — pre-existing issue from iteration_22, out of current scope but re-flagged. Sale mode reset to enabled=false at the end.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/shop?niche=anti-aging combo section", "issues": ["combo-sale-badge-<combo_id> still NOT rendered on shop-combo-card-day-night-duo and shop-combo-card-glow-essentials even with sale mode enabled. Same issue as iteration_22 — flagged again for main agent verification. Not in scope of current fix."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "(Out of scope for this iteration) Investigate/implement combo-sale-badge-<combo_id> rendering inside the ShopPage combo cards when sale mode is ON."
+  ],
+  "critical_code_review_comments": [
+    "ConcernCategoryPage.js lines 600-607: golden ribbon renders cleanly full-width above the brand eyebrow inside the info section — no overlap with top-left badge, no image intrusion. Fix confirmed working across all card grid widths in the desktop 5-col layout.",
+    "ShopPage.js line 628-633: combo sale badge JSX exists but the badge is not visible in DOM (combo-sale-badge-* testid absent). Likely combo.sale_active flag is not being populated by backend combo response OR the block is hidden by container overflow — needs investigation by main agent."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100% (for scoped bug-fix); combo regression still present"},
+  "test_credentials": "Admin X-Admin-Token=celestaglow2024",
+  "seed_data_creation": "None. Sale mode toggled on then off.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Bug fix (golden ribbon placement) is fully verified. If main agent later fixes the combo badge, PUT /api/admin/sale-mode enabled=true, wait 31s, then check for [data-testid='combo-sale-badge-day-night-duo'] and [data-testid='combo-sale-badge-glow-essentials'] on /shop?niche=anti-aging. Reset to false after.",
+  "rca of the issue": "N/A — original overlap RCA from iteration_22 (long left-badge + short card width) is resolved by relocating the golden ribbon into the card body directly above the brand eyebrow with full inner-content width. Measured widthRatio=0.86 (>0.80), zero intersection with left badge across all cards."
+}
