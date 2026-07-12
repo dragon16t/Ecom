@@ -1,4 +1,37 @@
 # Changelog
+## 2026-02-12 — Delivery-men + LocationStrip + WhatsApp handoff
+
+### Location strip below header (replaces the tiny header pill)
+- New `<LocationStrip />` sits directly under the fixed header —
+  "DELIVERING TO <area, city>" on the left, "DELIVERY AVAILABLE 30–45 mins"
+  in the middle, "Change" on the right. Matches user-provided reference.
+- **Auto-prompt on first scroll** — the location modal opens once per
+  browser after the user's first meaningful scroll (>40px). Persisted via
+  `cg_delivery_prompted_v1` so we don't nag again.
+- Modal reuses "Use my current location" (browser geolocation +
+  Google reverse-geocode) and Google Places Autocomplete (India-only).
+- Removed the old `<LocationPill />` from the desktop header — one clear
+  source of truth for delivery location.
+
+### Delivery-men roster (Admin panel)
+- New route `POST/GET/PATCH/DELETE /api/admin/delivery-men` — CRUD for the
+  local rider roster (name + WhatsApp number + active flag). Auto-prepends
+  `91` to 10-digit Indian mobiles.
+- New admin page `/admin/delivery-men` — add / toggle-active / delete
+  riders. Ships with a "Test on WhatsApp" per row.
+- Added to admin sidebar via `AdminMobileNav`.
+
+### Admin Orders — WhatsApp handoff + Instant delivery markup
+- Each order card now shows a **Standard / Instant** badge and a
+  "Mark Instant" toggle that persists to `orders.delivery_type` via
+  `PATCH /api/admin/orders/{id}/delivery-assign`.
+- **Delivery-man dropdown** on every card — pick a rider, then hit
+  "Send on WhatsApp". Opens `wa.me/<rider>?text=<msg>` where the message
+  is a formatted brief containing: order id, item list, customer name,
+  phone, address, amount, and a Google Maps link built from the address
+  (falls back to lat/lng if we ever store coords).
+- Assignments are audited in `order_audit` (event `delivery_assign`).
+
 
 ## 2026-02 Session — Iteration A (Flat 50% + Location pill)
 ### Global sale mode (anti-aging only)

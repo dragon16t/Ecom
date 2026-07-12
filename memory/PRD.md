@@ -1,28 +1,35 @@
 # Celesta Glow — PRD
 
-> Last updated: 2026-02-28
+> Last updated: 2026-02-12 (delivery-men + LocationStrip batch)
 > For dated entries see CHANGELOG.md
 
 ## What's working now (verified)
 - React + FastAPI e-commerce app, 7855 products, "Master Brain" canonical taxonomy
 - Dual-Cloudinary setup (current + legacy fallback) for images + JSON DB backups
-- Auto-restore on pod boot — finds newest full across BOTH clouds, applies 233 incrementals, lands on the latest admin-curated image state
-- Manual restore — async/background job with polling (POST /restore-async + GET /restore/status). Bypasses Cloudflare 60s timeout.
-- Skeleton-state guards on both `snapshot()` and `incremental_snapshot()` — no more poisoning the chain after a pod restart races auto-restore
-- Doctor Consultation flow (₹999 via Razorpay) — public page + admin bookings + photo + PDF uploads, fully tested
+- Auto-restore on pod boot — finds newest full across BOTH clouds, applies 250+ incrementals
+- Manual restore — async/background job with polling. Bypasses Cloudflare 60s timeout
+- Skeleton-state guards on both `snapshot()` and `incremental_snapshot()`
+- Doctor Consultation flow (₹999 via Razorpay) — public page + admin bookings, fully tested
+- Iteration A: Flat 50% OFF global toggle (anti-aging niche), Homepage Sale Strip
+- **Feb-2026 batch**: LocationStrip under header + first-scroll auto-prompt; Delivery-men CRUD; Admin Orders WhatsApp handoff with pre-composed rider message (order + customer + Google Maps link); Instant vs Standard visual markup + toggle
 
 ## Architecture priority files
-- `/app/backend/server.py` — too large (3500+ lines), needs refactor into routers (P2)
+- `/app/backend/server.py` — too large (3600+ lines), needs refactor into routers (P2)
+- `/app/backend/routes/delivery_men.py` — rider roster + order delivery-assign
+- `/app/backend/routes/sale_mode.py` — flat 50% toggle + banner
 - `/app/backend/services/catalog_backup.py` — backup/restore engine
-- `/app/backend/services/taxonomy_canonical.py` — canonical taxonomy + reclassifier
-- `/app/backend/routes/doctor_consultation.py` — paid consultation feature
-- `/app/frontend/src/components/admin/SnapshotBackupWidget.js` — restore UI with polling
+- `/app/frontend/src/components/LocationStrip.js` — below-header delivery pill + modal
+- `/app/frontend/src/pages/admin/AdminDeliveryMen.js` — rider CRUD UI
+- `/app/frontend/src/pages/admin/AdminOrders.js` — WhatsApp handoff + Instant toggle
 
 ## Backlog (P0/P1/P2)
-- **P1**: Admin Orders page — status badges on each card (icon + colored pill: Pending/Shipped/In Transit/Delivered/Cancelled), prominent status banner on order detail page, calendar widget for date-wise filtering of orders.
-- **P2**: Embed product/category slugs in Cloudinary `public_id` so orphan recovery is automated even if DB sync is lost.
-- **P2**: Razorpay Payouts API for automated referral withdrawals.
-- **P3**: Refactor `server.py` into routers (auth, core, startup) — improve maintainability.
+- **P0**: Iteration B leftovers — Anti-Aging niche banner (admin uploader → renders on the anti-aging landing page); Routine Generator upgrade (mandatory photo + mobile field + wider niche pull); Admin Warehouse UI prep (name + exact address fields).
+- **P0**: Employee Login Role-Based Access — enforce strict route guards + conditional sidebar so employees only see the pages assigned to their role.
+- **P1**: Centralize standalone admin pages — move Lead Forms and "Shop by Category" tile config into the secure Admin Layout; delete public routes.
+- **P1**: Instant Delivery system (5-phase) — Google Maps reverse geocode → draggable pin at checkout → distance-matrix ETA → geo-fence → multi-warehouse routing.
+- **P2**: Razorpay Payouts API for referral withdrawals.
+- **P2**: Multi-warehouse inventory separation.
+- **P3**: Refactor `server.py` into routers.
 
 ## Test credentials
 See `/app/memory/test_credentials.md`
