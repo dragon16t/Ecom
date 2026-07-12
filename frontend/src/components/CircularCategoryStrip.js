@@ -150,7 +150,7 @@ function CircleItem({ item: it, routePrefix, fromColor, toColor, accent, testIdP
                   decoding="async"
                   onLoad={(e) => e.currentTarget.classList.remove('opacity-0')}
                   onError={() => setErrored(true)}
-                  className={`w-full h-full object-cover transition-all duration-500 group-hover:scale-110 ${eager ? '' : 'opacity-0'}`}
+                  className="w-full h-full object-cover transition-opacity duration-300 opacity-0 group-hover:scale-110"
                 />
               )}
             </div>

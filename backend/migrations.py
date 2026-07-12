@@ -467,6 +467,59 @@ async def migrate_coupons_show_on_cart(db):
         logging.info(f"[migration] coupons: backfilled show_on_cart/description on {backfilled} coupons")
 
 
+async def migrate_repair_anti_aging_serum(db):
+    """Repair the `anti-aging-serum` product doc when its identity has been
+    overwritten with Gentle Cleanser data (regressed by a bad admin edit that
+    got baked into the Cloudinary snapshot). Idempotent — only patches when
+    the doc's name/short_name clearly does not match the serum SKU.
+
+    Why this migration exists:
+      - Snapshot auto-restore on every backend boot re-hydrates products from
+        Cloudinary. That snapshot currently has the corrupted anti-aging-serum
+        record, so any one-off DB patch gets wiped on the next restart.
+      - This migration runs AFTER auto-restore + product seed, restoring the
+        canonical serum values so /product/anti-aging-serum always resolves
+        to the real serum and the Flat 50% OFF badge attaches correctly.
+    """
+    doc = await db.products.find_one({"slug": "anti-aging-serum"}, {"_id": 0})
+    if not doc:
+        return
+    name = str(doc.get("name") or "")
+    short = str(doc.get("short_name") or "")
+    if "Serum" in name and "Serum" in short and doc.get("mrp", 0) >= 1500:
+        return  # already correct — nothing to do
+    from datetime import datetime, timezone as _tz
+    patch = {
+        "name": "Celesta Glow Advanced Face Serum",
+        "short_name": "Anti-Aging Serum",
+        "tagline": "Anti-Aging + Brightening Formula",
+        "category": "serum",
+        "key_ingredients": "Niacinamide + Alpha Arbutin + Vitamin C",
+        "benefits": [
+            "Reduces Dullness & Dark Spots",
+            "Supports Firm, Youthful Skin",
+            "Brightens & Evens Skin Tone",
+            "Lightweight Daily Use Formula",
+        ],
+        "size": "30ml / 1.01 fl oz",
+        "mrp": 1699,
+        "prepaid_price": 999,
+        "cod_price": 1099,
+        "cod_advance": 29,
+        "discount_percent": 41,
+        "badge": "Bestseller",
+        "rating": 4.8,
+        "reviews_count": max(int(doc.get("reviews_count") or 0), 2847),
+        "skin_type": "All Skin Types",
+        "sort_order": 1,
+        "is_active": True,
+        "niche": "anti-aging",
+        "updated_at": datetime.now(_tz.utc).isoformat(),
+    }
+    await db.products.update_one({"slug": "anti-aging-serum"}, {"$set": patch})
+    logging.info("[migration] repaired corrupted anti-aging-serum document")
+
+
 async def run_all_migrations(db):
     """Run all migrations on startup. Safe to run repeatedly."""
     try:
@@ -477,6 +530,7 @@ async def run_all_migrations(db):
         await migrate_concern_category_niche(db)
         await migrate_minimum_reviews_count(db)
         await migrate_coupons_show_on_cart(db)
+        await migrate_repair_anti_aging_serum(db)
         await auto_flip_launched_products(db)
         logging.info("[migration] All migrations completed successfully")
     except Exception as e:

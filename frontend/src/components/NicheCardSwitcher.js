@@ -146,7 +146,8 @@ export default function NicheCardSwitcher({ nicheSettings = {} } = {}) {
                     loading="eager"
                     fetchpriority="high"
                     decoding="async"
-                    className="absolute inset-0 w-full h-full object-cover sm:object-contain transition-transform duration-500 group-hover:scale-[1.03]"
+                    onLoad={(e) => e.currentTarget.classList.remove('opacity-0')}
+                    className="absolute inset-0 w-full h-full object-cover sm:object-contain opacity-0 transition-opacity duration-300 group-hover:scale-[1.03]"
                   />
                 </picture>
               </Link>

@@ -101,10 +101,11 @@ function HeroCarousel({ banners = [], autoplayMs = 2000, className = '' }) {
               <img
                 src={cldOptim(b.image, {w:1200})}
                 alt={b.title || `Banner ${i + 1}`}
-                className="absolute inset-0 w-full h-full object-cover"
+                className="absolute inset-0 w-full h-full object-cover opacity-0 transition-opacity duration-300"
                 loading={i === 0 ? 'eager' : 'lazy'}
                 fetchpriority={i === 0 ? 'high' : 'auto'}
                 decoding={i === 0 ? 'sync' : 'async'}
+                onLoad={(e) => e.currentTarget.classList.remove('opacity-0')}
                 draggable={false}
               />
               {/* Subtle bottom gradient for dot indicator legibility only */}
