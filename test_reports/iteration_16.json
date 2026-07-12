@@ -1,0 +1,26 @@
+{
+  "summary": "Iteration 16 (Feb-2026 A) — Flat 50% OFF sale-mode API + admin toggle + homepage strip + LocationPill + regression. 9/9 backend tests PASS. Frontend: sale-strip hidden when OFF, visible with 'FLAT 50% OFF' when ON; location-pill + modal + detect + search input all render; admin /admin/extras Flat 50% tab + toggle visible; /doctor-consultation loads. Sale mode restored to disabled at end.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Homepage (console)", "issues": ["react-helmet emits UNSAFE_componentWillMount warning in StrictMode (pre-existing, non-blocking)", "Invalid DOM prop fetchpriority (should be fetchPriority) — likely from an <img> tag (pre-existing, non-blocking)"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_sale_mode_iter16.py", "/app/test_reports/pytest/sale_mode_iter16.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "sale_mode.py POST /admin/sale-mode/banner accepts `field` as a query parameter (FastAPI default). Frontend passes it as query — works. Consider explicit Query(...) annotation for clarity.",
+    "LocationPill.js calls Google Places REST API directly from the browser, exposing REACT_APP_GOOGLE_MAPS_API_KEY (unavoidable for JS use but ensure HTTP referrer restrictions are set on the Google Cloud key).",
+    "saleMode.js in-memory cache has no TTL; admin toggle changes won't propagate to already-mounted components until next full reload — acceptable for this feature but worth documenting."
+  ],
+  "updated_files": ["/app/backend/tests/test_sale_mode_iter16.py"],
+  "success_rate": {"backend": "100% (9/9)", "frontend": "100% (all data-testid selectors located, sale toggle round-trip verified visually)"},
+  "test_credentials": "X-Admin-Token: celestaglow2024 (also stored to localStorage as adminToken for /admin/extras)",
+  "seed_data_creation": "Uploaded a tiny 1x1 PNG to banner_image_desktop via Cloudinary during banner-upload test. discount_percent=60/badge='MEGA 60% OFF' was set mid-test but final cleanup restored {enabled:false, discount_percent:50, badge_label:'FLAT 50% OFF'}. NOTE: banner_image_desktop URL still points to the test PNG — main agent may want to reset it via PUT /api/admin/sale-mode {banner_image_desktop:''} if they prefer.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All Iteration-A functionality verified. Sale-mode API is round-trip safe. LocationPill Places API returns 0 predictions (Places API likely not enabled on the key) but no JS crash — expected per spec. Note the banner_image_desktop field still contains a test-uploaded 1x1 PNG Cloudinary URL from banner-upload test.",
+  "rca of the issue": "N/A"
+}

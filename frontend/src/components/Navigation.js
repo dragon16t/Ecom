@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Menu, X, Search, ShoppingCart, Stethoscope, Package, Pill } from 'lucide-react';
+import LocationPill from './LocationPill';
 import axios from 'axios';
 import { prefetchHandlers } from '../utils/routePrefetch';
 import { isProductTbl, isComboTbl, pruneTblItemsFromCart } from '../pages/Homepage';
@@ -145,6 +146,7 @@ function Navigation() {
             ))}
           </nav>
           <div className="flex items-center gap-1">
+            <LocationPill />
             <button onClick={() => setIsSearchOpen(true)} className="p-2.5 rounded-full hover:bg-gray-50" data-testid="search-button-desktop" aria-label="Search">
               <Search size={20} className="text-gray-900" />
             </button>

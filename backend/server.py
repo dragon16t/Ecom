@@ -24,6 +24,7 @@ from routes import i18n as i18n_routes
 from routes import consultation as consultation_routes
 from routes import doctor_consultation as doctor_consultation_routes
 from routes import skincare_extras as skincare_extras_routes
+from routes import sale_mode as sale_mode_routes
 from services.enhanced_analytics import EnhancedAnalyticsTracker, VisitorLeadTracker
 from services.ai_content_generator import AIContentGenerator
 from services.auto_blog_generator import AutoBlogGenerator
@@ -3319,6 +3320,8 @@ doctor_consultation_routes.setup(db, verify_admin_token, razorpay_client)
 app.include_router(doctor_consultation_routes.router, prefix="/api")
 skincare_extras_routes.setup(db, verify_admin_token)
 app.include_router(skincare_extras_routes.router, prefix="/api")
+sale_mode_routes.setup(db, verify_admin_token)
+app.include_router(sale_mode_routes.router, prefix="/api")
 app.include_router(landing_page_routes.router, prefix="/api")
 app.include_router(product_routes.router, prefix="/api")
 app.include_router(concerns_routes.router, prefix="/api")

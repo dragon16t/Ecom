@@ -6,6 +6,7 @@ import { useTracking } from '../providers/TrackingProvider';
 import SearchBar from '../components/SearchBar';
 import TrustStrip from '../components/TrustStrip';
 import SaleBadge from '../components/SaleBadge';
+import HomepageSaleStrip from '../components/HomepageSaleStrip';
 import NicheHero from '../components/NicheHero';
 import HeroCarousel from '../components/HeroCarousel'; // eslint-disable-line no-unused-vars
 import { ProductCard } from './ConcernCategoryPage';
@@ -304,6 +305,7 @@ function Homepage() {
 
   return (
     <div className="bg-stone-50/40" data-testid="homepage">
+      <HomepageSaleStrip />
       <SEOHead
         title="Celesta Glow – India's #1 Anti-Aging Skincare Brand"
         description="Shop Celesta Glow's complete anti-aging system — Serum, Night Cream, Under Eye Cream, Sunscreen & Cleanser. Dermatologist-approved formulas for Indian skin. Free shipping. 7-day sealed-bottle return."

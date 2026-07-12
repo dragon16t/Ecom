@@ -26,6 +26,7 @@ export default function AdminExtras() {
               { k: 'tiles', label: 'Shop by Category Tiles', icon: Layers },
               { k: 'leads', label: 'Leads', icon: Users },
               { k: 'sales', label: 'Sale Campaigns', icon: Percent },
+              { k: 'flat50', label: 'Flat 50% OFF Switch', icon: Percent },
             ].map(t => (
               <button key={t.k} onClick={() => setTab(t.k)}
                 className={`px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap flex items-center gap-1.5 ${tab === t.k ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
@@ -40,6 +41,116 @@ export default function AdminExtras() {
         {tab === 'tiles' && <TilesTab auth={auth} />}
         {tab === 'leads' && <LeadsTab auth={auth} />}
         {tab === 'sales' && <SalesTab auth={auth} />}
+        {tab === 'flat50' && <Flat50Tab auth={auth} />}
+      </div>
+    </div>
+  );
+}
+
+function Flat50Tab({ auth }) {
+  const [cfg, setCfg] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const load = async () => {
+    try {
+      const r = await axios.get(`${API}/sale-mode`);
+      setCfg(r.data);
+    } catch (_) { /* noop */ }
+  };
+  useEffect(() => { load(); }, []); // eslint-disable-line
+
+  const save = async (patch) => {
+    setSaving(true);
+    try {
+      const r = await axios.put(`${API}/admin/sale-mode`, patch, auth);
+      setCfg(r.data);
+    } catch (e) { alert(e?.response?.data?.detail || 'Save failed'); }
+    finally { setSaving(false); }
+  };
+
+  if (!cfg) return <Loader2 className="w-6 h-6 animate-spin mx-auto text-emerald-500" />;
+  const on = !!cfg.enabled;
+
+  return (
+    <div className="space-y-4">
+      <div className={`rounded-2xl border-2 p-5 ${on ? 'bg-gradient-to-r from-red-50 to-rose-50 border-red-300' : 'bg-white border-gray-200'}`}>
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h3 className="font-bold text-lg">Flat 50% OFF — Anti-Aging Niche</h3>
+            <p className="text-xs text-gray-500 mt-0.5">Enables 50% off + free shipping/tax on all anti-aging products only.</p>
+          </div>
+          <button
+            onClick={() => save({ enabled: !on })}
+            disabled={saving}
+            className={`relative w-14 h-8 rounded-full transition-colors ${on ? 'bg-red-600' : 'bg-gray-300'}`}
+            data-testid="flat50-toggle"
+          >
+            <span className={`absolute top-1 left-1 w-6 h-6 rounded-full bg-white shadow transition-transform ${on ? 'translate-x-6' : ''}`} />
+          </button>
+        </div>
+        <p className={`text-sm font-semibold ${on ? 'text-red-700' : 'text-gray-400'}`}>
+          {on ? 'LIVE — customers on /anti-aging see the 50% off banner + discounted prices' : 'OFF — normal prices'}
+        </p>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3">
+        <h4 className="font-semibold text-sm">Copy & appearance</h4>
+        <label className="block">
+          <span className="text-xs font-semibold text-gray-600">Badge label</span>
+          <input defaultValue={cfg.badge_label} onBlur={e => e.target.value !== cfg.badge_label && save({ badge_label: e.target.value })} className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm" data-testid="flat50-badge-label" />
+        </label>
+        <label className="block">
+          <span className="text-xs font-semibold text-gray-600">Homepage banner text</span>
+          <input defaultValue={cfg.banner_text} onBlur={e => e.target.value !== cfg.banner_text && save({ banner_text: e.target.value })} className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm" data-testid="flat50-banner-text" />
+        </label>
+        <label className="block">
+          <span className="text-xs font-semibold text-gray-600">Urgency line</span>
+          <input defaultValue={cfg.urgency_line} onBlur={e => e.target.value !== cfg.urgency_line && save({ urgency_line: e.target.value })} className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+        </label>
+        <label className="block">
+          <span className="text-xs font-semibold text-gray-600">Discount %</span>
+          <input type="number" min="1" max="95" defaultValue={cfg.discount_percent} onBlur={e => Number(e.target.value) !== cfg.discount_percent && save({ discount_percent: Number(e.target.value) })} className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+        </label>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3">
+        <h4 className="font-semibold text-sm">Anti-Aging niche banners</h4>
+        <p className="text-[11px] text-gray-500">Uploaded separately for desktop and mobile. Shown at the top of /anti-aging page.</p>
+        <BannerUpload label="Desktop banner" auth={auth} field="banner_image_desktop" current={cfg.banner_image_desktop} onSaved={load} />
+        <BannerUpload label="Mobile banner" auth={auth} field="banner_image_mobile" current={cfg.banner_image_mobile} onSaved={load} />
+      </div>
+    </div>
+  );
+}
+
+function BannerUpload({ label, auth, field, current, onSaved }) {
+  const [busy, setBusy] = useState(false);
+  const upload = async (file) => {
+    if (!file) return;
+    setBusy(true);
+    try {
+      // Reuse the existing shop-by-category image endpoint by manually uploading via Cloudinary through a lightweight sale-mode banner upload
+      const fd = new FormData();
+      fd.append('file', file);
+      // Use brand logo endpoint pattern — post to /admin/sale-mode-banner
+      const r = await axios.post(`${API}/admin/sale-mode/banner?field=${field}`, fd, {
+        ...auth,
+        headers: { ...auth.headers, 'Content-Type': 'multipart/form-data' },
+      });
+      onSaved(r.data);
+    } catch (e) { alert(e?.response?.data?.detail || 'Upload failed'); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="flex items-center gap-3">
+      <div className="w-24 h-16 rounded-lg bg-gray-50 border border-gray-200 overflow-hidden shrink-0">
+        {current ? <img src={current} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-gray-300 text-[10px]">No image</div>}
+      </div>
+      <div className="flex-1">
+        <p className="text-xs font-semibold text-gray-700">{label}</p>
+        <label className="text-xs inline-flex items-center gap-1 mt-1 px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full font-semibold cursor-pointer">
+          {busy ? <Loader2 size={12} className="animate-spin" /> : <ImageIcon size={12} />} Upload
+          <input type="file" accept="image/*" className="hidden" onChange={e => upload(e.target.files?.[0])} />
+        </label>
       </div>
     </div>
   );
