@@ -4,6 +4,9 @@ import axios from 'axios';
 import { Shield, Truck, ArrowLeft, Check, MapPin, Clock, Star, Award, Gift, Lock, Users } from 'lucide-react';
 import { getCart, saveCart, addToCart } from './Homepage';
 import { useTracking } from '../providers/TrackingProvider';
+import CheckoutMap from '../components/CheckoutMap';
+
+const STORED_LOCATION_KEY = 'cg_delivery_location';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -40,6 +43,16 @@ function CheckoutPage() {
   const [errors, setErrors] = useState({});
   const [savedAddresses, setSavedAddresses] = useState([]);
   const [selectedAddressId, setSelectedAddressId] = useState('');
+  // Instant Delivery — draggable-pin state. Seed from LocationStrip if user
+  // already picked one; otherwise CheckoutMap falls back to Kozhikode.
+  const [pin, setPin] = useState(() => {
+    try {
+      const raw = localStorage.getItem(STORED_LOCATION_KEY);
+      const j = raw ? JSON.parse(raw) : null;
+      return (j && j.lat && j.lng) ? { lat: j.lat, lng: j.lng } : null;
+    } catch (_) { return null; }
+  });
+  const [pinInfo, setPinInfo] = useState(null); // { lat, lng, coverage, address }
 
   // Load saved addresses if customer is logged in
   useEffect(() => {
@@ -159,7 +172,13 @@ function CheckoutPage() {
     // orders back to specific /sale/... landing pages. Set on SalePage load.
     let campaign_slug = null;
     try { campaign_slug = sessionStorage.getItem('sale_campaign_slug') || null; } catch (_) { /* noop */ }
-    const payload = { ...formData, payment_method: paymentMethod, amount: cartData.total, items: cartData.items, coupon_code: coupon?.code || null, coupon_discount: coupon?.discount || 0, referral_code: referralCode || null, gift_card_code: cartData.gift_card?.code || null, gift_card_discount: cartData.gift_card_discount || 0, campaign_slug };
+    const payload = { ...formData, payment_method: paymentMethod, amount: cartData.total, items: cartData.items, coupon_code: coupon?.code || null, coupon_discount: coupon?.discount || 0, referral_code: referralCode || null, gift_card_code: cartData.gift_card?.code || null, gift_card_discount: cartData.gift_card_discount || 0, campaign_slug,
+      // Instant Delivery — pin coords + auto-assigned warehouse.
+      delivery_lat: pinInfo?.lat || null,
+      delivery_lng: pinInfo?.lng || null,
+      delivery_type: pinInfo?.coverage?.delivery_type || null,
+      assigned_warehouse_id: pinInfo?.coverage?.assigned_warehouse_id || null,
+    };
     const fireConversion = (orderId) => {
       trackAction('order_complete', { order_id: orderId, total: cartData.total, items: cartData.item_count, payment_method: paymentMethod });
       trackPurchase(orderId, cartData.total, paymentMethod);
@@ -275,6 +294,11 @@ function CheckoutPage() {
           <div className="lg:col-span-3 space-y-4">
             <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
               <h2 className="font-bold text-gray-900 text-sm mb-4 flex items-center gap-2"><MapPin size={16} className="text-green-600" /> Delivery Address</h2>
+
+              {/* Instant Delivery — draggable pin. Sets delivery_lat/lng + coverage on the order. */}
+              <div className="mb-4">
+                <CheckoutMap initial={pin} onChange={(info) => { setPinInfo(info); setPin({ lat: info.lat, lng: info.lng }); }} />
+              </div>
 
               {/* Saved addresses selector (logged-in customers) */}
               {savedAddresses.length > 0 && (

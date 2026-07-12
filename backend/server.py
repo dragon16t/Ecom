@@ -27,6 +27,7 @@ from routes import skincare_extras as skincare_extras_routes
 from routes import sale_mode as sale_mode_routes
 from routes import delivery_men as delivery_men_routes
 from routes import geo as geo_routes
+from routes import warehouses as warehouses_routes
 from services.enhanced_analytics import EnhancedAnalyticsTracker, VisitorLeadTracker
 from services.ai_content_generator import AIContentGenerator
 from services.auto_blog_generator import AutoBlogGenerator
@@ -124,6 +125,12 @@ class OrderCreate(BaseModel):
     gift_card_code: Optional[str] = None
     gift_card_discount: Optional[float] = 0
     campaign_slug: Optional[str] = None  # /sale/{slug} attribution
+    # Instant Delivery fields (Feb-2026) — populated by the CheckoutMap pin.
+    delivery_lat: Optional[float] = None
+    delivery_lng: Optional[float] = None
+    delivery_type: Optional[str] = None  # 'instant' | 'standard'
+    assigned_warehouse_id: Optional[str] = None
+    eta_minutes: Optional[int] = None
 
 
 class Order(BaseModel):
@@ -491,6 +498,11 @@ async def create_order(order_input: OrderCreate):
     if order_input.campaign_slug:
         # Attribution: order came via a /sale/{slug} landing page.
         doc['campaign_slug'] = order_input.campaign_slug
+    # Instant Delivery — persist coords + assigned warehouse (Feb-2026).
+    for field in ('delivery_lat', 'delivery_lng', 'delivery_type', 'assigned_warehouse_id', 'eta_minutes'):
+        val = getattr(order_input, field, None)
+        if val is not None:
+            doc[field] = val
     if order_input.coupon_code:
         doc['coupon_code'] = order_input.coupon_code
         doc['coupon_discount'] = order_input.coupon_discount
@@ -3327,6 +3339,8 @@ app.include_router(sale_mode_routes.router, prefix="/api")
 delivery_men_routes.setup(db, verify_admin_token)
 app.include_router(delivery_men_routes.router, prefix="/api")
 app.include_router(geo_routes.router, prefix="/api")
+warehouses_routes.setup(db, verify_admin_token)
+app.include_router(warehouses_routes.router, prefix="/api")
 app.include_router(landing_page_routes.router, prefix="/api")
 app.include_router(product_routes.router, prefix="/api")
 app.include_router(concerns_routes.router, prefix="/api")

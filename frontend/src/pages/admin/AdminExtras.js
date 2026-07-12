@@ -130,76 +130,130 @@ function Flat50Tab({ auth }) {
 }
 
 // ----------------------------------------------------------------------------
-// Warehouse tab — captures name + exact address (manual, no geo logic yet).
-// This is the seed for the upcoming multi-warehouse Instant Delivery system.
+// Warehouse tab — MULTI-warehouse roster (Instant Delivery).
+// Each row has name, address, lat/lng, service_radius_km, phone. The lat/lng
+// is what powers the /api/delivery/coverage check at checkout.
 // ----------------------------------------------------------------------------
 function WarehouseTab({ auth }) {
-  const [cfg, setCfg] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ name: '', address: '', phone: '', pincode: '', maps_link: '' });
+  const [rows, setRows] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [form, setForm] = useState({ name: '', address: '', pincode: '', phone: '', lat: '', lng: '', service_radius_km: 15, is_active: true });
 
   const load = async () => {
     try {
-      const r = await axios.get(`${API}/admin/warehouse`, auth);
-      setCfg(r.data || {});
-      setForm(f => ({ ...f, ...(r.data || {}) }));
-    } catch (_) { setCfg({}); }
+      const r = await axios.get(`${API}/admin/warehouses`, auth);
+      setRows(r.data || []);
+    } catch (_) { setRows([]); }
   };
   useEffect(() => { load(); }, []); // eslint-disable-line
 
-  const save = async () => {
-    setSaving(true);
+  const add = async () => {
+    if (!form.name.trim()) return alert('Warehouse name required');
+    setBusy(true);
     try {
-      const r = await axios.put(`${API}/admin/warehouse`, form, auth);
-      setCfg(r.data);
-    } catch (e) { alert(e?.response?.data?.detail || 'Save failed'); }
-    finally { setSaving(false); }
+      const payload = {
+        ...form,
+        lat: form.lat === '' ? null : parseFloat(form.lat),
+        lng: form.lng === '' ? null : parseFloat(form.lng),
+        service_radius_km: parseFloat(form.service_radius_km) || 15,
+      };
+      await axios.post(`${API}/admin/warehouses`, payload, auth);
+      setForm({ name: '', address: '', pincode: '', phone: '', lat: '', lng: '', service_radius_km: 15, is_active: true });
+      await load();
+    } catch (e) { alert(e?.response?.data?.detail || 'Failed to add'); }
+    finally { setBusy(false); }
   };
 
-  if (!cfg) return <Loader2 className="w-6 h-6 animate-spin mx-auto text-emerald-500" />;
+  const patch = async (id, upd) => {
+    try {
+      await axios.patch(`${API}/admin/warehouses/${id}`, upd, auth);
+      await load();
+    } catch (e) { alert('Update failed'); }
+  };
+
+  const remove = async (id, name) => {
+    if (!window.confirm(`Delete warehouse "${name}"?`)) return;
+    try { await axios.delete(`${API}/admin/warehouses/${id}`, auth); await load(); }
+    catch (_) { alert('Delete failed'); }
+  };
+
+  if (rows === null) return <Loader2 className="w-6 h-6 animate-spin mx-auto text-emerald-500" />;
 
   return (
-    <div className="space-y-4" data-testid="warehouse-tab">
-      <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3">
-        <div className="flex items-center gap-2 mb-1">
+    <div className="space-y-5" data-testid="warehouse-tab">
+      {/* Add form */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-5">
+        <div className="flex items-center gap-2 mb-3">
           <WarehouseIcon size={18} className="text-emerald-600" />
           <div>
-            <h3 className="font-bold text-lg">Warehouse details</h3>
-            <p className="text-xs text-gray-500">Foundation for the Instant Delivery system. Enter the shipping origin so future geo-fence calculations know where you are.</p>
+            <h3 className="font-bold text-lg">Add warehouse</h3>
+            <p className="text-xs text-gray-500">Coordinates + radius are what enables Instant Delivery. Grab lat/lng from Google Maps → right-click on the pin → copy the numbers.</p>
           </div>
         </div>
-        <label className="block">
-          <span className="text-xs font-semibold text-gray-600">Warehouse name</span>
-          <input value={form.name || ''} onChange={e => setForm({ ...form, name: e.target.value })}
-            placeholder="Main Warehouse — Kozhikode" className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm" data-testid="wh-name" />
-        </label>
-        <label className="block">
-          <span className="text-xs font-semibold text-gray-600">Exact address</span>
-          <textarea value={form.address || ''} onChange={e => setForm({ ...form, address: e.target.value })}
-            placeholder="Full postal address" rows={3} className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm" data-testid="wh-address" />
-        </label>
-        <div className="grid grid-cols-2 gap-3">
-          <label className="block">
-            <span className="text-xs font-semibold text-gray-600">Pincode</span>
-            <input value={form.pincode || ''} onChange={e => setForm({ ...form, pincode: e.target.value })}
-              className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm" data-testid="wh-pincode" />
-          </label>
-          <label className="block">
-            <span className="text-xs font-semibold text-gray-600">Contact phone</span>
-            <input value={form.phone || ''} onChange={e => setForm({ ...form, phone: e.target.value })}
-              className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm" data-testid="wh-phone" />
-          </label>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
+            placeholder="Warehouse name (e.g. Kozhikode HQ)" className="px-3 py-2 border border-gray-200 rounded-lg text-sm" data-testid="wh-name" />
+          <input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })}
+            placeholder="Phone" className="px-3 py-2 border border-gray-200 rounded-lg text-sm" data-testid="wh-phone" />
+          <textarea value={form.address} onChange={e => setForm({ ...form, address: e.target.value })}
+            placeholder="Full postal address" rows={2} className="sm:col-span-2 px-3 py-2 border border-gray-200 rounded-lg text-sm" data-testid="wh-address" />
+          <input value={form.pincode} onChange={e => setForm({ ...form, pincode: e.target.value })}
+            placeholder="Pincode" className="px-3 py-2 border border-gray-200 rounded-lg text-sm" data-testid="wh-pincode" />
+          <input type="number" step="0.5" min="1" max="100" value={form.service_radius_km} onChange={e => setForm({ ...form, service_radius_km: e.target.value })}
+            placeholder="Radius km (default 15)" className="px-3 py-2 border border-gray-200 rounded-lg text-sm" data-testid="wh-radius" />
+          <input type="number" step="0.000001" value={form.lat} onChange={e => setForm({ ...form, lat: e.target.value })}
+            placeholder="Latitude (e.g. 11.2588)" className="px-3 py-2 border border-gray-200 rounded-lg text-sm" data-testid="wh-lat" />
+          <input type="number" step="0.000001" value={form.lng} onChange={e => setForm({ ...form, lng: e.target.value })}
+            placeholder="Longitude (e.g. 75.7804)" className="px-3 py-2 border border-gray-200 rounded-lg text-sm" data-testid="wh-lng" />
         </div>
-        <label className="block">
-          <span className="text-xs font-semibold text-gray-600 flex items-center gap-1"><MapPin size={12} /> Google Maps link (optional)</span>
-          <input value={form.maps_link || ''} onChange={e => setForm({ ...form, maps_link: e.target.value })}
-            placeholder="https://maps.google.com/..." className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm" data-testid="wh-maps" />
-        </label>
-        <button onClick={save} disabled={saving}
-          className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 text-white rounded-lg font-bold text-sm disabled:bg-gray-300"
-          data-testid="wh-save">
-          {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save warehouse
+        <button onClick={add} disabled={busy}
+          className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 text-white rounded-lg font-bold text-sm disabled:bg-gray-300"
+          data-testid="wh-add">
+          {busy ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Add warehouse
         </button>
+      </div>
+
+      {/* Roster */}
+      <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+        <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+          <h3 className="font-bold text-sm uppercase tracking-wider">Warehouses ({rows.length})</h3>
+        </div>
+        {rows.length === 0 ? (
+          <div className="p-10 text-center text-gray-500">
+            <WarehouseIcon size={36} className="mx-auto text-gray-300 mb-3" />
+            <p className="text-sm">No warehouses yet. Add the first one above.</p>
+          </div>
+        ) : (
+          <ul className="divide-y divide-gray-100" data-testid="warehouse-list">
+            {rows.map(w => (
+              <li key={w.id} className="p-4 sm:p-5" data-testid={`wh-row-${w.id}`}>
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-bold text-gray-900">{w.name}
+                      {w.is_active === false && <span className="ml-2 text-[10px] font-semibold uppercase text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">inactive</span>}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">{w.address}</p>
+                    <p className="text-[11px] text-gray-400 mt-1 font-mono">
+                      {w.lat && w.lng ? `${w.lat.toFixed?.(4) || w.lat}, ${w.lng.toFixed?.(4) || w.lng}` : '⚠ no coords'} · radius {w.service_radius_km ?? 15} km
+                      {w.phone ? ` · ${w.phone}` : ''}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => patch(w.id, { is_active: !(w.is_active !== false) })}
+                      className="px-2.5 py-1 rounded-lg text-xs font-bold border border-gray-200 hover:bg-gray-50"
+                      data-testid={`wh-toggle-${w.id}`}>
+                      {w.is_active === false ? 'Enable' : 'Disable'}
+                    </button>
+                    <button onClick={() => remove(w.id, w.name)}
+                      className="p-2 rounded-lg text-rose-500 hover:bg-rose-50" data-testid={`wh-delete-${w.id}`}>
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </div>
   );
