@@ -23,6 +23,7 @@ from routes import admin as admin_routes
 from routes import i18n as i18n_routes
 from routes import consultation as consultation_routes
 from routes import doctor_consultation as doctor_consultation_routes
+from routes import skincare_extras as skincare_extras_routes
 from services.enhanced_analytics import EnhancedAnalyticsTracker, VisitorLeadTracker
 from services.ai_content_generator import AIContentGenerator
 from services.auto_blog_generator import AutoBlogGenerator
@@ -119,6 +120,7 @@ class OrderCreate(BaseModel):
     coupon_discount: Optional[float] = 0
     gift_card_code: Optional[str] = None
     gift_card_discount: Optional[float] = 0
+    campaign_slug: Optional[str] = None  # /sale/{slug} attribution
 
 
 class Order(BaseModel):
@@ -483,6 +485,9 @@ async def create_order(order_input: OrderCreate):
         doc['items'] = order_input.items
     if order_input.combo_id:
         doc['combo_id'] = order_input.combo_id
+    if order_input.campaign_slug:
+        # Attribution: order came via a /sale/{slug} landing page.
+        doc['campaign_slug'] = order_input.campaign_slug
     if order_input.coupon_code:
         doc['coupon_code'] = order_input.coupon_code
         doc['coupon_discount'] = order_input.coupon_discount
@@ -3312,6 +3317,8 @@ app.include_router(i18n_routes.router, prefix="/api")
 app.include_router(consultation_routes.router, prefix="/api")
 doctor_consultation_routes.setup(db, verify_admin_token, razorpay_client)
 app.include_router(doctor_consultation_routes.router, prefix="/api")
+skincare_extras_routes.setup(db, verify_admin_token)
+app.include_router(skincare_extras_routes.router, prefix="/api")
 app.include_router(landing_page_routes.router, prefix="/api")
 app.include_router(product_routes.router, prefix="/api")
 app.include_router(concerns_routes.router, prefix="/api")

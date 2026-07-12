@@ -402,6 +402,19 @@ async def get_all_products(
     except Exception as e:
         logging.warning(f"[products] image optimize failed: {e}")
 
+    # BRAND DIVERSIFICATION (Feb-2026 user request): no more than 2 products
+    # of the same brand in a row. Image-first preference preserved — the
+    # diversifier partitions into "with image" + "without image" and
+    # re-interleaves each partition independently. Only runs on public
+    # active-only listings (search, admin and brand-filtered queries are
+    # left untouched — those callers expect raw ordering).
+    if active_only and not (search and search.strip()) and not (brand and brand.strip()):
+        try:
+            from services.brand_diversify import diversify_by_brand
+            products = diversify_by_brand(products, brand_key="brand", max_consecutive=2)
+        except Exception as e:
+            logging.warning(f"[products] brand diversify failed: {e}")
+
     # CDN cache headers — public catalog responses are safe to cache at the
     # edge for 60 seconds. Searches and admin (active_only=False) bypass cache.
     if active_only and not (search and search.strip()):

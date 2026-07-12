@@ -155,7 +155,11 @@ function CheckoutPage() {
     setSubmitting(true);
     trackAction('payment_method_selected', { method: paymentMethod });
     const referralCode = (typeof window !== 'undefined') ? sessionStorage.getItem('referralCode') : null;
-    const payload = { ...formData, payment_method: paymentMethod, amount: cartData.total, items: cartData.items, coupon_code: coupon?.code || null, coupon_discount: coupon?.discount || 0, referral_code: referralCode || null, gift_card_code: cartData.gift_card?.code || null, gift_card_discount: cartData.gift_card_discount || 0 };
+    // Attach the sale-campaign slug from sessionStorage so admin can attribute
+    // orders back to specific /sale/... landing pages. Set on SalePage load.
+    let campaign_slug = null;
+    try { campaign_slug = sessionStorage.getItem('sale_campaign_slug') || null; } catch (_) { /* noop */ }
+    const payload = { ...formData, payment_method: paymentMethod, amount: cartData.total, items: cartData.items, coupon_code: coupon?.code || null, coupon_discount: coupon?.discount || 0, referral_code: referralCode || null, gift_card_code: cartData.gift_card?.code || null, gift_card_discount: cartData.gift_card_discount || 0, campaign_slug };
     const fireConversion = (orderId) => {
       trackAction('order_complete', { order_id: orderId, total: cartData.total, items: cartData.item_count, payment_method: paymentMethod });
       trackPurchase(orderId, cartData.total, paymentMethod);

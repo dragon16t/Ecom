@@ -1,0 +1,41 @@
+{
+  "summary": "Fast test of Feb-2026 batch: meta tags, shop-by-category tiles, leads, sale campaigns, admin extras, hamburger nav, regression. 20/20 backend tests pass. Frontend flows for 3 lead forms + sale page + admin extras + hamburger nav all work. Meta tags (Pinterest p:domain_verify + GA4 G-QYDN365M5N) verified in served HTML. One minor issue: sale-cta button is conditional on kit_bundle so it does not render for campaigns without a kit_bundle (fast-test-50 has none). sale-sticky-cta renders unconditionally.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "SalePage", "issue": "data-testid='sale-cta' button only renders when campaign has a kit_bundle (kit && priceView guard at line 71). For a plain campaign like fast-test-50 (no kit_bundle) the main hero CTA is absent. Only sale-sticky-cta at the bottom is present. The review requirement expects sale-cta always to be visible.", "selector": "[data-testid='sale-cta']", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "SalePage /sale/fast-test-50", "issues": ["Without a kit_bundle the landing has no prominent CTA between the FLAT 50% OFF headline and the sticky bottom bar; the trust strip appears immediately after the headline. Consider rendering a fallback Shop Now CTA (using discount_percent) when kit_bundle is absent."]},
+      {"screen": "LeadFormPage /partner-with-us", "issues": ["A marketing 'Unlock ₹50 off' first-time offer modal appears ~3s after load and overlays the lead-submit button on mobile. This is a UX problem for the lead capture flow — users may abandon. Consider suppressing the first-time offer popup on /partner-with-us, /invest-now, /free-skin-advice."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_extras_feb2026.py",
+    "/app/test_reports/pytest/extras_feb2026.xml"
+  ],
+  "action_items": [
+    "Render data-testid='sale-cta' unconditionally on SalePage (fallback when kit_bundle absent) — use discount_percent + featured[0] to build the CTA.",
+    "Suppress the first-time-order marketing popup on lead-form pages (/partner-with-us, /invest-now, /free-skin-advice) to avoid overlaying the submit button.",
+    "(Optional) Investigate the anti-aging cleanser URL bug on production celestaglow.com — need reproduction steps from user."
+  ],
+  "critical_code_review_comments": [
+    "SalePage.js line 71 `{kit && priceView && (...)}` — main CTA is gated on kit_bundle; the review spec requires sale-cta always visible. Split kit-panel from CTA button.",
+    "LeadFormPage.js uses react-helmet which emits UNSAFE_componentWillMount warnings in strict mode; consider migrating to react-helmet-async to silence noisy console warnings.",
+    "skincare_extras.py `_admin(x_admin_token)` correctly returns 401/403 via the shared verify_admin dep — verified via tests. LeadPayload uses pydantic min_length=10 on phone which yields 422 (not the endpoint's 400); acceptable since both are 4xx auth/validation errors."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_extras_feb2026.py (new)"
+  ],
+  "success_rate": {"backend": "100% (20/20)", "frontend": "~90% (sale-cta missing when no kit_bundle; all other flows PASS)"},
+  "test_credentials": "Admin: X-Admin-Token: celestaglow2024 (also stored to localStorage as adminToken for /admin/extras).",
+  "seed_data_creation": "Created sale campaign slug='fast-test-50' (Fast Test 50 Off, 50% discount, active). Also seeded partner/invest/skin_concern leads via lead form submission for admin-extras verification.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend feb-2026 extras APIs (shop-by-category tiles / leads / sale-campaigns) all pass. Regression endpoints /api/concerns, /api/categories, /doctor-consultation, /admin/orders all return 200 in <200ms. Meta tags (Pinterest + GA4) present in index.html. Only functional gap is SalePage sale-cta hidden for campaigns without kit_bundle. Test data leftover: sale campaign 'fast-test-50' still in DB — safe to leave for E1 self-test.",
+  "rca of the issue": "SalePage sale-cta absent: In /app/frontend/src/pages/SalePage.js the block containing `data-testid='sale-cta'` is wrapped by `{kit && priceView && (...)}` (line 71). `kit` comes from `c.kit_bundle` so unless the admin sets a kit_bundle payload when creating the campaign, the CTA never renders. Fix: either render a fallback CTA outside the kit-price panel, or move the sale-cta button below the headline unconditionally and keep the kit panel independent."
+}

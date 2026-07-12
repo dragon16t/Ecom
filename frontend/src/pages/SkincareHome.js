@@ -49,6 +49,7 @@ export default function SkincareHome() {
   const [concerns, setConcerns] = useState(_cc);
   const [settings, setSettings] = useState(_cs);
   const [categories, setCategories] = useState(_cat);
+  const [shopByCategoryTiles, setShopByCategoryTiles] = useState([]);
   const [loading, setLoading] = useState(_cp.length === 0);
 
   useEffect(() => {
@@ -64,12 +65,14 @@ export default function SkincareHome() {
       cachedGet(`${API}/api/concerns`, { signal: sig }),
       cachedGet(`${API}/api/site-settings`, { signal: sig }),
       cachedGet(`${API}/api/categories`, { signal: sig }),
+      cachedGet(`${API}/api/shop-by-category?niche=skincare`, { signal: sig }).catch(() => ({ data: [] })),
     ])
-      .then(([c, s, cats]) => {
+      .then(([c, s, cats, sbc]) => {
         if (sig.aborted) return;
         setConcerns(c.data || []);
         setSettings(s.data || {});
         setCategories(cats.data || []);
+        setShopByCategoryTiles(Array.isArray(sbc.data) ? sbc.data : (sbc.data?.items || []));
       })
       .catch(() => { /* aborted or network — swallow */ });
 
@@ -141,6 +144,28 @@ export default function SkincareHome() {
           </div>
         </section>
       )}
+
+      {/* Shop by Category tiles — admin-managed via /admin/shop-by-category.
+          Each tile has its OWN image (independent from the category image
+          used on /categories) so admin can showcase different product-type
+          artwork here. Skincare-niche only. */}
+      {(() => {
+        const tiles = (Array.isArray(shopByCategoryTiles) ? shopByCategoryTiles : []).filter(t => t.is_active !== false);
+        if (tiles.length === 0) return null;
+        return (
+          <section className="bg-white border-b border-stone-100" data-testid="skincare-shop-by-category-section">
+            <div className="max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-6">
+              <CircularCategoryStrip
+                items={tiles}
+                routePrefix="/category"
+                title={<>Shop by <span className="italic" style={{ color: accent }}>Category</span></>}
+                accent={accent}
+                testIdPrefix="skincare-shop-by-category"
+              />
+            </div>
+          </section>
+        );
+      })()}
 
       {/* Shop by Brand small banner — placed ABOVE the niche hero banner */}
       <ShopByBrand niche="skincare" accent={accent} accentBg={'#cffafe'} />

@@ -80,6 +80,10 @@ SNAPSHOT_COLLECTIONS = [
     # --- Doctor consultation bookings (paid via Razorpay) ---
     # MUST be backed up — losing a paid customer booking would be unacceptable.
     "doctor_bookings",
+    # --- Feb-2026 growth features ---
+    "shop_by_category_tiles",  # admin-managed Skincare "Shop by Category" tiles
+    "leads",                   # Partner / Invest / Skin Concern lead submissions
+    "sale_campaigns",          # Admin-defined sale landing pages
     "users", "customers", "customer_addresses",
     "leads", "contact_messages", "otp_records",
     "reviews", "review_reports",

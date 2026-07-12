@@ -295,6 +295,9 @@ function AdminDashboard() {
           <Link to="/admin/doctor-bookings" className="flex items-center gap-3 px-4 py-3 text-rose-700 hover:bg-rose-50 rounded-xl" data-testid="nav-doctor-bookings">
             <Stethoscope size={20} /> Doctor Bookings <span className="ml-auto text-[10px] bg-rose-600 text-white px-1.5 py-0.5 rounded-full">₹999</span>
           </Link>
+          <Link to="/admin/extras" className="flex items-center gap-3 px-4 py-3 text-emerald-700 hover:bg-emerald-50 rounded-xl" data-testid="nav-extras">
+            <Stethoscope size={20} /> Growth & Sale
+          </Link>
           <Link to="/admin/routines" className="flex items-center gap-3 px-4 py-3 text-pink-600 hover:bg-pink-50 rounded-xl" data-testid="nav-routines">
             <Sparkles size={20} /> Routine Reports
           </Link>

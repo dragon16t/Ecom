@@ -33,6 +33,8 @@ const LocationPage = lazy(() => import('./pages/LocationPage'));
 const SearchResults = lazy(() => import('./pages/SearchResults'));
 const ConsultationPage = lazy(() => import('./pages/ConsultationPage'));
 const DoctorConsultationPage = lazy(() => import('./pages/DoctorConsultationPage'));
+const LeadFormPage = lazy(() => import('./pages/LeadFormPage'));
+const SalePage = lazy(() => import('./pages/SalePage'));
 const TermsPage = lazy(() => import('./pages/TermsPage'));
 const PrivacyPage = lazy(() => import('./pages/PrivacyPage'));
 const TrackOrder = lazy(() => import('./pages/TrackOrder'));
@@ -52,6 +54,7 @@ const AdminOrders = lazy(() => import('./pages/admin/AdminOrders'));
 const AdminAIStudio = lazy(() => import('./pages/admin/AdminAIStudio'));
 const AdminConsultations = lazy(() => import('./pages/admin/AdminConsultations'));
 const AdminDoctorBookings = lazy(() => import('./pages/admin/AdminDoctorBookings'));
+const AdminExtras = lazy(() => import('./pages/admin/AdminExtras'));
 const AdminUserJourney = lazy(() => import('./pages/admin/AdminUserJourney'));
 const AdminLiveVisitors = lazy(() => import('./pages/admin/AdminLiveVisitors'));
 const AdminWhatsApp = lazy(() => import('./pages/admin/AdminWhatsApp'));
@@ -162,6 +165,7 @@ function App() {
         <Route path="/admin/ai-studio" element={<AdminLayout><AdminAIStudio /></AdminLayout>} />
         <Route path="/admin/consultations" element={<AdminLayout><AdminConsultations /></AdminLayout>} />
         <Route path="/admin/doctor-bookings" element={<AdminLayout><AdminDoctorBookings /></AdminLayout>} />
+        <Route path="/admin/extras" element={<AdminLayout><AdminExtras /></AdminLayout>} />
         <Route path="/admin/user-journey" element={<AdminLayout><AdminUserJourney /></AdminLayout>} />
         <Route path="/admin/live-visitors" element={<AdminLayout><AdminLiveVisitors /></AdminLayout>} />
         <Route path="/admin/whatsapp" element={<AdminLayout><AdminWhatsApp /></AdminLayout>} />
@@ -250,6 +254,10 @@ function App() {
                   <Suspense fallback={<PageLoader />}><DoctorConsultationPage /></Suspense>
                 </PublicLayout>
               } />
+              <Route path="/partner-with-us" element={<PublicLayout><Suspense fallback={<PageLoader />}><LeadFormPage type="partner" /></Suspense></PublicLayout>} />
+              <Route path="/invest-now" element={<PublicLayout><Suspense fallback={<PageLoader />}><LeadFormPage type="invest" /></Suspense></PublicLayout>} />
+              <Route path="/free-skin-advice" element={<PublicLayout><Suspense fallback={<PageLoader />}><LeadFormPage type="skin_concern" /></Suspense></PublicLayout>} />
+              <Route path="/sale/:slug" element={<PublicLayout><Suspense fallback={<PageLoader />}><SalePage /></Suspense></PublicLayout>} />
               
               {/* Legal Pages */}
               <Route path="/terms" element={
