@@ -256,9 +256,6 @@ function App() {
                   <Suspense fallback={<PageLoader />}><DoctorConsultationPage /></Suspense>
                 </PublicLayout>
               } />
-              <Route path="/partner-with-us" element={<PublicLayout><Suspense fallback={<PageLoader />}><LeadFormPage type="partner" /></Suspense></PublicLayout>} />
-              <Route path="/invest-now" element={<PublicLayout><Suspense fallback={<PageLoader />}><LeadFormPage type="invest" /></Suspense></PublicLayout>} />
-              <Route path="/free-skin-advice" element={<PublicLayout><Suspense fallback={<PageLoader />}><LeadFormPage type="skin_concern" /></Suspense></PublicLayout>} />
               <Route path="/sale/:slug" element={<PublicLayout><Suspense fallback={<PageLoader />}><SalePage /></Suspense></PublicLayout>} />
               
               {/* Legal Pages */}

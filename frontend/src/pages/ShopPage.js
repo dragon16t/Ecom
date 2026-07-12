@@ -11,6 +11,7 @@ import { cachedGet } from '../utils/apiCache';
 import { getSocialProof } from '../utils/socialProof';
 import SEOHead, { breadcrumbJsonLd } from '../components/SEOHead';
 import { cldOptim } from '../utils/productImage';
+import { useSaleMode } from '../utils/saleMode';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -31,6 +32,12 @@ function ShopPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const nicheParam = searchParams.get('niche'); // null | 'anti-aging' | 'skincare' | 'cosmetics'
   const nicheMeta = nicheParam ? NICHE_META[nicheParam] : null;
+  const saleMode = useSaleMode();
+  // Only the anti-aging niche has a dedicated landing banner (independent of the sale toggle).
+  const antiAgingBanner = (nicheParam === 'anti-aging') ? {
+    desktop: saleMode?.landing_banner_anti_aging_desktop || '',
+    mobile: saleMode?.landing_banner_anti_aging_mobile || '',
+  } : null;
 
   // URL-state filters (SH-1, SH-4, SH-5, SH-6, SH-7 fix)
   const filter = searchParams.get('filter') || 'all';
@@ -274,6 +281,27 @@ function ShopPage() {
       />
       {/* HERO HEADER */}
       <section className="relative overflow-hidden border-b border-green-100/60">
+        {/* Anti-Aging landing banner — admin-uploaded, always shown on niche=anti-aging */}
+        {antiAgingBanner && (antiAgingBanner.desktop || antiAgingBanner.mobile) && (
+          <div className="w-full" data-testid="anti-aging-landing-banner">
+            {antiAgingBanner.mobile && (
+              <img
+                src={antiAgingBanner.mobile}
+                alt="Anti-aging landing banner"
+                className="w-full h-auto block sm:hidden"
+                loading="eager"
+              />
+            )}
+            {antiAgingBanner.desktop && (
+              <img
+                src={antiAgingBanner.desktop}
+                alt="Anti-aging landing banner"
+                className="w-full h-auto hidden sm:block"
+                loading="eager"
+              />
+            )}
+          </div>
+        )}
         <div className="absolute inset-0 bg-gradient-to-br from-green-50/60 via-white to-amber-50/40" />
         <div className="absolute inset-0 opacity-50" style={{ backgroundImage: 'radial-gradient(circle at 12% 30%, rgba(34,197,94,0.15) 0%, transparent 42%), radial-gradient(circle at 88% 70%, rgba(250,204,21,0.10) 0%, transparent 45%)' }} />
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 py-10 sm:py-14">

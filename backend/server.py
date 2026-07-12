@@ -26,6 +26,7 @@ from routes import doctor_consultation as doctor_consultation_routes
 from routes import skincare_extras as skincare_extras_routes
 from routes import sale_mode as sale_mode_routes
 from routes import delivery_men as delivery_men_routes
+from routes import geo as geo_routes
 from services.enhanced_analytics import EnhancedAnalyticsTracker, VisitorLeadTracker
 from services.ai_content_generator import AIContentGenerator
 from services.auto_blog_generator import AutoBlogGenerator
@@ -3325,6 +3326,7 @@ sale_mode_routes.setup(db, verify_admin_token)
 app.include_router(sale_mode_routes.router, prefix="/api")
 delivery_men_routes.setup(db, verify_admin_token)
 app.include_router(delivery_men_routes.router, prefix="/api")
+app.include_router(geo_routes.router, prefix="/api")
 app.include_router(landing_page_routes.router, prefix="/api")
 app.include_router(product_routes.router, prefix="/api")
 app.include_router(concerns_routes.router, prefix="/api")

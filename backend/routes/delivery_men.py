@@ -133,3 +133,37 @@ async def assign_delivery(order_id: str, payload: OrderDeliveryAssign, x_admin_t
     except Exception:  # noqa: BLE001
         pass
     return await _db.orders.find_one({"order_id": order_id}, {"_id": 0})
+
+
+# ---------------------------------------------------------------------------
+# Warehouse config — single-record settings doc, seed for Instant Delivery.
+# Simple GET/PUT. Fields are optional strings only (no geo logic yet).
+# ---------------------------------------------------------------------------
+WH_KEY = {"type": "warehouse_config"}
+
+
+class WarehousePatch(BaseModel):
+    name: Optional[str] = None
+    address: Optional[str] = None
+    pincode: Optional[str] = None
+    phone: Optional[str] = None
+    maps_link: Optional[str] = None
+
+
+@router.get("/admin/warehouse")
+async def get_warehouse(x_admin_token: str = Header(None, alias="X-Admin-Token")):
+    _verify_admin(x_admin_token)
+    doc = await _db.admin_settings.find_one(WH_KEY, {"_id": 0}) or {}
+    return {k: doc.get(k, "") for k in ("name", "address", "pincode", "phone", "maps_link")}
+
+
+@router.put("/admin/warehouse")
+async def put_warehouse(payload: WarehousePatch, x_admin_token: str = Header(None, alias="X-Admin-Token")):
+    _verify_admin(x_admin_token)
+    upd = {k: (v or "") for k, v in payload.dict().items() if v is not None}
+    if upd:
+        await _db.admin_settings.update_one(
+            WH_KEY, {"$set": upd, "$setOnInsert": WH_KEY}, upsert=True,
+        )
+    doc = await _db.admin_settings.find_one(WH_KEY, {"_id": 0}) or {}
+    return {k: doc.get(k, "") for k in ("name", "address", "pincode", "phone", "maps_link")}

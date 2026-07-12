@@ -35,6 +35,10 @@ DEFAULTS = {
     "zero_tax": True,
     "banner_image_desktop": "",
     "banner_image_mobile": "",
+    # Independent of the sale toggle — always rendered on the anti-aging niche
+    # landing page when set. Uploaded via /admin/sale-mode/banner?field=landing_...
+    "landing_banner_anti_aging_desktop": "",
+    "landing_banner_anti_aging_mobile": "",
 }
 
 
@@ -49,6 +53,8 @@ class SaleModePatch(BaseModel):
     zero_tax: Optional[bool] = None
     banner_image_desktop: Optional[str] = None
     banner_image_mobile: Optional[str] = None
+    landing_banner_anti_aging_desktop: Optional[str] = None
+    landing_banner_anti_aging_mobile: Optional[str] = None
 
 
 async def _get():
@@ -98,8 +104,9 @@ async def admin_upload_sale_banner(
     if not _verify_admin:
         raise HTTPException(500, "Auth not wired")
     _verify_admin(x_admin_token)
-    if field not in {"banner_image_desktop", "banner_image_mobile"}:
-        raise HTTPException(400, "field must be banner_image_desktop or banner_image_mobile")
+    if field not in {"banner_image_desktop", "banner_image_mobile",
+                     "landing_banner_anti_aging_desktop", "landing_banner_anti_aging_mobile"}:
+        raise HTTPException(400, "invalid field")
     raw = await file.read()
     if not raw:
         raise HTTPException(400, "Empty file")

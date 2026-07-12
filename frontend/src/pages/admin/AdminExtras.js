@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { ArrowLeft, Users, Layers, Percent, Copy, ExternalLink, Loader2, Save, Trash2, Plus, Image as ImageIcon, Handshake, TrendingUp, HeartPulse, Phone, Mail } from 'lucide-react';
+import { ArrowLeft, Users, Layers, Percent, Copy, ExternalLink, Loader2, Save, Trash2, Plus, Image as ImageIcon, Handshake, TrendingUp, HeartPulse, Phone, Mail, Warehouse as WarehouseIcon, MapPin } from 'lucide-react';
 import { useAdminAuth } from '../../utils/adminAuth';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -114,9 +114,92 @@ function Flat50Tab({ auth }) {
 
       <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3">
         <h4 className="font-semibold text-sm">Anti-Aging niche banners</h4>
-        <p className="text-[11px] text-gray-500">Uploaded separately for desktop and mobile. Shown at the top of /anti-aging page.</p>
+        <p className="text-[11px] text-gray-500">Shown at the top of /shop?niche=anti-aging <b>only when the sale toggle above is ON.</b></p>
         <BannerUpload label="Desktop banner" auth={auth} field="banner_image_desktop" current={cfg.banner_image_desktop} onSaved={load} />
         <BannerUpload label="Mobile banner" auth={auth} field="banner_image_mobile" current={cfg.banner_image_mobile} onSaved={load} />
+      </div>
+
+      <div className="bg-white rounded-2xl border border-emerald-200 p-5 space-y-3 bg-gradient-to-br from-emerald-50/40 to-white">
+        <h4 className="font-semibold text-sm flex items-center gap-2"><ImageIcon size={14} className="text-emerald-600" /> Anti-Aging landing page banner</h4>
+        <p className="text-[11px] text-gray-500">Always visible on the anti-aging niche page — <b>independent of the sale toggle</b>. Upload separate images for desktop and mobile for best quality.</p>
+        <BannerUpload label="Desktop landing banner" auth={auth} field="landing_banner_anti_aging_desktop" current={cfg.landing_banner_anti_aging_desktop} onSaved={load} />
+        <BannerUpload label="Mobile landing banner" auth={auth} field="landing_banner_anti_aging_mobile" current={cfg.landing_banner_anti_aging_mobile} onSaved={load} />
+      </div>
+    </div>
+  );
+}
+
+// ----------------------------------------------------------------------------
+// Warehouse tab — captures name + exact address (manual, no geo logic yet).
+// This is the seed for the upcoming multi-warehouse Instant Delivery system.
+// ----------------------------------------------------------------------------
+function WarehouseTab({ auth }) {
+  const [cfg, setCfg] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ name: '', address: '', phone: '', pincode: '', maps_link: '' });
+
+  const load = async () => {
+    try {
+      const r = await axios.get(`${API}/admin/warehouse`, auth);
+      setCfg(r.data || {});
+      setForm(f => ({ ...f, ...(r.data || {}) }));
+    } catch (_) { setCfg({}); }
+  };
+  useEffect(() => { load(); }, []); // eslint-disable-line
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const r = await axios.put(`${API}/admin/warehouse`, form, auth);
+      setCfg(r.data);
+    } catch (e) { alert(e?.response?.data?.detail || 'Save failed'); }
+    finally { setSaving(false); }
+  };
+
+  if (!cfg) return <Loader2 className="w-6 h-6 animate-spin mx-auto text-emerald-500" />;
+
+  return (
+    <div className="space-y-4" data-testid="warehouse-tab">
+      <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3">
+        <div className="flex items-center gap-2 mb-1">
+          <WarehouseIcon size={18} className="text-emerald-600" />
+          <div>
+            <h3 className="font-bold text-lg">Warehouse details</h3>
+            <p className="text-xs text-gray-500">Foundation for the Instant Delivery system. Enter the shipping origin so future geo-fence calculations know where you are.</p>
+          </div>
+        </div>
+        <label className="block">
+          <span className="text-xs font-semibold text-gray-600">Warehouse name</span>
+          <input value={form.name || ''} onChange={e => setForm({ ...form, name: e.target.value })}
+            placeholder="Main Warehouse — Kozhikode" className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm" data-testid="wh-name" />
+        </label>
+        <label className="block">
+          <span className="text-xs font-semibold text-gray-600">Exact address</span>
+          <textarea value={form.address || ''} onChange={e => setForm({ ...form, address: e.target.value })}
+            placeholder="Full postal address" rows={3} className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm" data-testid="wh-address" />
+        </label>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block">
+            <span className="text-xs font-semibold text-gray-600">Pincode</span>
+            <input value={form.pincode || ''} onChange={e => setForm({ ...form, pincode: e.target.value })}
+              className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm" data-testid="wh-pincode" />
+          </label>
+          <label className="block">
+            <span className="text-xs font-semibold text-gray-600">Contact phone</span>
+            <input value={form.phone || ''} onChange={e => setForm({ ...form, phone: e.target.value })}
+              className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm" data-testid="wh-phone" />
+          </label>
+        </div>
+        <label className="block">
+          <span className="text-xs font-semibold text-gray-600 flex items-center gap-1"><MapPin size={12} /> Google Maps link (optional)</span>
+          <input value={form.maps_link || ''} onChange={e => setForm({ ...form, maps_link: e.target.value })}
+            placeholder="https://maps.google.com/..." className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm" data-testid="wh-maps" />
+        </label>
+        <button onClick={save} disabled={saving}
+          className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 text-white rounded-lg font-bold text-sm disabled:bg-gray-300"
+          data-testid="wh-save">
+          {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save warehouse
+        </button>
       </div>
     </div>
   );

@@ -84,10 +84,13 @@ export default function RoutinePage() {
   const [routine, setRoutine] = useState(null); // { am: [{slot, product}], pm: [...] }
   const [photo, setPhoto] = useState(null); // compressed JPEG dataURL
   const [photoBusy, setPhotoBusy] = useState(false);
+  const [mobile, setMobile] = useState('');
   const fileInputRef = useRef(null);
 
   useEffect(() => {
-    axios.get(`${API}/api/products`).then(r => setProducts(r.data || [])).catch(() => {});
+    // Pull products across skincare + anti-aging + cosmetics niches so the
+    // routine can slot in items from the wider catalog (was limited to /api/products).
+    axios.get(`${API}/api/products?limit=500`).then(r => setProducts(r.data || [])).catch(() => {});
   }, []);
 
   const toggleConcern = (c) => {
@@ -177,7 +180,7 @@ export default function RoutinePage() {
         <div className="rounded-3xl bg-white/[0.04] backdrop-blur-xl ring-1 ring-white/10 p-5 sm:p-6 shadow-2xl shadow-emerald-900/10" data-testid="routine-profile-card">
           {/* Optional selfie upload — auto-compressed client-side */}
           <div>
-            <p className="text-[10px] font-black tracking-[0.25em] uppercase text-white/50 mb-2">Selfie <span className="text-white/30 font-medium normal-case tracking-normal">(optional, helps personalize)</span></p>
+            <p className="text-[10px] font-black tracking-[0.25em] uppercase text-white/50 mb-2">Selfie <span className="text-rose-300 font-medium normal-case tracking-normal">(required — helps personalize)</span></p>
             <div className="flex items-center gap-3">
               <button
                 type="button"
@@ -218,6 +221,24 @@ export default function RoutinePage() {
                 className="hidden"
                 onChange={handlePhoto}
                 data-testid="routine-photo-input"
+              />
+            </div>
+          </div>
+
+          {/* Mobile — required so the skincare team can follow up */}
+          <div className="mt-5">
+            <p className="text-[10px] font-black tracking-[0.25em] uppercase text-white/50 mb-2">Mobile number <span className="text-rose-300 font-medium normal-case tracking-normal">(required)</span></p>
+            <div className="flex items-center gap-2 bg-white/[0.04] ring-1 ring-white/10 rounded-xl px-3 py-2.5">
+              <span className="text-white/60 text-sm font-mono">+91</span>
+              <input
+                type="tel"
+                inputMode="numeric"
+                maxLength={10}
+                value={mobile}
+                onChange={(e) => setMobile(e.target.value.replace(/\D/g, ''))}
+                placeholder="10-digit mobile"
+                data-testid="routine-mobile-input"
+                className="flex-1 bg-transparent outline-none text-white placeholder-white/30 text-sm"
               />
             </div>
           </div>

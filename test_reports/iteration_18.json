@@ -1,0 +1,59 @@
+{
+  "summary": "Tested Feb-2026 Celesta Glow follow-up batch (geo proxy, warehouse admin, sale-mode landing banners, /routine mandatory selfie+mobile, /shop anti-aging landing banner, removed public lead-form routes, admin extras Warehouse tab, employee role-based access). Backend 8/8 PASS. Frontend: 4/7 PASS. THREE BLOCKER BUGS on frontend: (1) /admin/extras missing Warehouse tab and still shows Sale Campaigns tab, (2) /routine Generate button has NO validation for selfie or mobile (no alert fires), (3) employee login for emp@celestaglow.com/emp1234 returns 'Invalid username/email or password' from /api/employee/login — blocks role-based access verification.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "AdminExtras.js", "issue": "Tabs array (lines 25-30) still contains {k:'sales', label:'Sale Campaigns'} and does NOT contain the Warehouse tab. As a result /admin/extras shows 4 tabs [Shop by Category Tiles, Leads, Sale Campaigns, Flat 50% OFF Switch] — Warehouse is missing (data-testid extras-tab-warehouse not found) and Sale Campaigns is still present. The WarehouseTab component IS defined lower in the file (line ~136) with all required data-testids (wh-name, wh-address, wh-pincode, wh-phone, wh-maps, wh-save) but it is never rendered because the tabs list & the switch on line 41-44 don't include 'warehouse'.", "selector": "[data-testid='extras-tab-warehouse']", "priority": "HIGH"},
+      {"component": "RoutinePage.js — handleGenerate (line 117)", "issue": "handleGenerate() has NO validation for photo or mobile — it directly calls setTimeout and runs product-pick logic. Requirement: clicking generate WITHOUT a selfie should alert; with selfie but no valid mobile should also alert. Neither alert fires (verified: dialog handler saw zero dialogs). Missing block should be: if(!photo) return alert('Please add a selfie'); if(!/^\\d{10}$/.test(mobile)) return alert('Please enter a valid 10-digit mobile');", "selector": "[data-testid='routine-generate-btn']", "priority": "HIGH"},
+      {"component": "LocationStrip suggestion rows", "issue": "Autocomplete suggestions render (4 button items appear when typing 'kozhikode') but they lack individual data-testid attributes (e.g. location-suggestion-0). Requirement wording only asks for 'suggestion rows' being visible — satisfied — but adding testids would make future E2E stable.", "selector": "[data-testid='location-modal'] button", "priority": "LOW"}
+    ],
+    "integration_issues": [
+      {"flow": "Employee login (emp@celestaglow.com / emp1234)", "issue": "POST /api/employee/login returns 401 'Invalid username/email or password'. Credentials from /app/memory/test_credentials.md do not authenticate. Cannot verify role-based access guard on EmployeeLayout (was the ask). Backend log shows employee_sessions hydrated 0 from Mongo at startup — the seed may not have inserted this account, or the password_hash isn't matching. Suggest re-seeding the emp user with a fresh bcrypt hash for 'emp1234'.", "affected_selectors": ["/employee/login form", "/employee/orders", "/employee/products"]}
+    ],
+    "design_issues": []
+  },
+  "passed_verifications": [
+    "GET /api/geo/autocomplete?q=kozhikode → >=1 prediction with place_id/description/main_text/secondary_text",
+    "GET /api/geo/reverse-geocode?lat=11.2588&lng=75.7804 → state='Kerala', city='Kozhikode'",
+    "GET /api/geo/place-details?place_id=... → coords + formatted address",
+    "PUT/GET /api/admin/warehouse persists name/address/pincode/phone/maps_link",
+    "PUT /api/admin/sale-mode with landing_banner_anti_aging_desktop/mobile persists, public GET /api/sale-mode returns them",
+    "POST /api/admin/sale-mode/banner rejects unknown field names (whitelist works)",
+    "Homepage location modal auto-opens after localStorage clear + scroll > 40px",
+    "Location modal 'kozhikode' input renders 4 clickable suggestion rows within 3s",
+    "/routine label reads 'Selfie (required — helps personalize)' and mobile input testid present",
+    "/shop?niche=anti-aging: banner container hidden when landing_banner_anti_aging_desktop is empty, VISIBLE (<img data-testid='anti-aging-landing-banner'>) after admin sets URL",
+    "Flat 50% OFF tab shows BOTH sections: 'Anti-Aging niche banners' + 'Anti-Aging landing page banner'",
+    "Public /partner-with-us, /invest-now, /free-skin-advice all render SPA 404 (0 inputs, no LeadForm content)",
+    "Nav header has no <a href> to any of the three removed routes"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_geo_warehouse_feb2026.py",
+    "/app/test_reports/pytest/geo_warehouse_feb2026.xml"
+  ],
+  "action_items": [
+    "AdminExtras.js: replace {k:'sales', label:'Sale Campaigns'} with {k:'warehouse', label:'Warehouse', icon: WarehouseIcon} in the tabs array (lines 25-30), and add `{tab === 'warehouse' && <WarehouseTab auth={auth} />}` in the render switch (lines 41-44). Also delete the now-orphan SalesTab component if not used elsewhere.",
+    "RoutinePage.js handleGenerate: add mandatory validation at the top — check `photo` truthy and `mobile` is a 10-digit number, alert & return early otherwise.",
+    "Re-seed employee account emp@celestaglow.com with password emp1234 (bcrypt) and permissions={products,retention} so role-based-access can be verified.",
+    "OPTIONAL: add data-testid='location-suggestion-N' on autocomplete rows in LocationStrip for stable E2E."
+  ],
+  "critical_code_review_comments": [
+    "AdminExtras.js has clear implementation drift — the WarehouseTab component + all its testids were built but never wired into the tabs list. Classic 'forgot to register in the router/switch' bug. This should have been caught by a smoke test opening /admin/extras.",
+    "RoutinePage.js handleGenerate contains business logic (product pick + persistence) but no input validation — even the mobile number is captured but never checked. Requirements said BOTH selfie AND mobile are mandatory — right now both are effectively optional and the API POST /api/routines/save may fire with photo_url/photo_data null.",
+    "geo.py is well-structured — key is read lazily, uses httpx.AsyncClient with timeout, normalises the messy address_components correctly. No issues.",
+    "delivery_men.py warehouse endpoints correctly enforce X-Admin-Token (verified returns 401/403 without header)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_geo_warehouse_feb2026.py (new)"
+  ],
+  "success_rate": {"backend": "100% (8/8)", "frontend": "57% (4/7 features fully pass; 3 blockers)"},
+  "test_credentials": "Admin X-Admin-Token=celestaglow2024 works. Employee emp@celestaglow.com / emp1234 REJECTED by /api/employee/login (Invalid username/email or password).",
+  "seed_data_creation": "Set warehouse to TEST_ values during pytest — final state left as TEST_ (main agent can overwrite via UI). Set + cleared landing_banner_anti_aging_desktop back to empty.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Re-verify: (a) Warehouse tab visible on /admin/extras with all wh-* testids + save persists via /api/admin/warehouse; (b) /routine Generate button alerts when photo missing AND when mobile is not 10 digits; (c) employee login works with emp@celestaglow.com/emp1234, then /employee/orders redirects to /employee/dashboard, /employee/products stays on route. Note: backend hot-reload triggers on tests/*.py changes and takes ~90s during startup restore — expect first API call to time out after code edits.",
+  "rca of the issue": "Bug 1 (AdminExtras) RCA: developer built WarehouseTab component (lines 133-235) but never edited the top-level tabs array (line 25-30) or the render switch (line 41-44) to include 'warehouse'. Bug 2 (RoutinePage) RCA: handleGenerate was copied from the pre-mandatory-selfie iteration; validation stub was never added. Bug 3 (Employee login) RCA: likely a bcrypt-hash mismatch OR the seed migration didn't run; backend logs show 'employee_sessions hydrated 0 active sessions from Mongo' at startup which is normal for sessions but doesn't confirm the users collection contains the emp account — needs main-agent inspection."
+}

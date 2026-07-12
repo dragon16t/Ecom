@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useRef } from 'react';
+import axios from 'axios';
 import { MapPin, ChevronDown, Loader2, Search, X, Navigation as NavIcon, Truck } from 'lucide-react';
 
+const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const STORAGE_KEY = 'cg_delivery_location';
 const PROMPTED_KEY = 'cg_delivery_prompted_v1';
-const GMAPS_KEY = process.env.REACT_APP_GOOGLE_MAPS_API_KEY;
 
 function loadStored() {
   try {
@@ -16,24 +17,10 @@ function save(loc) {
 }
 
 async function reverseGeocode(lat, lng) {
-  if (!GMAPS_KEY) return null;
+  // Backend proxies Google — bypasses CORS + keeps key server-side.
   try {
-    const r = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${GMAPS_KEY}`);
-    const d = await r.json();
-    const first = d?.results?.[0];
-    if (!first) return null;
-    const comps = first.address_components || [];
-    const grab = (types) => comps.find(c => types.some(t => c.types.includes(t)))?.long_name || '';
-    return {
-      lat, lng,
-      formatted: first.formatted_address,
-      locality: grab(['sublocality_level_1', 'sublocality', 'neighborhood']) || grab(['locality']),
-      city: grab(['locality']) || grab(['administrative_area_level_2']),
-      district: grab(['administrative_area_level_2']),
-      state: grab(['administrative_area_level_1']),
-      pincode: grab(['postal_code']),
-      place_id: first.place_id,
-    };
+    const r = await axios.get(`${API}/geo/reverse-geocode`, { params: { lat, lng } });
+    return r.data;
   } catch (_) { return null; }
 }
 
@@ -143,15 +130,14 @@ function LocationModal({ onClose, onDetect, onSelect }) {
   const [predictions, setPredictions] = useState([]);
   const [busy, setBusy] = useState(false);
 
-  // Debounced Google Places Autocomplete via REST API
+  // Debounced Places Autocomplete via our backend proxy (no CORS pain).
   useEffect(() => {
-    if (!q || q.length < 3 || !GMAPS_KEY) { setPredictions([]); return; }
+    if (!q || q.length < 3) { setPredictions([]); return; }
     setBusy(true);
     const t = setTimeout(async () => {
       try {
-        const r = await fetch(`https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(q)}&components=country:in&key=${GMAPS_KEY}`);
-        const d = await r.json();
-        setPredictions(d?.predictions || []);
+        const r = await axios.get(`${API}/geo/autocomplete`, { params: { q } });
+        setPredictions(r.data?.predictions || []);
       } catch (_) { setPredictions([]); }
       finally { setBusy(false); }
     }, 350);
@@ -161,13 +147,9 @@ function LocationModal({ onClose, onDetect, onSelect }) {
   const pick = async (p) => {
     setBusy(true);
     try {
-      const r = await fetch(`https://maps.googleapis.com/maps/api/place/details/json?place_id=${p.place_id}&key=${GMAPS_KEY}`);
-      const d = await r.json();
-      const g = d?.result?.geometry?.location;
-      if (g) {
-        const info = await reverseGeocode(g.lat, g.lng);
-        if (info) onSelect(info);
-      }
+      const r = await axios.get(`${API}/geo/place-details`, { params: { place_id: p.place_id } });
+      if (r.data && r.data.lat) onSelect(r.data);
+      else alert('Could not resolve that address');
     } catch (_) { alert('Could not resolve address'); }
     finally { setBusy(false); }
   };
@@ -205,8 +187,8 @@ function LocationModal({ onClose, onDetect, onSelect }) {
             <div className="max-h-64 overflow-y-auto space-y-1 border border-gray-100 rounded-xl p-1">
               {predictions.map((p) => (
                 <button key={p.place_id} onClick={() => pick(p)} className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-emerald-50 text-sm">
-                  <div className="font-medium text-gray-900 text-sm">{p.structured_formatting?.main_text || p.description}</div>
-                  <div className="text-xs text-gray-500">{p.structured_formatting?.secondary_text}</div>
+                  <div className="font-medium text-gray-900 text-sm">{p.main_text || p.description}</div>
+                  <div className="text-xs text-gray-500">{p.secondary_text}</div>
                 </button>
               ))}
             </div>
