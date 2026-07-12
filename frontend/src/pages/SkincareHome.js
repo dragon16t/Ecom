@@ -156,7 +156,23 @@ export default function SkincareHome() {
           used on /categories) so admin can showcase different product-type
           artwork here. Skincare-niche only. */}
       {(() => {
-        const tiles = (Array.isArray(shopByCategoryTiles) ? shopByCategoryTiles : []).filter(t => t.is_active !== false);
+        const manual = (Array.isArray(shopByCategoryTiles) ? shopByCategoryTiles : []).filter(t => t.is_active !== false);
+        // Auto-fallback: derive tiles from the products catalog's categories when
+        // no manual tiles have been configured yet. Admin can still curate later.
+        const auto = manual.length === 0
+          ? (Array.isArray(categories) ? categories : [])
+              .filter(c => (c.group === 'skincare' || c.niche === 'skincare') && c.is_active !== false)
+              .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+              .slice(0, 12)
+              .map(c => ({
+                slug: c.slug,
+                name: c.name,
+                image: c.image || c.icon_image || null,
+                icon: c.icon || null,
+                route_slug: c.slug,
+              }))
+          : [];
+        const tiles = manual.length ? manual : auto;
         if (tiles.length === 0) return null;
         return (
           <section className="bg-white border-b border-stone-100" data-testid="skincare-shop-by-category-section">

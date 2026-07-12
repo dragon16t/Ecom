@@ -297,7 +297,20 @@ function CheckoutPage() {
 
               {/* Instant Delivery — draggable pin. Sets delivery_lat/lng + coverage on the order. */}
               <div className="mb-4">
-                <CheckoutMap initial={pin} onChange={(info) => { setPinInfo(info); setPin({ lat: info.lat, lng: info.lng }); }} />
+                <CheckoutMap initial={pin} onChange={(info) => {
+                  setPinInfo(info);
+                  setPin({ lat: info.lat, lng: info.lng });
+                  // Auto-fill address fields from the reverse-geocode payload —
+                  // only if the user hasn't already typed something into that field
+                  // (so we never clobber their manual edits).
+                  setFormData((prev) => ({
+                    ...prev,
+                    city: prev.city || info.city || info.locality || '',
+                    state: prev.state || info.state || '',
+                    pincode: prev.pincode || info.pincode || '',
+                    area: prev.area || info.locality || '',
+                  }));
+                }} />
               </div>
 
               {/* Saved addresses selector (logged-in customers) */}

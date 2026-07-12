@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { ArrowLeft, Users, Layers, Percent, Copy, ExternalLink, Loader2, Save, Trash2, Plus, Image as ImageIcon, Handshake, TrendingUp, HeartPulse, Phone, Mail, Warehouse as WarehouseIcon, MapPin } from 'lucide-react';
+import LocationPicker from '../../components/admin/LocationPicker';
 import { useAdminAuth } from '../../utils/adminAuth';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -9,7 +10,7 @@ const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 export default function AdminExtras() {
   const navigate = useNavigate();
   const { adminToken, isLoading, isAuthenticated } = useAdminAuth(navigate);
-  const [tab, setTab] = useState('tiles');
+  const [tab, setTab] = useState('flat50');
   const auth = useMemo(() => adminToken ? { headers: { 'X-Admin-Token': adminToken } } : {}, [adminToken]);
   if (isLoading || !isAuthenticated) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-emerald-500" /></div>;
 
@@ -23,8 +24,6 @@ export default function AdminExtras() {
           </div>
           <div className="flex gap-2 overflow-x-auto">
             {[
-              { k: 'tiles', label: 'Shop by Category Tiles', icon: Layers },
-              { k: 'leads', label: 'Leads', icon: Users },
               { k: 'flat50', label: 'Flat 50% OFF Switch', icon: Percent },
               { k: 'warehouse', label: 'Warehouse', icon: WarehouseIcon },
             ].map(t => (
@@ -38,8 +37,6 @@ export default function AdminExtras() {
         </div>
       </div>
       <div className="max-w-6xl mx-auto px-4 py-5">
-        {tab === 'tiles' && <TilesTab auth={auth} />}
-        {tab === 'leads' && <LeadsTab auth={auth} />}
         {tab === 'flat50' && <Flat50Tab auth={auth} />}
         {tab === 'warehouse' && <WarehouseTab auth={auth} />}
       </div>
@@ -133,8 +130,9 @@ function Flat50Tab({ auth }) {
 // Warehouse tab — MULTI-warehouse roster (Instant Delivery).
 // Each row has name, address, lat/lng, service_radius_km, phone. The lat/lng
 // is what powers the /api/delivery/coverage check at checkout.
+// Named-exported so the standalone /admin/warehouses page can mount it.
 // ----------------------------------------------------------------------------
-function WarehouseTab({ auth }) {
+export function WarehouseTab({ auth }) {
   const [rows, setRows] = useState(null);
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({ name: '', address: '', pincode: '', phone: '', lat: '', lng: '', service_radius_km: 15, is_active: true });
@@ -205,6 +203,14 @@ function WarehouseTab({ auth }) {
             placeholder="Latitude (e.g. 11.2588)" className="px-3 py-2 border border-gray-200 rounded-lg text-sm" data-testid="wh-lat" />
           <input type="number" step="0.000001" value={form.lng} onChange={e => setForm({ ...form, lng: e.target.value })}
             placeholder="Longitude (e.g. 75.7804)" className="px-3 py-2 border border-gray-200 rounded-lg text-sm" data-testid="wh-lng" />
+        </div>
+        <div className="mt-3">
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-emerald-700 mb-1">Or pick on the map</p>
+          <LocationPicker
+            value={form.lat !== '' && form.lng !== '' ? { lat: parseFloat(form.lat), lng: parseFloat(form.lng) } : null}
+            onChange={({ lat, lng }) => setForm({ ...form, lat: lat.toFixed(6), lng: lng.toFixed(6) })}
+            height="h-48"
+          />
         </div>
         <button onClick={add} disabled={busy}
           className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 text-white rounded-lg font-bold text-sm disabled:bg-gray-300"

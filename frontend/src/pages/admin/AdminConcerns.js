@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { ArrowLeft, Plus, Trash2, Save, Edit, Sparkles, Package, Image as ImageIcon, Layers, Search } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Save, Edit, Sparkles, Package, Image as ImageIcon, Layers, Search, LayoutGrid } from 'lucide-react';
 import { getAdminToken, clearAdminToken } from '../../utils/adminAuth';
 import QuickImageEditor from '../../components/admin/QuickImageEditor';
 import BannerImageDropzone from '../../components/admin/BannerImageDropzone';
+import TilesPanel from './TilesPanel';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -203,7 +204,7 @@ export default function AdminConcerns() {
                 });
               }
             }}
-            className="bg-green-600 hover:bg-green-700 text-white text-xs font-bold px-3.5 py-2 rounded-lg flex items-center gap-1.5"
+            className={`bg-green-600 hover:bg-green-700 text-white text-xs font-bold px-3.5 py-2 rounded-lg flex items-center gap-1.5 ${tab === 'shop-tiles' ? 'hidden' : ''}`}
             data-testid="add-new-btn"
           >
             <Plus size={14} /> Add {tab === 'concerns' ? 'skincare concern' : tab === 'cosmetic-concerns' ? 'cosmetic concern' : tab === 'subcategories' ? 'subcategory' : tab === 'cosmetics' ? 'cosmetic product type' : 'skincare product type'}
@@ -217,6 +218,7 @@ export default function AdminConcerns() {
             { id: 'skincare', label: `🧴 Skincare Product Types (${categories.filter(c => (c.niche || c.group) === 'skincare').length})`, icon: Package },
             { id: 'cosmetics', label: `💄 Cosmetics Product Types (${categories.filter(c => (c.niche || c.group) === 'cosmetics').length})`, icon: Package },
             { id: 'subcategories', label: `Subcategories (${subcategories.length})`, icon: Layers },
+            { id: 'shop-tiles', label: 'Shop by Category tiles', icon: LayoutGrid },
           ].map(t => {
             const Icon = t.icon;
             return (
@@ -636,6 +638,9 @@ export default function AdminConcerns() {
               )}
             </div>
           </div>
+        )}
+        {!globalSearch && tab === 'shop-tiles' && (
+          <TilesPanel auth={auth} />
         )}
       </div>
 

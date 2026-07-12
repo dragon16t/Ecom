@@ -6,6 +6,7 @@ import {
   CheckCircle, Clock, RefreshCw, ChevronRight, Filter, User
 } from 'lucide-react';
 import { useAdminAuth } from '../../utils/adminAuth';
+import LeadsPanel from './LeadsPanel';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -122,6 +123,9 @@ function AdminCustomers() {
         <h1 className="text-2xl font-bold text-gray-900">Customers</h1>
         <p className="text-gray-500 text-sm">View all customers, leads, and their order history</p>
       </div>
+
+      {/* Lead-generation submissions (Partner With Us / Invest Now / Free Skin Advice) */}
+      <LeadsPanel auth={{ headers: { 'X-Admin-Token': adminToken } }} />
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

@@ -44,16 +44,26 @@ export default function CheckoutMap({ initial, onChange }) {
   const markerRef = useRef(null);
   const [center, setCenter] = useState(initial || FALLBACK);
   const [coverage, setCoverage] = useState(null);
-  const [address, setAddress] = useState('');
+  const [geo, setGeo] = useState(null);   // full reverse-geocode payload (city/state/pincode)
   const [busy, setBusy] = useState(true);
   const [err, setErr] = useState('');
 
-  // Emit changes upstream — parent uses this to populate order payload.
+  // Emit changes upstream — parent uses this to populate order payload +
+  // auto-fill the address form (city / state / pincode / area).
   useEffect(() => {
     if (!coverage) return;
-    onChange && onChange({ lat: center.lat, lng: center.lng, coverage, address });
+    onChange && onChange({
+      lat: center.lat,
+      lng: center.lng,
+      coverage,
+      address: geo?.formatted || '',
+      city: geo?.city || '',
+      state: geo?.state || '',
+      pincode: geo?.pincode || '',
+      locality: geo?.locality || '',
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [coverage, center.lat, center.lng, address]);
+  }, [coverage, center.lat, center.lng, geo]);
 
   // Boot: load SDK, mount map + marker.
   useEffect(() => {
@@ -103,7 +113,7 @@ export default function CheckoutMap({ initial, onChange }) {
         axios.get(`${API}/geo/reverse-geocode`, { params: { lat, lng } }).then(r => r.data).catch(() => null),
         axios.get(`${API}/delivery/coverage`, { params: { lat, lng } }).then(r => r.data).catch(() => null),
       ]);
-      if (rg?.formatted) setAddress(rg.formatted);
+      if (rg) setGeo(rg);
       if (cov) setCoverage(cov);
     } finally { setBusy(false); }
   };
@@ -144,9 +154,9 @@ export default function CheckoutMap({ initial, onChange }) {
 
       <div className="px-4 py-3 space-y-2">
         {err && <p className="text-xs text-rose-600">{err}</p>}
-        {address && (
+        {geo?.formatted && (
           <p className="text-xs text-gray-600 line-clamp-2" data-testid="checkout-map-address">
-            <span className="font-semibold text-gray-800">Pin address:</span> {address}
+            <span className="font-semibold text-gray-800">Pin address:</span> {geo.formatted}
           </p>
         )}
         {busy ? (
