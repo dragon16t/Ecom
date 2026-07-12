@@ -820,9 +820,18 @@ function AdminOrders() {
                     data-testid={`dm-select-${order.order_id}`}
                   >
                     <option value="">Select delivery man…</option>
-                    {deliveryMen.map(m => (
-                      <option key={m.id} value={m.id}>{m.name}</option>
-                    ))}
+                    {(() => {
+                      // If the order is routed to a specific warehouse, only show riders
+                      // assigned to that warehouse (plus "Any warehouse" riders). Otherwise
+                      // show everyone active — falls back to the full list.
+                      const wh = order.assigned_warehouse_id;
+                      const filtered = wh
+                        ? deliveryMen.filter(m => !m.assigned_warehouse_id || m.assigned_warehouse_id === wh)
+                        : deliveryMen;
+                      return filtered.map(m => (
+                        <option key={m.id} value={m.id}>{m.name}{m.assigned_warehouse_id ? ' ★' : ''}</option>
+                      ));
+                    })()}
                   </select>
                   <button
                     onClick={() => sendToDeliveryMan(order)}

@@ -164,19 +164,23 @@ export default function CheckoutMap({ initial, onChange }) {
             <Loader2 size={12} className="animate-spin" /> Checking coverage…
           </div>
         ) : coverage?.instant_available ? (
-          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200" data-testid="delivery-badge-instant">
-            <Zap size={14} className="text-amber-600" />
-            <div className="text-xs">
-              <b className="text-amber-700">Instant Delivery available</b>
-              <span className="text-gray-500"> · from {coverage.nearest_warehouse?.name} ({coverage.nearest_warehouse?.distance_km} km)</span>
+          <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-amber-50 border border-amber-200" data-testid="delivery-badge-instant">
+            <Zap size={14} className="text-amber-600 mt-0.5 shrink-0" />
+            <div className="text-xs leading-snug">
+              <p className="font-bold text-amber-700">Instant delivery available</p>
+              <p className="text-gray-500 mt-0.5">
+                {coverage.nearest_warehouse?.distance_km <= 5
+                  ? 'Fastest · arrives in 45–55 minutes'
+                  : 'Fast · arrives in 1–2 hours'}
+              </p>
             </div>
           </div>
         ) : coverage ? (
-          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-50 border border-slate-200" data-testid="delivery-badge-standard">
-            <Truck size={14} className="text-slate-500" />
-            <div className="text-xs">
-              <b className="text-slate-700">Standard delivery</b>
-              <span className="text-gray-500"> · 3–5 business days via courier</span>
+          <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-slate-50 border border-slate-200" data-testid="delivery-badge-standard">
+            <Truck size={14} className="text-slate-500 mt-0.5 shrink-0" />
+            <div className="text-xs leading-snug">
+              <p className="font-bold text-slate-700">Standard delivery</p>
+              <p className="text-gray-500 mt-0.5">Arrives in 3–5 business days via courier</p>
             </div>
           </div>
         ) : null}

@@ -1,22 +1,28 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Bike, Plus, Trash2, ChevronLeft, MessageCircle, ToggleLeft, ToggleRight, Loader2 } from 'lucide-react';
-import { getAdminToken } from '../../utils/adminAuth';
+import { useAdminAuth } from '../../utils/adminAuth';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 export default function AdminDeliveryMen() {
-  const adminToken = getAdminToken();
+  const navigate = useNavigate();
+  const { adminToken, isLoading, isAuthenticated } = useAdminAuth(navigate);
   const [rows, setRows] = useState([]);
+  const [warehouses, setWarehouses] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [form, setForm] = useState({ name: '', whatsapp_number: '' });
+  const [form, setForm] = useState({ name: '', whatsapp_number: '', assigned_warehouse_id: '' });
   const [busy, setBusy] = useState(false);
 
   const load = async () => {
     try {
-      const r = await axios.get(`${API}/admin/delivery-men`, { headers: { 'X-Admin-Token': adminToken } });
-      setRows(r.data || []);
+      const [rMen, rWh] = await Promise.all([
+        axios.get(`${API}/admin/delivery-men`, { headers: { 'X-Admin-Token': adminToken } }),
+        axios.get(`${API}/admin/warehouses`, { headers: { 'X-Admin-Token': adminToken } }).catch(() => ({ data: [] })),
+      ]);
+      setRows(rMen.data || []);
+      setWarehouses(rWh.data || []);
     } catch (e) { /* noop */ }
     finally { setLoading(false); }
   };
@@ -27,11 +33,21 @@ export default function AdminDeliveryMen() {
     if (!form.name.trim() || !form.whatsapp_number.trim()) return;
     setBusy(true);
     try {
-      await axios.post(`${API}/admin/delivery-men`, form, { headers: { 'X-Admin-Token': adminToken } });
-      setForm({ name: '', whatsapp_number: '' });
+      await axios.post(`${API}/admin/delivery-men`, {
+        ...form,
+        assigned_warehouse_id: form.assigned_warehouse_id || null,
+      }, { headers: { 'X-Admin-Token': adminToken } });
+      setForm({ name: '', whatsapp_number: '', assigned_warehouse_id: '' });
       await load();
     } catch (e) { alert(e.response?.data?.detail || 'Failed to add'); }
     finally { setBusy(false); }
+  };
+
+  const setWarehouse = async (id, wid) => {
+    try {
+      await axios.patch(`${API}/admin/delivery-men/${id}`, { assigned_warehouse_id: wid || '' }, { headers: { 'X-Admin-Token': adminToken } });
+      await load();
+    } catch (_) { alert('Failed to update'); }
   };
 
   const toggleActive = async (m) => {
@@ -48,6 +64,10 @@ export default function AdminDeliveryMen() {
       await load();
     } catch (e) { alert('Failed to delete'); }
   };
+
+  if (isLoading || !isAuthenticated) {
+    return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin w-6 h-6 text-emerald-500" /></div>;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 pb-20 lg:pb-8">
@@ -69,7 +89,7 @@ export default function AdminDeliveryMen() {
         {/* Add form */}
         <div className="bg-white rounded-2xl border border-gray-100 p-5" data-testid="delivery-man-add-card">
           <h2 className="font-bold text-gray-900 mb-3 text-sm uppercase tracking-wider">Add delivery man</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_1fr_auto] gap-2">
             <input
               value={form.name}
               onChange={(e) => setForm(f => ({ ...f, name: e.target.value }))}
@@ -80,10 +100,19 @@ export default function AdminDeliveryMen() {
             <input
               value={form.whatsapp_number}
               onChange={(e) => setForm(f => ({ ...f, whatsapp_number: e.target.value }))}
-              placeholder="WhatsApp number (e.g. 9876543210)"
+              placeholder="WhatsApp number"
               className="px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
               data-testid="dm-number-input"
             />
+            <select
+              value={form.assigned_warehouse_id}
+              onChange={(e) => setForm(f => ({ ...f, assigned_warehouse_id: e.target.value }))}
+              className="px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none bg-white"
+              data-testid="dm-warehouse-input"
+            >
+              <option value="">Any warehouse</option>
+              {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+            </select>
             <button
               onClick={add}
               disabled={busy || !form.name.trim() || !form.whatsapp_number.trim()}
@@ -94,7 +123,7 @@ export default function AdminDeliveryMen() {
             </button>
           </div>
           <p className="text-[11px] text-gray-500 mt-2">
-            Numbers are stored with the +91 country code automatically for 10-digit Indian mobiles.
+            Numbers get +91 auto-prepended for 10-digit Indian mobiles. Riders assigned to a warehouse only receive orders routed there.
           </p>
         </div>
 
@@ -121,6 +150,16 @@ export default function AdminDeliveryMen() {
                     <p className="font-bold text-gray-900 truncate">{m.name}</p>
                     <p className="text-xs font-mono text-gray-500">+{m.whatsapp_number}</p>
                   </div>
+                  <select
+                    value={m.assigned_warehouse_id || ''}
+                    onChange={(e) => setWarehouse(m.id, e.target.value)}
+                    className="text-xs px-2 py-1 border border-gray-200 rounded-md bg-white"
+                    data-testid={`dm-warehouse-${m.id}`}
+                    title="Which warehouse this rider covers"
+                  >
+                    <option value="">Any warehouse</option>
+                    {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                  </select>
                   <a
                     href={`https://wa.me/${m.whatsapp_number}`}
                     target="_blank"

@@ -157,20 +157,33 @@ export default function SkincareHome() {
           artwork here. Skincare-niche only. */}
       {(() => {
         const manual = (Array.isArray(shopByCategoryTiles) ? shopByCategoryTiles : []).filter(t => t.is_active !== false);
-        // Auto-fallback: derive tiles from the products catalog's categories when
-        // no manual tiles have been configured yet. Admin can still curate later.
+        // Auto-fallback: derive tiles from the product catalog. We show
+        // TOP-LEVEL parent categories (moisturizers, cleansers, serums,
+        // exfoliators, sunscreens, etc.) — not the sub-slugs like face-wash.
+        // Falls back to deriving unique `parent` values if is_parent is not set.
         const auto = manual.length === 0
-          ? (Array.isArray(categories) ? categories : [])
-              .filter(c => (c.group === 'skincare' || c.niche === 'skincare') && c.is_active !== false)
-              .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
-              .slice(0, 12)
-              .map(c => ({
-                slug: c.slug,
-                name: c.name,
-                image: c.image || c.icon_image || null,
-                icon: c.icon || null,
-                route_slug: c.slug,
-              }))
+          ? (() => {
+              const arr = (Array.isArray(categories) ? categories : [])
+                .filter(c => (c.group === 'skincare' || c.niche === 'skincare' || (!c.group && !c.niche)) && c.is_active !== false);
+              // First choice: explicit parent categories.
+              let picks = arr.filter(c => c.is_parent === true);
+              if (picks.length < 6) {
+                // Fall back to unique parent slugs referenced by children.
+                const parentSlugs = [...new Set(arr.map(c => c.parent).filter(Boolean))];
+                const byParent = parentSlugs
+                  .map(slug => arr.find(c => c.slug === slug) || { slug, name: slug.replace(/-/g, ' ').replace(/\b\w/g, m => m.toUpperCase()), niche: 'skincare' });
+                picks = [...picks, ...byParent.filter(p => !picks.some(x => x.slug === p.slug))];
+              }
+              return picks
+                .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+                .map(c => ({
+                  slug: c.slug,
+                  name: c.name,
+                  image: c.image || c.icon_image || null,
+                  icon: c.icon || null,
+                  route_slug: c.slug,
+                }));
+            })()
           : [];
         const tiles = manual.length ? manual : auto;
         if (tiles.length === 0) return null;

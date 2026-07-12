@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Percent, ChevronLeft, Zap, Sparkles, Image as ImageIcon, Loader2, Check } from 'lucide-react';
-import { getAdminToken } from '../../utils/adminAuth';
+import { useAdminAuth } from '../../utils/adminAuth';
 import BannerImageDropzone from '../../components/admin/BannerImageDropzone';
 
 const API = process.env.REACT_APP_BACKEND_URL;
@@ -14,8 +14,9 @@ const API = process.env.REACT_APP_BACKEND_URL;
  * Only affects the anti-aging niche (per user requirement).
  */
 export default function AdminOffers() {
-  const token = getAdminToken();
-  const auth = { headers: { 'X-Admin-Token': token } };
+  const navigate = useNavigate();
+  const { adminToken, isLoading, isAuthenticated } = useAdminAuth(navigate);
+  const auth = { headers: { 'X-Admin-Token': adminToken } };
   const [cfg, setCfg] = useState(null);
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState('offer');
@@ -26,7 +27,11 @@ export default function AdminOffers() {
       setCfg(r.data);
     } catch (_) { setCfg({ enabled: false }); }
   };
-  useEffect(() => { load(); }, []); // eslint-disable-line
+  useEffect(() => { if (adminToken) load(); }, [adminToken]);
+
+  if (isLoading || !isAuthenticated) {
+    return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin w-6 h-6 text-emerald-500" /></div>;
+  }
 
   const patch = async (upd) => {
     setSaving(true);

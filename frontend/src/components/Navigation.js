@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Menu, X, Search, ShoppingCart, Stethoscope, Package, Pill } from 'lucide-react';
 import LocationStrip from './LocationStrip';
+import HomepageSaleStrip from './HomepageSaleStrip';
 import axios from 'axios';
 import { prefetchHandlers } from '../utils/routePrefetch';
 import { isProductTbl, isComboTbl, pruneTblItemsFromCart } from '../pages/Homepage';
@@ -154,6 +155,9 @@ function Navigation() {
             </Link>
           </div>
         </div>
+        {/* Sale strip (only when the anti-aging Flat 50% toggle is ON) —
+            sits ABOVE the location strip so shoppers see the offer first. */}
+        <HomepageSaleStrip />
         {/* Location strip — sits directly under the header, matches reference. */}
         <LocationStrip />
       </header>

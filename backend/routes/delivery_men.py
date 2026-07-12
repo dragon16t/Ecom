@@ -30,12 +30,14 @@ class DeliveryManIn(BaseModel):
     name: str = Field(..., min_length=1, max_length=80)
     whatsapp_number: str = Field(..., min_length=8, max_length=20)
     active: Optional[bool] = True
+    assigned_warehouse_id: Optional[str] = None  # Feb-2026: routes only orders from this warehouse
 
 
 class DeliveryManPatch(BaseModel):
     name: Optional[str] = None
     whatsapp_number: Optional[str] = None
     active: Optional[bool] = None
+    assigned_warehouse_id: Optional[str] = None
 
 
 def _clean_number(raw: str) -> str:
@@ -84,6 +86,9 @@ async def update_delivery_man(man_id: str, payload: DeliveryManPatch, x_admin_to
         upd["whatsapp_number"] = num
     if payload.active is not None:
         upd["active"] = bool(payload.active)
+    if payload.assigned_warehouse_id is not None:
+        # Empty string clears the assignment.
+        upd["assigned_warehouse_id"] = payload.assigned_warehouse_id or None
     if not upd:
         raise HTTPException(400, "Nothing to update")
     res = await _db.delivery_men.update_one({"id": man_id}, {"$set": upd})

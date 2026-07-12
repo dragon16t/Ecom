@@ -15,6 +15,60 @@ db = None
 admin_sessions = {}
 employee_sessions = {}
 
+# ---------------------------------------------------------------------------
+# Sale-mode price adjuster (Feb-2026)
+# ---------------------------------------------------------------------------
+# When the global Flat 50% OFF toggle is ON, every product whose niche is in
+# `applies_to_niches` (default: anti-aging) is re-priced on the wire so cards
+# show the discounted price straight from the API. Combos get the same treatment.
+_SALE_CACHE = {"cfg": None, "ts": 0}
+async def _get_sale_cfg():
+    import time
+    if _SALE_CACHE["cfg"] and time.time() - _SALE_CACHE["ts"] < 30:
+        return _SALE_CACHE["cfg"]
+    doc = await db.admin_settings.find_one({"type": "sale_mode"}, {"_id": 0}) or {}
+    _SALE_CACHE["cfg"] = doc
+    _SALE_CACHE["ts"] = time.time()
+    return doc
+
+def _apply_sale_one(p: dict, cfg: dict):
+    """Mutate a product/combo dict in-place: add sale_active + discounted
+    prepaid_price + discount_percent. Leaves mrp untouched (customers see MRP
+    struck through and the new price highlighted)."""
+    if not cfg or not cfg.get("enabled"):
+        return
+    niches = cfg.get("applies_to_niches") or ["anti-aging"]
+    if p.get("niche") not in niches:
+        return
+    try:
+        pct = int(cfg.get("discount_percent") or 50)
+    except (TypeError, ValueError):
+        pct = 50
+    mrp = p.get("mrp") or p.get("prepaid_price") or 0
+    if mrp <= 0:
+        return
+    new_price = max(1, round(mrp * (100 - pct) / 100))
+    # Only mark as on-sale if this is actually cheaper than the current price.
+    if new_price >= (p.get("prepaid_price") or mrp):
+        return
+    p["sale_active"] = True
+    p["sale_badge_label"] = cfg.get("badge_label") or f"FLAT {pct}% OFF"
+    p["original_prepaid_price"] = p.get("prepaid_price")
+    p["prepaid_price"] = new_price
+    p["cod_price"] = new_price
+    p["discount_percent"] = pct
+
+async def _apply_sale(items):
+    """Apply sale_mode adjustment to a list of product/combo dicts."""
+    if not items:
+        return items
+    cfg = await _get_sale_cfg()
+    if not cfg.get("enabled"):
+        return items
+    for p in items:
+        _apply_sale_one(p, cfg)
+    return items
+
 def set_db(database):
     global db
     db = database
@@ -422,6 +476,9 @@ async def get_all_products(
     else:
         response.headers["Cache-Control"] = "no-cache, no-store"
 
+    # Sale-mode: overlay Flat 50% OFF price on eligible (anti-aging) products.
+    await _apply_sale(products)
+
     # Back-compat: if the caller didn't ask for pagination, return a plain array.
     if not paginating:
         return products
@@ -474,6 +531,7 @@ async def get_products_batch(data: Dict[str, Any]):
         optimize_products_list(items, width=600)
     except Exception:
         pass
+    await _apply_sale(items)
     return items
 
 
@@ -506,6 +564,9 @@ async def get_product(slug: str):
         optimize_product_images(product, width=1200)
     except Exception:
         pass
+    # Sale-mode overlay (Feb-2026)
+    cfg = await _get_sale_cfg()
+    _apply_sale_one(product, cfg)
     return product
 
 
@@ -912,6 +973,7 @@ async def get_all_combos(active_only: bool = Query(True), niche: Optional[str] =
                 pass
         else:
             c["days_to_launch"] = None
+    await _apply_sale(combos)
     return combos
 
 

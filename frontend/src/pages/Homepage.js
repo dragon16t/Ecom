@@ -305,7 +305,8 @@ function Homepage() {
 
   return (
     <div className="bg-stone-50/40" data-testid="homepage">
-      <HomepageSaleStrip />
+      {/* HomepageSaleStrip moved into Navigation so it renders above the
+          LocationStrip on every page (was here below the niche banners). */}
       <SEOHead
         title="Celesta Glow – India's #1 Anti-Aging Skincare Brand"
         description="Shop Celesta Glow's complete anti-aging system — Serum, Night Cream, Under Eye Cream, Sunscreen & Cleanser. Dermatologist-approved formulas for Indian skin. Free shipping. 7-day sealed-bottle return."
