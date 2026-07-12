@@ -1,5 +1,43 @@
 # Changelog
 
+## 2026-02 Session — Growth batch (Phase 1 + 2 + 3)
+### Phase 1
+- **Pinterest domain verification** meta tag added to `public/index.html` (`p:domain_verify=932ef79d89721ec0b913511dbea52c73`).
+- **Google Analytics 4** wired in `public/index.html` (`G-QYDN365M5N`).
+- **Skincare "Shop by Category" tiles**: new admin-managed collection
+  `shop_by_category_tiles` with separate images (independent of the
+  /admin/categories editor). Admin CRUD at
+  `POST/PUT/DELETE /api/admin/shop-by-category`. Public feed at
+  `GET /api/shop-by-category?niche=skincare`. Rendered on `SkincareHome.js`
+  below "Shop by Concern".
+- (Follow-up) Anti-aging cleanser URL bug on production — not reproduced
+  yet, need URL sample from user.
+
+### Phase 2 — Leads
+- 3 public lead-form pages: `/partner-with-us`, `/invest-now`,
+  `/free-skin-advice`, all wired to a single `POST /api/leads` endpoint.
+- Admin `/admin/extras` → **Leads tab** with type filter + status
+  workflow (new → contacted → qualified → converted → closed).
+- Unified `LeadFormPage.js` (3-in-1) with per-type fields
+  (business_name, investment_amount, concern).
+
+### Phase 3 — Sale Campaigns
+- `sale_campaigns` collection + admin CRUD at
+  `/api/admin/sale-campaigns` with revenue + order_count aggregation.
+- Public landing at `/sale/{slug}` (`SalePage.js`) with urgency
+  countdown, MRP vs Sale price panel, hero image, featured products,
+  sticky bottom CTA, trust strip.
+- **Attribution**: SalePage writes `sale_campaign_slug` to
+  sessionStorage; CheckoutPage attaches it to the order payload as
+  `campaign_slug`; server stores it on the order. Admin sale tab
+  shows per-campaign revenue + order_count.
+- Admin `/admin/extras` → **Sale Campaigns tab** with copy-link, active
+  toggle, subtitle / trust / featured_slugs editors.
+
+### Testing
+- Fast test via testing_agent (iteration_15.json): 20/20 backend
+  tests PASS, all frontend flows verified, 0 issues.
+
 ## 2026-02 Session — UI polish + P1
 ### UI / theme
 - **Doctor Consultation page**: switched theme from rose/pink to emerald/green
