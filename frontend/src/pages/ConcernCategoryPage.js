@@ -307,6 +307,7 @@ export default function ConcernCategoryPage({ mode = 'concern' }) {
               testIdPrefix="concern-cat"
               onItemClick={(slug) => setActiveCat(prev => prev === slug ? 'all' : slug)}
               activeSlug={activeCat}
+              eagerCount={6}
             />
             {activeCat !== 'all' && (
               <div className="flex items-center justify-center mt-5">

@@ -146,6 +146,7 @@ export default function SkincareHome() {
               subtitle={niche.concern_strip_subtitle || 'Pick your skin problem'}
               accent={accent}
               testIdPrefix="skincare-concern"
+              eagerCount={6}
             />
           </div>
         </section>

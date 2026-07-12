@@ -19,6 +19,25 @@ function HeroCarousel({ banners = [], autoplayMs = 2000, className = '' }) {
 
   const total = banners.length;
 
+  // Preload the first banner image as soon as banners resolve — this is our
+  // LCP candidate on skincare / cosmetics landing pages, so we want the
+  // browser downloading it in parallel with React's paint work instead of
+  // waiting for the <img> tag to mount.
+  useEffect(() => {
+    const first = banners[0]?.image;
+    if (!first) return;
+    const href = cldOptim(first, { w: 1200 });
+    const existing = document.head.querySelector(`link[rel="preload"][href="${href}"]`);
+    if (existing) return;
+    const link = document.createElement('link');
+    link.rel = 'preload';
+    link.as = 'image';
+    link.href = href;
+    link.setAttribute('fetchpriority', 'high');
+    document.head.appendChild(link);
+    return () => { try { document.head.removeChild(link); } catch (_) { /* noop */ } };
+  }, [banners]);
+
   const goTo = useCallback((i) => {
     if (total === 0) return;
     setIndex(((i % total) + total) % total);

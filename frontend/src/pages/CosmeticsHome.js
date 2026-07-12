@@ -144,6 +144,7 @@ export default function CosmeticsHome() {
               subtitle={niche.category_strip_subtitle || 'Primer · Foundation · Concealer · Blush · Highlighter'}
               accent={accent}
               testIdPrefix="cosmetics-cat"
+              eagerCount={6}
             />
           </div>
         </section>

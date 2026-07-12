@@ -18,7 +18,7 @@ import { cldOptim } from '../utils/productImage';
  *  - On ≥sm: horizontal scroll with previous/next arrows on hover
  *  - Each circle: gradient ring + image inside + label below
  */
-export default function CircularCategoryStrip({ items, routePrefix, title, subtitle, accent = '#16a34a', testIdPrefix = 'cat-strip', onItemClick, activeSlug }) {
+export default function CircularCategoryStrip({ items, routePrefix, title, subtitle, accent = '#16a34a', testIdPrefix = 'cat-strip', onItemClick, activeSlug, eagerCount = 0 }) {
   const scrollRef = useRef(null);
   const [scrollState, setScrollState] = useState({ canPrev: false, canNext: true });
 
@@ -94,9 +94,10 @@ export default function CircularCategoryStrip({ items, routePrefix, title, subti
           ref={scrollRef}
           className="flex gap-4 sm:gap-5 overflow-x-auto hide-scrollbar scroll-smooth py-2 pb-3 sm:px-6 snap-x snap-mandatory"
         >
-          {items.map(it => {
+          {items.map((it, i) => {
             const fromColor = it.accent_from || '#dcfce7';
             const toColor = it.accent_to || '#bbf7d0';
+            const eager = i < eagerCount;
             return (
               <CircleItem
                 key={it.slug}
@@ -108,6 +109,7 @@ export default function CircularCategoryStrip({ items, routePrefix, title, subti
                 testIdPrefix={testIdPrefix}
                 onItemClick={onItemClick}
                 isActive={activeSlug === it.slug}
+                eager={eager}
               />
             );
           })}
@@ -118,7 +120,7 @@ export default function CircularCategoryStrip({ items, routePrefix, title, subti
 }
 
 
-function CircleItem({ item: it, routePrefix, fromColor, toColor, accent, testIdPrefix, onItemClick, isActive }) {
+function CircleItem({ item: it, routePrefix, fromColor, toColor, accent, testIdPrefix, onItemClick, isActive, eager = false }) {
   const [errored, setErrored] = useState(false);
   const showFallback = !it.image || errored;
 
@@ -143,11 +145,12 @@ function CircleItem({ item: it, routePrefix, fromColor, toColor, accent, testIdP
                 <img
                   src={cldOptim(it.image, {w:200})}
                   alt={it.name}
-                  loading="lazy"
+                  loading={eager ? 'eager' : 'lazy'}
+                  fetchpriority={eager ? 'high' : 'auto'}
                   decoding="async"
                   onLoad={(e) => e.currentTarget.classList.remove('opacity-0')}
                   onError={() => setErrored(true)}
-                  className="w-full h-full object-cover transition-all duration-500 opacity-0 group-hover:scale-110"
+                  className={`w-full h-full object-cover transition-all duration-500 group-hover:scale-110 ${eager ? '' : 'opacity-0'}`}
                 />
               )}
             </div>

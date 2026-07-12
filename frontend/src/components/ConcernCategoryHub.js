@@ -69,7 +69,7 @@ export default function ConcernCategoryHub() {
                     style={{ background: `linear-gradient(135deg, ${c.accent_from || '#dcfce7'} 0%, ${c.accent_to || '#bbf7d0'} 100%)` }}
                   >
                     {c.image ? (
-                      <img src={cldOptim(c.image, {w:500})} alt={c.name} loading="lazy" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                      <img src={cldOptim(c.image, {w:200})} alt={c.name} loading="lazy" decoding="async" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-2xl">{c.icon || '✨'}</div>
                     )}
@@ -127,7 +127,7 @@ export function ShopByConcern() {
             data-testid={`concern-tile-${c.slug}`}
           >
             {c.image && (
-              <img src={cldOptim(c.image, {w:500})} alt={c.name} loading="lazy" className="absolute inset-0 w-full h-full object-cover opacity-70 group-hover:opacity-90 group-hover:scale-110 transition-all duration-700" />
+              <img src={cldOptim(c.image, {w:400})} alt={c.name} loading="lazy" decoding="async" className="absolute inset-0 w-full h-full object-cover opacity-70 group-hover:opacity-90 group-hover:scale-110 transition-all duration-700" />
             )}
             <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/15 to-transparent" />
             <div className="absolute top-3 left-3 bg-white/90 backdrop-blur w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-base sm:text-lg shadow-md">
@@ -187,7 +187,7 @@ export function ShopByCategory() {
             >
               <div className="aspect-square overflow-hidden bg-gradient-to-br from-green-50 via-white to-stone-50 relative">
                 {c.image ? (
-                  <img src={cldOptim(c.image, {w:500})} alt={c.name} loading="lazy" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
+                  <img src={cldOptim(c.image, {w:400})} alt={c.name} loading="lazy" decoding="async" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center text-4xl">{c.icon || '🧴'}</div>
                 )}
@@ -234,7 +234,7 @@ export function ShopByCategory() {
                 >
                   <div className="aspect-[5/4] overflow-hidden bg-gradient-to-br from-rose-50 to-pink-50">
                     {c.image ? (
-                      <img src={cldOptim(c.image, {w:500})} alt={c.name} loading="lazy" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
+                      <img src={cldOptim(c.image, {w:400})} alt={c.name} loading="lazy" decoding="async" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-4xl">{c.icon || '💄'}</div>
                     )}

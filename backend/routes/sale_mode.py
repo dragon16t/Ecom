@@ -9,7 +9,7 @@ items; shipping+tax forced to zero for anti-aging orders.
 """
 from __future__ import annotations
 from typing import Any, Dict, Optional
-from fastapi import APIRouter, Header, HTTPException, UploadFile, File
+from fastapi import APIRouter, Header, HTTPException, UploadFile, File, Response
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -68,8 +68,11 @@ async def _get():
 
 
 @router.get("/sale-mode")
-async def public_get_sale_mode():
+async def public_get_sale_mode(response: Response):
     """Public — anonymous customers read this to know if sale is active."""
+    # 30 s edge cache + 60 s stale-while-revalidate so admin toggles show up
+    # within ~30 s but repeat page loads don't re-hit Mongo.
+    response.headers["Cache-Control"] = "public, max-age=30, stale-while-revalidate=60"
     return await _get()
 
 
