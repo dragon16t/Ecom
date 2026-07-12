@@ -91,6 +91,7 @@ function AdminOrders() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterPayment, setFilterPayment] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [filterDeliveryType, setFilterDeliveryType] = useState('all'); // 'all' | 'instant' | 'standard'
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [selectedOrder, setSelectedOrder] = useState(null);
@@ -450,7 +451,10 @@ function AdminOrders() {
       order.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       order.phone?.includes(searchTerm);
     const matchesFilter = filterPayment === 'all' || order.payment_method === filterPayment;
-    return matchesSearch && matchesFilter;
+    const matchesDelivery = filterDeliveryType === 'all'
+      || (filterDeliveryType === 'instant' && order.delivery_type === 'instant')
+      || (filterDeliveryType === 'standard' && order.delivery_type !== 'instant');
+    return matchesSearch && matchesFilter && matchesDelivery;
   });
 
   const totalRevenue = filteredOrders.reduce((sum, order) => sum + (order.amount || 0), 0);
@@ -586,6 +590,11 @@ function AdminOrders() {
                 <option value="delivered">Delivered</option>
                 <option value="cancelled">Cancelled</option>
                 <option value="returned">Returned</option>
+              </select>
+              <select value={filterDeliveryType} onChange={(e) => setFilterDeliveryType(e.target.value)} className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm" data-testid="delivery-type-filter">
+                <option value="all">All delivery</option>
+                <option value="instant">⚡ Instant only</option>
+                <option value="standard">Standard only</option>
               </select>
               <button
                 onClick={() => exportOrders('csv')}

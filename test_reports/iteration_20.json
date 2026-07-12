@@ -1,0 +1,25 @@
+{
+  "summary": "Iter-20: verified new /admin/orders delivery-type-filter dropdown, sale-mode regression on products/combos, admin auth guards on /admin/offers|/warehouses|/delivery-men, warehouse dropdown on AdminDeliveryMen, and POST /api/orders acceptance of delivery_type='instant'. 8/8 backend tests pass; all 6 UI checks pass.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter20_delivery_filter_sale_jan2026.py",
+    "/app/test_reports/pytest/iter20.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is 3690 lines (pre-existing) — still recommend modularising (unchanged tech debt).",
+    "Order-amount validation is strict (server recomputes with shipping); test payloads or client must send the exact final amount. Works as designed but worth documenting.",
+    "Public URL cold-start is ~5 min because [catalog_backup] auto-restore runs on every backend boot re-applying 255 delta files. Consider caching restored state to reduce warm-up time (pre-existing)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter20_delivery_filter_sale_jan2026.py"
+  ],
+  "success_rate": {"backend": "100% (8/8)", "frontend": "100% (6/6 checks)"},
+  "test_credentials": "Admin token celestaglow2024 (from /app/memory/test_credentials.md).",
+  "seed_data_creation": "Created + deleted 1 delivery-man ('TEST_DM_...'), created 1 test order via POST /api/orders with delivery_type=instant (order remains — order deletion not in scope). Sale-mode toggled ON then OFF; final state restored to enabled=false.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Verified:\n1. /admin/orders → data-testid='delivery-type-filter' exists with options ['all','instant','standard']; each option selectable.\n2. PUT /api/admin/sale-mode {enabled:true} → GET /api/products?niche=anti-aging returns items with sale_active=true, sale_badge_label='FLAT 50% OFF', prepaid_price≈round(mrp*0.5), original_prepaid_price populated. Same for /api/combos?niche=anti-aging.\n3. Turning sale OFF (with 30s cache bust) removes all data-testid^='sale-badge-' badges on /shop?niche=anti-aging (5 badges → 0 badges verified in browser).\n4. POST /api/admin/delivery-men → 401/403 without/with-wrong X-Admin-Token; 200 with correct token.\n5. /admin/offers, /admin/warehouses, /admin/delivery-men all redirect to /admin when localStorage admin token cleared.\n6. AdminDeliveryMen page renders data-testid='dm-warehouse-input' (add form) and per-row data-testid='dm-warehouse-<id>' selectors.\n7. POST /api/orders with delivery_type='instant' persists correctly and appears in /api/admin/orders with delivery_type='instant'.\n\nGotchas for next agent:\n- Backend hot-reload triggers on file writes under /app/backend/tests/; cold-start takes ~5 min due to catalog auto-restore. Warm up with a curl before running tests.\n- Product 'sale_active' fields honour a 30s in-process cache (_SALE_CACHE). Sleep 31s after toggling sale-mode before verifying product endpoints.\n- Order POST validates the 'amount' server-side (adds shipping etc.); test file handles the 400 mismatch by retrying with server-suggested amount.",
+  "rca of the issue": "N/A — all requested behaviours confirmed working."
+}
