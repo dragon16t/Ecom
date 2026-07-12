@@ -1,7 +1,11 @@
 # Celesta Glow — PRD
 
-> Last updated: 2026-02-12 (delivery-men + LocationStrip batch)
+> Last updated: 2026-02-13 (Gentle Cleanser data repair + Checkout Instant Delivery messaging)
 > For dated entries see CHANGELOG.md
+
+## 2026-02-13 hotfix
+- Restored the `anti-aging-serum` product document (name/short_name/mrp/prepaid_price had been overwritten with Gentle Cleanser data through an admin edit). Anti-Aging Serum URL now resolves correctly and, with sale enabled, both the serum and the cleanser qualify for the FLAT 50% OFF ribbon.
+- CheckoutPage: standard-delivery ETA copy ("1–3 business days" / "4–6 business days") is now suppressed when `pinInfo.coverage.instant_available` is true — both in the inline pincode ETA pill and the order-summary delivery timeline. Instant orders now show the Instant ETA (45–55 min or 1–2 hr) instead.
 
 ## What's working now (verified)
 - React + FastAPI e-commerce app, 7855 products, "Master Brain" canonical taxonomy

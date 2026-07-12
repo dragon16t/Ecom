@@ -353,8 +353,9 @@ function CheckoutPage() {
                 <Field label="State" field="state" placeholder="State" span value={formData.state} error={errors.state} onChange={handleFieldChange} />
               </div>
 
-              {/* Inline ETA after pincode */}
-              {formData.pincode && /^\d{6}$/.test(formData.pincode) && formData.city && (
+              {/* Inline ETA after pincode — suppressed when Instant Delivery is available,
+                  since CheckoutMap already surfaces the "45-55 min / 1-2 hr" ETA banner. */}
+              {!pinInfo?.coverage?.instant_available && formData.pincode && /^\d{6}$/.test(formData.pincode) && formData.city && (
                 <div className="mt-3 bg-green-50 border border-green-200 rounded-xl p-3 flex items-center gap-2.5" data-testid="checkout-eta-pill">
                   <Truck size={15} className="text-green-700 flex-shrink-0" />
                   <p className="text-xs text-green-900">
@@ -475,14 +476,21 @@ function CheckoutPage() {
                 {submitting ? 'Processing...' : paymentMethod === 'prepaid' ? `Pay ₹${cartData.total?.toLocaleString()}` : `Place COD Order`}
               </button>
 
-              {/* Delivery Timeline */}
-              <div className="mt-3 text-center text-xs text-gray-500">
-                {paymentMethod === 'prepaid' ? (
-                  <p>Faster delivery · <strong className="text-green-600">1–3 business days</strong></p>
-                ) : (
-                  <p>Standard delivery · <strong>4–6 business days</strong></p>
-                )}
-              </div>
+              {/* Delivery Timeline — Instant Delivery orders get their ETA from CheckoutMap,
+                  so we hide the standard shipping copy to avoid conflicting messaging. */}
+              {pinInfo?.coverage?.instant_available ? (
+                <div className="mt-3 text-center text-xs text-amber-700 font-semibold" data-testid="checkout-delivery-timeline-instant">
+                  <p>Instant delivery · <strong>{pinInfo?.coverage?.nearest_warehouse?.distance_km <= 5 ? 'arrives in 45–55 minutes' : 'arrives in 1–2 hours'}</strong></p>
+                </div>
+              ) : (
+                <div className="mt-3 text-center text-xs text-gray-500" data-testid="checkout-delivery-timeline-standard">
+                  {paymentMethod === 'prepaid' ? (
+                    <p>Faster delivery · <strong className="text-green-600">1–3 business days</strong></p>
+                  ) : (
+                    <p>Standard delivery · <strong>4–6 business days</strong></p>
+                  )}
+                </div>
+              )}
 
               {/* Trust Icons */}
               <div className="mt-3 flex items-center justify-center gap-4 text-xs text-gray-400 font-medium">
