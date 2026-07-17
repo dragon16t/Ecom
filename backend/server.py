@@ -3560,9 +3560,12 @@ async def startup_seed():
         logging.warning(f"[taxonomy_canonical] post-startup reclassify skipped: {e}")
 
     # ---- Daily midnight-IST backup scheduler ----
-    # Replaces the previous per-write 25-second debounce. One backup per day,
-    # plus the manual "Backup now" button in the admin dashboard. IST midnight
-    # = 18:30 UTC. We sleep until that moment, snapshot, then loop.
+    # Backup runs ONCE per day at 00:00 IST. If any changes happened during the
+    # day, incremental_snapshot() picks them up and uploads them; if nothing
+    # changed since the last snapshot, it skips the upload entirely. This is
+    # the single source of truth for automated backups — no per-write and no
+    # 15-min safety net (those were removed per admin request Feb-2026 to
+    # reduce Cloudinary bandwidth).
     async def _daily_backup_loop():
         import asyncio
         from datetime import datetime as _dt, timedelta as _td, timezone as _tz
@@ -3576,8 +3579,21 @@ async def startup_seed():
                 logging.info(f"[catalog_backup] next daily snapshot at {next_run.isoformat()} (in {int(wait_seconds//60)} min)")
                 await asyncio.sleep(wait_seconds)
                 try:
-                    res = await _cb_local.snapshot(db)
-                    logging.info(f"[catalog_backup] daily snapshot OK: {res.get('counts')}")
+                    # Prefer incremental if we already have a full anchor —
+                    # smaller upload, still fully restorable. Falls back to a
+                    # full snapshot only when no anchor exists yet.
+                    meta = await db.admin_settings.find_one({"type": "catalog_backup"}, {"_id": 0, "current_full_public_id": 1}) or {}
+                    if meta.get("current_full_public_id"):
+                        res = await _cb_local.incremental_snapshot(db)
+                        if res.get("skipped_no_changes") or res.get("skipped_dedupe"):
+                            logging.info("[catalog_backup] daily: no changes since last snapshot — nothing to upload")
+                        elif res.get("success"):
+                            logging.info(f"[catalog_backup] daily incremental uploaded: changed={res.get('changed')}")
+                        else:
+                            logging.warning(f"[catalog_backup] daily incremental skipped: {res.get('reason')}")
+                    else:
+                        res = await _cb_local.snapshot(db)
+                        logging.info(f"[catalog_backup] daily full snapshot OK: {res.get('counts')}")
                 except Exception as exc:
                     logging.error(f"[catalog_backup] daily snapshot FAILED: {exc}")
             except asyncio.CancelledError:
@@ -3586,42 +3602,10 @@ async def startup_seed():
                 logging.warning(f"[catalog_backup] scheduler error, retrying in 5 min: {exc}")
                 await asyncio.sleep(300)
 
-    # ---- Fast 15-min safety-net INCREMENTAL backup ----
-    # Every 15 minutes we call incremental_snapshot(db) which only uploads
-    # docs whose timestamp moved forward since the last (incremental OR full)
-    # snapshot. If nothing changed it skips the upload entirely.  This
-    # replaces the previous full-backup-every-15-min approach which used
-    # ~50× more Cloudinary bandwidth than needed.
-    async def _safety_snapshot_loop():
-        import asyncio
-        from services import catalog_backup as _cb_local
-        await asyncio.sleep(60)  # wait for app warm-up
-        while True:
-            try:
-                await asyncio.sleep(15 * 60)
-                try:
-                    res = await _cb_local.incremental_snapshot(db)
-                    if res.get("skipped_no_changes"):
-                        logging.debug("[catalog_backup] 15-min: no changes — no upload")
-                    elif res.get("skipped_dedupe"):
-                        logging.debug("[catalog_backup] 15-min: dedupe — no upload")
-                    elif res.get("success"):
-                        logging.info(f"[catalog_backup] 15-min incremental uploaded: changed={res.get('changed')}")
-                    else:
-                        logging.warning(f"[catalog_backup] 15-min incremental skipped: {res.get('reason')}")
-                except Exception as exc:
-                    logging.warning(f"[catalog_backup] 15-min incremental failed: {exc}")
-            except asyncio.CancelledError:
-                break
-            except Exception as exc:
-                logging.warning(f"[catalog_backup] safety scheduler error: {exc}")
-                await asyncio.sleep(60)
-
     try:
         import asyncio as _asyncio
         _asyncio.create_task(_daily_backup_loop())
-        _asyncio.create_task(_safety_snapshot_loop())
-        logging.info("[catalog_backup] daily midnight-IST + 15-min safety schedulers started")
+        logging.info("[catalog_backup] daily midnight-IST scheduler started (15-min safety-net disabled)")
     except Exception as e:
         logging.warning(f"[catalog_backup] could not start scheduler: {e}")
     # Hydrate the central active-admin-hash cache used by EVERY admin verifier.

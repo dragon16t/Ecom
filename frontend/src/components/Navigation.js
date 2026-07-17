@@ -213,6 +213,45 @@ function Navigation() {
                     </Link>
                   </li>
                 ))}
+
+                {/* Lead-capture quick access — Skin Advice + Investor + Partner.
+                    Prominent on mobile since footer is far down and users tap here first. */}
+                <li className="pt-3 mt-3 border-t border-gray-100">
+                  <span className="block px-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Talk to Us</span>
+                </li>
+                <li>
+                  <Link
+                    to="/skin-issue"
+                    onClick={() => setIsMenuOpen(false)}
+                    className="block py-3.5 px-4 rounded-xl text-base font-medium transition-all flex items-center gap-2 bg-emerald-50 text-emerald-700 border border-emerald-200"
+                    data-testid="nav-link-skin-issue"
+                  >
+                    Free Skin Advice
+                    <span className="ml-auto text-xs bg-emerald-600 text-white px-2 py-0.5 rounded-full">FREE</span>
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    to="/investor"
+                    onClick={() => setIsMenuOpen(false)}
+                    className="block py-3.5 px-4 rounded-xl text-base font-medium transition-all flex items-center gap-2 bg-amber-50 text-amber-800 border border-amber-200"
+                    data-testid="nav-link-investor"
+                  >
+                    Investor Relations
+                    <span className="ml-auto text-xs bg-amber-600 text-white px-2 py-0.5 rounded-full">INVEST</span>
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    to="/partner"
+                    onClick={() => setIsMenuOpen(false)}
+                    className="block py-3.5 px-4 rounded-xl text-base font-medium transition-all flex items-center gap-2 bg-indigo-50 text-indigo-700 border border-indigo-200"
+                    data-testid="nav-link-partner"
+                  >
+                    Partner With Us
+                    <span className="ml-auto text-xs bg-indigo-600 text-white px-2 py-0.5 rounded-full">B2B</span>
+                  </Link>
+                </li>
               </ul>
             </nav>
           </div>

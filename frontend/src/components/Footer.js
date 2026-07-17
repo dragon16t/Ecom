@@ -92,6 +92,21 @@ function Footer() {
                 </Link>
               </li>
               <li>
+                <Link to="/skin-issue" className="text-sm text-gray-400 hover:text-green-400 transition-colors" data-testid="footer-link-skin-issue">
+                  Free Skin Advice
+                </Link>
+              </li>
+              <li>
+                <Link to="/investor" className="text-sm text-gray-400 hover:text-green-400 transition-colors" data-testid="footer-link-investor">
+                  Investor Relations
+                </Link>
+              </li>
+              <li>
+                <Link to="/partner" className="text-sm text-gray-400 hover:text-green-400 transition-colors" data-testid="footer-link-partner">
+                  Partner With Us
+                </Link>
+              </li>
+              <li>
                 <Link to="/blogs" className="text-sm text-gray-400 hover:text-green-400 transition-colors">
                   Skincare Blog
                 </Link>

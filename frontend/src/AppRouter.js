@@ -368,6 +368,34 @@ function App() {
                 </PublicLayout>
               } />
 
+              {/* Public lead-capture pages — mobile-friendly single-column forms.
+                  Component (LeadFormPage.js) auto-detects the type from the URL. */}
+              <Route path="/investor" element={
+                <PublicLayout>
+                  <Suspense fallback={<PageLoader />}><LeadFormPage type="invest" /></Suspense>
+                </PublicLayout>
+              } />
+              <Route path="/invest" element={
+                <PublicLayout>
+                  <Suspense fallback={<PageLoader />}><LeadFormPage type="invest" /></Suspense>
+                </PublicLayout>
+              } />
+              <Route path="/skin-issue" element={
+                <PublicLayout>
+                  <Suspense fallback={<PageLoader />}><LeadFormPage type="skin_concern" /></Suspense>
+                </PublicLayout>
+              } />
+              <Route path="/skin-advice" element={
+                <PublicLayout>
+                  <Suspense fallback={<PageLoader />}><LeadFormPage type="skin_concern" /></Suspense>
+                </PublicLayout>
+              } />
+              <Route path="/partner" element={
+                <PublicLayout>
+                  <Suspense fallback={<PageLoader />}><LeadFormPage type="partner" /></Suspense>
+                </PublicLayout>
+              } />
+
               {/* Catch-all 404 — prevents white-screen on bad CTAs / stale links.
                   Falls back to the homepage with a soft message instead of a blank page. */}
               <Route path="*" element={
