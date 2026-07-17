@@ -8,6 +8,7 @@ import TrustStrip from '../components/TrustStrip';
 import SaleBadge from '../components/SaleBadge';
 import HomepageSaleStrip from '../components/HomepageSaleStrip';
 import NicheHero from '../components/NicheHero';
+import NicheOffersGrid from '../components/NicheOffersGrid';
 import HeroCarousel from '../components/HeroCarousel'; // eslint-disable-line no-unused-vars
 import { ProductCard } from './ConcernCategoryPage';
 import { playCartSound } from '../utils/cartSound';
@@ -330,6 +331,15 @@ function Homepage() {
       <SearchBar accent={accent} niche="anti-aging" testId="anti-aging-search-bar" />
 
       <SaleBadge cfg={niche.sale_badge} niche="anti-aging" testIdPrefix="anti-aging-sale-badge" />
+
+      {/* Celesta Glow Bash — editorial offer grid at the very top of the
+          anti-aging landing. Renders instantly with a skeleton so it never
+          feels empty during API load. */}
+      <section className="bg-white">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 pt-4 sm:pt-6">
+          <NicheOffersGrid niche="anti-aging" categories={[]} theme="anti-aging" />
+        </div>
+      </section>
 
       <NicheHero
         bgImage={hero.image_desktop || BANNER_IMG}
