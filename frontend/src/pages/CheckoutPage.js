@@ -425,20 +425,46 @@ function CheckoutPage() {
               <div className="border-t border-gray-100 pt-3 space-y-1.5 text-sm">
                 <div className="flex justify-between text-gray-400"><span>Subtotal</span><span>₹{cartData.subtotal?.toLocaleString()}</span></div>
                 {cartData.discount > 0 && <div className="flex justify-between text-green-600"><span>Coupon Discount</span><span className="font-semibold">-₹{cartData.discount}</span></div>}
-                {cartData.tax_charges > 0 && (
+                {(cartData.tax_charges > 0 || cartData.sale_perks?.tax) && (
                   <div className="flex justify-between text-gray-400">
-                    <span>Taxes &amp; Charges</span>
-                    <span>
-                      {cartData.tax_charges_original > cartData.tax_charges && (
-                        <span className="text-gray-300 line-through mr-1.5">₹{cartData.tax_charges_original}</span>
+                    <span className="flex items-center gap-1.5">
+                      Taxes &amp; Charges
+                      {cartData.sale_perks?.tax && (
+                        <span className="bg-amber-100 text-amber-800 text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-wider">
+                          {cartData.sale_perks.reason || 'FLAT 50% OFF'}
+                        </span>
                       )}
-                      ₹{cartData.tax_charges}
+                    </span>
+                    <span>
+                      {cartData.sale_perks?.tax ? (
+                        <>
+                          {cartData.tax_charges_original > 0 && <span className="text-gray-300 line-through mr-1.5">₹{cartData.tax_charges_original}</span>}
+                          <span className="text-green-600 font-bold">FREE</span>
+                        </>
+                      ) : (
+                        <>
+                          {cartData.tax_charges_original > cartData.tax_charges && <span className="text-gray-300 line-through mr-1.5">₹{cartData.tax_charges_original}</span>}
+                          ₹{cartData.tax_charges}
+                        </>
+                      )}
                     </span>
                   </div>
                 )}
                 <div className="flex justify-between text-gray-400">
-                  <span>Delivery</span>
-                  {cartData.delivery_fee > 0
+                  <span className="flex items-center gap-1.5">
+                    Delivery
+                    {cartData.sale_perks?.delivery && (
+                      <span className="bg-amber-100 text-amber-800 text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-wider">
+                        {cartData.sale_perks.reason || 'FLAT 50% OFF'}
+                      </span>
+                    )}
+                  </span>
+                  {cartData.sale_perks?.delivery ? (
+                    <span>
+                      {cartData.delivery_fee_original > 0 && <span className="text-gray-300 line-through mr-1.5">₹{cartData.delivery_fee_original}</span>}
+                      <span className="text-green-600 font-bold">FREE</span>
+                    </span>
+                  ) : cartData.delivery_fee > 0
                     ? <span className="font-medium text-orange-600">₹{cartData.delivery_fee}</span>
                     : <span className="text-green-600 font-medium">FREE</span>
                   }

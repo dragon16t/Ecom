@@ -13,6 +13,7 @@ import { DermatologistSection, FaqSection } from '../components/NicheSections';
 import ReviewsCarousel from '../components/ReviewsCarousel';
 import IngredientSpotlight from '../components/IngredientSpotlight';
 import SaleBadge from '../components/SaleBadge';
+import NicheOffersGrid from '../components/NicheOffersGrid';
 import { ProductCard } from './ConcernCategoryPage';
 import { cachedGet, peek } from '../utils/apiCache';
 
@@ -135,6 +136,16 @@ export default function SkincareHome() {
       <SearchBar accent={accent} niche="skincare" testId="skincare-search-bar" />
 
       <SaleBadge cfg={niche.sale_badge} niche="skincare" testIdPrefix="skincare-sale-badge" />
+
+      {/* Editorial-style "Glow Bash" offer grid — Top Deal + category tiles with
+          Up to X% OFF badges + cross-sell chips. Mirrors the anti-aging landing
+          in structure but keeps the skincare palette. Only renders once at least
+          one active product is loaded. */}
+      <section className="bg-white border-b border-stone-100">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 pt-4 sm:pt-6">
+          <NicheOffersGrid niche="skincare" categories={categories} theme="skincare" />
+        </div>
+      </section>
 
       {niche.show_concern_strip !== false && (
         <section className="bg-white border-b border-stone-100">

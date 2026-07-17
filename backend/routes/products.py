@@ -1366,15 +1366,15 @@ async def validate_cart(data: CartValidateRequest):
     moq_remaining = max(0, moq_amount - pre_ship_total) if pre_ship_total > 0 else 0
     moq_block = bool(pre_ship_total > 0 and pre_ship_total < moq_amount)
 
-    # ---- Anti-Aging Sale perks: waive delivery + tax when the whole cart
-    # qualifies for the FLAT 50% OFF sale AND admin has zero_shipping/zero_tax on.
-    # Detection: pull sale cfg once, then check whether every validated item is in
-    # an eligible niche. Combos inherit niche='combo' — treat them as eligible if
-    # the sale applies to combos or if all their child SKUs are eligible. Here we
-    # keep it simple: waive when every product-line's niche is in applies_to_niches.
+    # ---- Anti-Aging niche perks: waive delivery + tax on qualifying carts.
+    # The zero_shipping / zero_tax flags are DECOUPLED from the FLAT 50% OFF
+    # toggle (per admin request Feb-2026) — even when the sale price cut is
+    # off, the delivery + tax waivers still apply as a permanent perk of the
+    # anti-aging range. This keeps the "always free delivery on anti-aging"
+    # promise valid regardless of the sale schedule.
     sale_cfg = await _get_sale_cfg()
     sale_perks_applied = {"delivery": False, "tax": False, "reason": None}
-    if sale_cfg and sale_cfg.get("enabled") and validated_items:
+    if sale_cfg and validated_items and (sale_cfg.get("zero_shipping") or sale_cfg.get("zero_tax")):
         elig_niches = set((sale_cfg.get("applies_to_niches") or ["anti-aging"]))
         # Only apply when every physical product line qualifies. Standalone combos
         # skip this fast-path since their niche field isn't a simple string.
@@ -1393,7 +1393,13 @@ async def validate_cart(data: CartValidateRequest):
                     tax_charges = 0
                     sale_perks_applied["tax"] = True
                 if sale_perks_applied["delivery"] or sale_perks_applied["tax"]:
-                    sale_perks_applied["reason"] = sale_cfg.get("badge_label") or "Anti-Aging Sale Perks"
+                    # Prefer the sale badge label when the sale is live, otherwise
+                    # fall back to a niche-perk label so the cart UI still shows
+                    # the reason chip.
+                    if sale_cfg.get("enabled"):
+                        sale_perks_applied["reason"] = sale_cfg.get("badge_label") or "FLAT 50% OFF"
+                    else:
+                        sale_perks_applied["reason"] = "Anti-Aging Perk"
 
     # Keep legacy `shipping_fee` field for backward compatibility with older clients
     shipping_fee = delivery_fee + tax_charges + packaging_fee

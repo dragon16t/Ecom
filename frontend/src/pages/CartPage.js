@@ -611,31 +611,64 @@ function CartPage() {
                   </div>
                 )}
                 {/* Volume discount removed — no buy-more nudge on the cart summary */}
-                {/* Taxes & charges — tiered reduction (Feb 2026) */}
-                {cartData.tax_charges > 0 && (
+                {/* Taxes & charges — always visible; shows FREE when waived by the Anti-Aging sale perk. */}
+                {(cartData.tax_charges > 0 || cartData.sale_perks?.tax) && (
                   <div className="flex justify-between text-gray-700" data-testid="tax-charges-row">
                     <span className="flex items-center gap-1.5">
                       Taxes &amp; Charges
-                      {cartData.tax_reduction_label && (
+                      {cartData.sale_perks?.tax ? (
+                        <span className="bg-amber-100 text-amber-800 text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-wider">
+                          {cartData.sale_perks.reason || 'FLAT 50% OFF'}
+                        </span>
+                      ) : cartData.tax_reduction_label && (
                         <span className="bg-green-100 text-green-700 text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-wider">{cartData.tax_reduction_label}</span>
                       )}
                     </span>
                     <span className="font-medium text-gray-900">
-                      {cartData.tax_charges_original > cartData.tax_charges && (
-                        <span className="text-gray-400 line-through mr-1.5">₹{cartData.tax_charges_original}</span>
+                      {cartData.sale_perks?.tax ? (
+                        <>
+                          {cartData.tax_charges_original > 0 && (
+                            <span className="text-gray-400 line-through mr-1.5">₹{cartData.tax_charges_original}</span>
+                          )}
+                          <span className="text-green-600 font-bold">FREE</span>
+                        </>
+                      ) : (
+                        <>
+                          {cartData.tax_charges_original > cartData.tax_charges && (
+                            <span className="text-gray-400 line-through mr-1.5">₹{cartData.tax_charges_original}</span>
+                          )}
+                          ₹{cartData.tax_charges}
+                        </>
                       )}
-                      ₹{cartData.tax_charges}
                     </span>
                   </div>
                 )}
-                {/* Delivery — tiered (₹49 → ₹39 → ₹29 → ₹19) */}
+                {/* Delivery — tiered (₹49 → ₹39 → ₹29 → ₹19). Explicit FREE display when sale perk waives it. */}
                 <div className="flex justify-between text-gray-700">
-                  <span>Delivery</span>
-                  <span className="font-medium text-gray-900" data-testid="delivery-fee">
-                    {cartData.delivery_fee_original > cartData.delivery_fee && cartData.delivery_fee > 0 && (
-                      <span className="text-gray-400 line-through mr-1.5">₹{cartData.delivery_fee_original}</span>
+                  <span className="flex items-center gap-1.5">
+                    Delivery
+                    {cartData.sale_perks?.delivery && (
+                      <span className="bg-amber-100 text-amber-800 text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-wider">
+                        {cartData.sale_perks.reason || 'FLAT 50% OFF'}
+                      </span>
                     )}
-                    {cartData.delivery_fee > 0 ? <span className="text-orange-600">₹{cartData.delivery_fee}</span> : <span className="text-green-600">FREE</span>}
+                  </span>
+                  <span className="font-medium text-gray-900" data-testid="delivery-fee">
+                    {cartData.sale_perks?.delivery ? (
+                      <>
+                        {cartData.delivery_fee_original > 0 && (
+                          <span className="text-gray-400 line-through mr-1.5">₹{cartData.delivery_fee_original}</span>
+                        )}
+                        <span className="text-green-600 font-bold">FREE</span>
+                      </>
+                    ) : (
+                      <>
+                        {cartData.delivery_fee_original > cartData.delivery_fee && cartData.delivery_fee > 0 && (
+                          <span className="text-gray-400 line-through mr-1.5">₹{cartData.delivery_fee_original}</span>
+                        )}
+                        {cartData.delivery_fee > 0 ? <span className="text-orange-600">₹{cartData.delivery_fee}</span> : <span className="text-green-600">FREE</span>}
+                      </>
+                    )}
                   </span>
                 </div>
                 {/* Eco packaging */}

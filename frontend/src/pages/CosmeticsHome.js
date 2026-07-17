@@ -13,6 +13,7 @@ import { DermatologistSection, FaqSection } from '../components/NicheSections';
 import ReviewsCarousel from '../components/ReviewsCarousel';
 import TrendingLooks from '../components/TrendingLooks';
 import SaleBadge from '../components/SaleBadge';
+import NicheOffersGrid from '../components/NicheOffersGrid';
 import { ProductCard } from './ConcernCategoryPage';
 import { cachedGet, peek } from '../utils/apiCache';
 
@@ -133,6 +134,14 @@ export default function CosmeticsHome() {
       <SearchBar accent={accent} niche="cosmetics" testId="cosmetics-search-bar" />
 
       <SaleBadge cfg={niche.sale_badge} niche="cosmetics" testIdPrefix="cosmetics-sale-badge" />
+
+      {/* Editorial-style "Beauty Bash" offer grid — Top Deal + category tiles
+          with Up to X% OFF pills + cross-sell chips. */}
+      <section className="bg-white border-b border-stone-100">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 pt-4 sm:pt-6">
+          <NicheOffersGrid niche="cosmetics" categories={categories} theme="cosmetics" />
+        </div>
+      </section>
 
       {niche.show_category_strip !== false && (
         <section className="bg-white border-b border-stone-100">
