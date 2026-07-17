@@ -7,6 +7,7 @@ import { resolveImageUrl } from '../utils/productImage';
 import { addToCart } from './Homepage';
 import AddToBagButton from '../components/AddToBagButton';
 import CircularCategoryStrip from '../components/CircularCategoryStrip';
+import AntiAgingOfferHighlight from '../components/AntiAgingOfferHighlight';
 import { getProductBrand } from '../utils/brand';
 import { prefetchHandlers } from '../utils/routePrefetch';
 import { shareProduct } from '../utils/shareProduct';
@@ -388,6 +389,11 @@ export default function ConcernCategoryPage({ mode = 'concern' }) {
 
       {/* PRODUCT GRID */}
       <div className="max-w-7xl mx-auto px-3 sm:px-6 py-7 sm:py-12">
+        {/* Anti-Aging offer highlight — FLAT 50% OFF + Zero Tax + Zero Delivery.
+            Renders only when admin has sale mode ON and this concern targets anti-aging. */}
+        {(slug === 'anti-aging' || String(head?.niche || '').toLowerCase() === 'anti-aging') && (
+          <AntiAgingOfferHighlight niche="anti-aging" />
+        )}
         <div className="flex items-end justify-between mb-4 sm:mb-5 px-1">
           <h2 className="font-heading text-base sm:text-2xl font-black text-gray-900">
             {total} product{total === 1 ? '' : 's'}

@@ -1366,6 +1366,35 @@ async def validate_cart(data: CartValidateRequest):
     moq_remaining = max(0, moq_amount - pre_ship_total) if pre_ship_total > 0 else 0
     moq_block = bool(pre_ship_total > 0 and pre_ship_total < moq_amount)
 
+    # ---- Anti-Aging Sale perks: waive delivery + tax when the whole cart
+    # qualifies for the FLAT 50% OFF sale AND admin has zero_shipping/zero_tax on.
+    # Detection: pull sale cfg once, then check whether every validated item is in
+    # an eligible niche. Combos inherit niche='combo' — treat them as eligible if
+    # the sale applies to combos or if all their child SKUs are eligible. Here we
+    # keep it simple: waive when every product-line's niche is in applies_to_niches.
+    sale_cfg = await _get_sale_cfg()
+    sale_perks_applied = {"delivery": False, "tax": False, "reason": None}
+    if sale_cfg and sale_cfg.get("enabled") and validated_items:
+        elig_niches = set((sale_cfg.get("applies_to_niches") or ["anti-aging"]))
+        # Only apply when every physical product line qualifies. Standalone combos
+        # skip this fast-path since their niche field isn't a simple string.
+        product_lines = [it for it in validated_items if it.get("type") == "product"]
+        if product_lines:
+            item_niches = set()
+            for it in product_lines:
+                p = products_by_slug.get(it.get("slug"))
+                item_niches.add(str((p or {}).get("niche") or "").lower())
+            all_eligible = item_niches and item_niches.issubset({n.lower() for n in elig_niches})
+            if all_eligible:
+                if sale_cfg.get("zero_shipping"):
+                    delivery_fee = 0
+                    sale_perks_applied["delivery"] = True
+                if sale_cfg.get("zero_tax"):
+                    tax_charges = 0
+                    sale_perks_applied["tax"] = True
+                if sale_perks_applied["delivery"] or sale_perks_applied["tax"]:
+                    sale_perks_applied["reason"] = sale_cfg.get("badge_label") or "Anti-Aging Sale Perks"
+
     # Keep legacy `shipping_fee` field for backward compatibility with older clients
     shipping_fee = delivery_fee + tax_charges + packaging_fee
 
@@ -1436,6 +1465,7 @@ async def validate_cart(data: CartValidateRequest):
         "moq_amount": int(round(moq_amount)),
         "moq_remaining": int(round(moq_remaining)),
         "moq_block": moq_block,
+        "sale_perks": sale_perks_applied,
         "payment_method": data.payment_method,
         "gift_card": gift_card_info,
         "gift_card_discount": int(round(gift_card_discount)),

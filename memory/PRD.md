@@ -3,7 +3,12 @@
 > Last updated: 2026-02-13 (Gentle Cleanser data repair + Checkout Instant Delivery messaging)
 > For dated entries see CHANGELOG.md
 
-## 2026-02-13 hotfix
+## 2026-02-13 hotfix (2)
+- Anti-Aging Offer Highlight card: created `AntiAgingOfferHighlight.js` — big golden FLAT 50% OFF hero with Zero-Tax / Zero-Delivery / urgency chips. Mounted at the top of `ShopPage` (when `?niche=anti-aging`) and `ConcernCategoryPage` (when concern slug or niche is anti-aging). Auto-hides when admin flips sale mode OFF.
+- Cart backend zero-fee logic (`_validate_cart`): when sale mode is ON AND every product line's niche is in `applies_to_niches`, delivery_fee and tax_charges are now forced to 0 (respecting `zero_shipping` / `zero_tax` flags). New `sale_perks` field returned so the cart/checkout UI can render "You saved ₹XX" chips.
+- Anti-aging-serum data repair now runs BOTH in `run_all_migrations` AND right after `auto_restore_if_empty` so the snapshot restore no longer wipes the fix.
+
+## 2026-02-13 hotfix (1)
 - Restored the `anti-aging-serum` product document (name/short_name/mrp/prepaid_price had been overwritten with Gentle Cleanser data through an admin edit). Anti-Aging Serum URL now resolves correctly and, with sale enabled, both the serum and the cleanser qualify for the FLAT 50% OFF ribbon.
 - CheckoutPage: standard-delivery ETA copy ("1–3 business days" / "4–6 business days") is now suppressed when `pinInfo.coverage.instant_available` is true — both in the inline pincode ETA pill and the order-summary delivery timeline. Instant orders now show the Instant ETA (45–55 min or 1–2 hr) instead.
 

@@ -6,6 +6,7 @@ import { Star, ShoppingCart, Sparkles, ChevronRight, Package, Check, Clock, Arro
 import { addToCart, addComboToCart } from './Homepage';
 import { ProductCard } from './ConcernCategoryPage';
 import AddToBagButton from '../components/AddToBagButton';
+import AntiAgingOfferHighlight from '../components/AntiAgingOfferHighlight';
 import { shareProduct } from '../utils/shareProduct';
 import { cachedGet } from '../utils/apiCache';
 import { getSocialProof } from '../utils/socialProof';
@@ -336,6 +337,12 @@ function ShopPage() {
       </section>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
+
+        {/* Anti-Aging offer highlight — FLAT 50% OFF + Zero Tax + Zero Delivery.
+            Renders only when admin has enabled sale mode AND niche matches. */}
+        {nicheParam === 'anti-aging' && (
+          <AntiAgingOfferHighlight niche="anti-aging" />
+        )}
 
         {/* COMPLETE KIT — only for anti-aging niche (or no niche filter) */}
         {completeKit && (!nicheParam || nicheParam === 'anti-aging') && (
