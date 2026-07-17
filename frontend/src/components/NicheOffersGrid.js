@@ -489,13 +489,13 @@ function resolveTheme(theme, niche) {
       };
     case 'anti-aging':
       return {
-        bg: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 45%, #f59e0b 100%)',
-        headerAccent: '#7c2d12',
-        headerText: '#7c2d12',
-        subText: '#92400e',
-        chipAccent: '#c2410c',
-        chipBg: '#fffbeb',
-        chipText: '#7c2d12',
+        bg: 'linear-gradient(135deg, #ffffff 0%, #dbeafe 50%, #93c5fd 100%)',
+        headerAccent: '#1e3a8a',
+        headerText: '#1e3a8a',
+        subText: '#1d4ed8',
+        chipAccent: '#2563eb',
+        chipBg: '#eff6ff',
+        chipText: '#1e3a8a',
         title: 'Celesta Glow Bash',
         subtitle: 'FLAT 50% OFF + Zero Delivery + Zero Tax on Anti-Aging',
       };
