@@ -460,8 +460,8 @@ function resolveTheme(theme, niche) {
         chipAccent: '#c2410c',
         chipBg: '#fffbeb',
         chipText: '#7c2d12',
-        title: 'Age-Reversal Bash',
-        subtitle: 'FLAT 50% OFF + Zero Delivery + Zero Tax',
+        title: 'Celesta Glow Bash',
+        subtitle: 'FLAT 50% OFF + Zero Delivery + Zero Tax on Anti-Aging',
       };
     case 'cosmetics':
     case 'makeup':
