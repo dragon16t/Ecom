@@ -184,8 +184,8 @@ function Navigation() {
       {/* Mobile Menu */}
       {isMenuOpen && (
         <div className="fixed inset-0 z-50 bg-black/30" onClick={() => setIsMenuOpen(false)}>
-          <div className="absolute left-0 top-0 bottom-0 w-80 bg-white shadow-xl" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between p-5 border-b border-gray-100">
+          <div className="absolute left-0 top-0 bottom-0 w-80 bg-white shadow-xl flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-5 border-b border-gray-100 flex-shrink-0">
               <div>
                 <span className="block text-[18px] tracking-[0.32em] text-slate-900 leading-none" style={{ fontFamily: '"Cormorant Garamond", serif', fontWeight: 500 }}>CELESTA</span>
                 <span className="block text-[9px] tracking-[0.55em] text-slate-500 mt-1" style={{ fontFamily: '"Cormorant Garamond", serif', fontWeight: 400 }}>G L O W</span>
@@ -194,7 +194,7 @@ function Navigation() {
                 <X size={24} className="text-gray-900" />
               </button>
             </div>
-            <nav className="p-5">
+            <nav className="p-5 flex-1 overflow-y-auto overscroll-contain">
               <ul className="space-y-1">
                 {navLinks.map(link => (
                   <li key={link.path}>
