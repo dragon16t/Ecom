@@ -67,7 +67,43 @@ export default function NicheOffersGrid({ niche = 'anti-aging', categories = [],
     [products],
   );
 
-  if (!loaded || products.length === 0) return null;
+  if (!loaded || products.length === 0) {
+    // Never render nothing — show the branded header + skeleton tiles so the
+    // section is present the instant the page paints. The tiles fill in with
+    // real data as soon as /api/products resolves (usually < 400 ms).
+    return (
+      <section
+        data-testid={`niche-offers-grid-${niche}-skeleton`}
+        className="relative overflow-hidden rounded-2xl sm:rounded-3xl mb-6 sm:mb-10 ring-1 ring-black/5 shadow-lg"
+        style={{ background: resolveTheme(theme, niche).bg }}
+      >
+        <div className="relative px-4 sm:px-6 pt-5 sm:pt-6 text-center">
+          <p className="text-[10px] sm:text-xs uppercase font-black tracking-[0.3em]" style={{ color: resolveTheme(theme, niche).headerAccent }}>
+            Handpicked · This Week
+          </p>
+          <h2
+            className="text-3xl sm:text-5xl font-black italic mt-1"
+            style={{ color: resolveTheme(theme, niche).headerText, fontFamily: '"Cormorant Garamond", serif', letterSpacing: '-0.01em' }}
+          >
+            {resolveTheme(theme, niche).title}
+          </h2>
+          <p className="text-[11px] sm:text-sm font-semibold mt-1" style={{ color: resolveTheme(theme, niche).subText }}>
+            {resolveTheme(theme, niche).subtitle}
+          </p>
+        </div>
+        <div className="relative px-3 sm:px-6 pt-4 pb-4 sm:pb-6">
+          <div className="grid grid-cols-3 gap-2.5 sm:gap-4">
+            <div className="row-span-2 rounded-2xl bg-white/80 min-h-[280px] sm:min-h-[340px] animate-pulse" />
+            <div className="col-span-2 grid grid-cols-2 gap-2.5 sm:gap-4">
+              <div className="rounded-2xl bg-white/80 min-h-[135px] sm:min-h-[164px] animate-pulse" />
+              <div className="rounded-2xl bg-white/80 min-h-[135px] sm:min-h-[164px] animate-pulse" />
+              <div className="rounded-2xl bg-white/80 min-h-[135px] sm:min-h-[164px] animate-pulse" />
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
   const palette = resolveTheme(theme, niche);
 
   return (
