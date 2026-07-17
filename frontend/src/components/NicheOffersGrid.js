@@ -334,13 +334,13 @@ function AutoScrollStrip({ picks, palette, niche }) {
               <Link
                 key={`${p.slug}-${i}`}
                 to={`/product/${p.slug}`}
-                className="flex-shrink-0 w-28 sm:w-32 bg-white rounded-2xl ring-1 ring-black/5 p-2.5 hover:shadow-md transition-all"
+                className="flex-shrink-0 w-36 sm:w-44 bg-white rounded-2xl ring-1 ring-black/5 p-3 hover:shadow-md transition-all"
                 data-testid={`offer-strip-item-${p.slug}`}
               >
-                <div className="w-full h-20 sm:h-24 rounded-[50%/45%] bg-gray-50 flex items-center justify-center overflow-hidden">
+                <div className="w-full h-24 sm:h-28 rounded-[50%/45%] bg-gray-50 flex items-center justify-center overflow-hidden">
                   {img && (
                     <img
-                      src={cldOptim(img, { w: 240 })}
+                      src={cldOptim(img, { w: 280 })}
                       alt={p.short_name || p.name}
                       loading="lazy"
                       decoding="async"
@@ -349,7 +349,7 @@ function AutoScrollStrip({ picks, palette, niche }) {
                     />
                   )}
                 </div>
-                <p className="mt-1.5 text-[11px] sm:text-xs font-bold text-gray-900 leading-tight line-clamp-2 h-8">
+                <p className="mt-2 text-[11px] sm:text-xs font-bold text-gray-900 leading-tight line-clamp-2 min-h-[2.6em]">
                   {p.short_name || p.name}
                 </p>
                 <div className="mt-1 flex items-baseline gap-1">
