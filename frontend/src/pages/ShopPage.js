@@ -7,6 +7,7 @@ import { addToCart, addComboToCart } from './Homepage';
 import { ProductCard } from './ConcernCategoryPage';
 import AddToBagButton from '../components/AddToBagButton';
 import AntiAgingOfferHighlight from '../components/AntiAgingOfferHighlight';
+import NicheOffersGrid from '../components/NicheOffersGrid';
 import { shareProduct } from '../utils/shareProduct';
 import { cachedGet } from '../utils/apiCache';
 import { getSocialProof } from '../utils/socialProof';
@@ -338,8 +339,15 @@ function ShopPage() {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
 
-        {/* Anti-Aging offer highlight — FLAT 50% OFF + Zero Tax + Zero Delivery.
-            Renders only when admin has enabled sale mode AND niche matches. */}
+        {/* Editorial "Age-Reversal Bash" offer grid — Top Deal + category tiles
+            with real Up-to-X%-OFF badges + auto-scrolling price-band strip.
+            Renders at the very top so it's the first thing customers see. */}
+        {nicheParam === 'anti-aging' && (
+          <NicheOffersGrid niche="anti-aging" categories={[]} theme="anti-aging" />
+        )}
+
+        {/* Anti-Aging perks highlight (FLAT 50% OFF + Zero Tax + Zero Delivery).
+            Kept below the grid so the fees benefit is explicit. */}
         {nicheParam === 'anti-aging' && (
           <AntiAgingOfferHighlight niche="anti-aging" />
         )}

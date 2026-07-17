@@ -8,6 +8,7 @@ import { addToCart } from './Homepage';
 import AddToBagButton from '../components/AddToBagButton';
 import CircularCategoryStrip from '../components/CircularCategoryStrip';
 import AntiAgingOfferHighlight from '../components/AntiAgingOfferHighlight';
+import NicheOffersGrid from '../components/NicheOffersGrid';
 import { getProductBrand } from '../utils/brand';
 import { prefetchHandlers } from '../utils/routePrefetch';
 import { shareProduct } from '../utils/shareProduct';
@@ -389,6 +390,11 @@ export default function ConcernCategoryPage({ mode = 'concern' }) {
 
       {/* PRODUCT GRID */}
       <div className="max-w-7xl mx-auto px-3 sm:px-6 py-7 sm:py-12">
+        {/* Editorial "Age-Reversal Bash" offer grid — Top Deal + category tiles
+            with real Up-to-X%-OFF badges + auto-scrolling price-band strip. */}
+        {(slug === 'anti-aging' || String(head?.niche || '').toLowerCase() === 'anti-aging') && (
+          <NicheOffersGrid niche="anti-aging" categories={[]} theme="anti-aging" />
+        )}
         {/* Anti-Aging offer highlight — FLAT 50% OFF + Zero Tax + Zero Delivery.
             Renders only when admin has sale mode ON and this concern targets anti-aging. */}
         {(slug === 'anti-aging' || String(head?.niche || '').toLowerCase() === 'anti-aging') && (
