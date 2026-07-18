@@ -20,14 +20,32 @@ export default function AdminOffers() {
   const [cfg, setCfg] = useState(null);
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState('offer');
+  // Payment-policy toggle — separate from sale-mode. When ON, COD is only
+  // offered to customers whose cart is 100% anti-aging OR whose pin is in an
+  // instant-delivery warehouse zone. When OFF (default), COD works everywhere.
+  const [codRestrictionEnabled, setCodRestrictionEnabled] = useState(false);
 
   const load = async () => {
     try {
       const r = await axios.get(`${API}/api/sale-mode`);
       setCfg(r.data);
     } catch (_) { setCfg({ enabled: false }); }
+    try {
+      const p = await axios.get(`${API}/api/payment-policy`);
+      setCodRestrictionEnabled(!!p.data?.cod_restriction_enabled);
+    } catch (_) { /* leave default false */ }
   };
   useEffect(() => { if (adminToken) load(); }, [adminToken]);
+
+  const savePaymentPolicy = async (nextValue) => {
+    setCodRestrictionEnabled(nextValue); // optimistic
+    try {
+      await axios.put(`${API}/api/admin/payment-policy`, { cod_restriction_enabled: nextValue }, auth);
+    } catch (e) {
+      setCodRestrictionEnabled(!nextValue); // rollback
+      alert('Save failed: ' + (e?.response?.data?.detail || e.message));
+    }
+  };
 
   if (isLoading || !isAuthenticated) {
     return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin w-6 h-6 text-emerald-500" /></div>;
@@ -158,6 +176,24 @@ export default function AdminOffers() {
             <div className="grid grid-cols-2 gap-3 pt-2">
               <ToggleRow label="Free shipping while ON" checked={!!cfg.zero_shipping} onChange={v => patch({ zero_shipping: v })} testid="offer-shipping-toggle" />
               <ToggleRow label="Zero tax while ON" checked={!!cfg.zero_tax} onChange={v => patch({ zero_tax: v })} testid="offer-tax-toggle" />
+            </div>
+
+            {/* Payment policy — separate lifecycle from sale mode. When OFF (default)
+                COD is offered to everyone. When ON, COD is gated to Celesta Glow's
+                own anti-aging products OR instant-delivery warehouse zones. */}
+            <div className="mt-4 pt-4 border-t border-gray-100">
+              <p className="text-xs font-black uppercase tracking-widest text-emerald-700 mb-2">COD Restriction Policy</p>
+              <ToggleRow
+                label={codRestrictionEnabled
+                  ? 'ON — COD limited to anti-aging + instant-delivery zones'
+                  : 'OFF (default) — COD available on all orders'}
+                checked={codRestrictionEnabled}
+                onChange={savePaymentPolicy}
+                testid="offer-cod-restriction-toggle"
+              />
+              <p className="text-[11px] text-gray-500 mt-1.5 leading-snug">
+                When ON: skincare / cosmetics carts must go prepaid, unless the delivery pin is inside a warehouse coverage area (instant delivery available).
+              </p>
             </div>
           </div>
         )}

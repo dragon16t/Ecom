@@ -4,7 +4,7 @@ import axios from 'axios';
 import { 
   Package, ChevronLeft, Search, Filter, Download,
   Phone, MapPin, Calendar, IndianRupee, Truck, CheckCircle, X, Edit2, Save, ExternalLink, MessageCircle,
-  Clock, ShoppingBag, RotateCcw, XCircle, CalendarDays, ChevronRight, Zap, Bike,
+  Clock, ShoppingBag, RotateCcw, XCircle, CalendarDays, ChevronRight, Zap, Bike, Trash2,
 } from 'lucide-react';
 import { getAdminToken } from '../../utils/adminAuth';
 import { Calendar as CalendarUI } from '../../components/ui/calendar';
@@ -760,10 +760,13 @@ function AdminOrders() {
                   </div>
                   <div className="text-right">
                     <p className="font-bold text-gray-900">₹{order.amount}</p>
-                    <p className="text-sm text-gray-400">
-                      {order.created_at ? new Date(order.created_at).toLocaleDateString('en-IN', {
+                    <p className="text-sm text-gray-400" data-testid={`order-timestamp-${order.order_id}`}>
+                      {order.created_at ? new Date(order.created_at).toLocaleString('en-IN', {
                         day: 'numeric',
-                        month: 'short'
+                        month: 'short',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: true,
                       }) : 'N/A'}
                     </p>
                   </div>
@@ -812,6 +815,39 @@ function AdminOrders() {
                         {updatingStatus === order.order_id ? '...' : 'Send'}
                       </button>
                     )}
+                    {/* Per-row Cancel — quick way to flip status to `cancelled` without opening the drawer. */}
+                    {order.status !== 'cancelled' && order.status !== 'delivered' && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (!window.confirm(`Cancel order ${order.order_id}? Customer email will be triggered.`)) return;
+                          updateOrderStatus(order.order_id, 'cancelled');
+                        }}
+                        disabled={updatingStatus === order.order_id}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 bg-rose-100 hover:bg-rose-200 text-rose-700 border border-rose-200 rounded-lg font-bold text-xs transition-colors disabled:opacity-50"
+                        data-testid={`list-cancel-btn-${order.order_id}`}
+                      >
+                        Cancel
+                      </button>
+                    )}
+                    {/* Per-row Delete — permanent hard-delete for test/spam rows. Confirms twice. */}
+                    <button
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        if (!window.confirm(`Permanently DELETE order ${order.order_id}? This cannot be undone.`)) return;
+                        try {
+                          await axios.delete(`${API}/api/admin/orders/${order.order_id}`, { headers: { 'X-Admin-Token': adminToken } });
+                          setOrders((prev) => prev.filter((o) => o.order_id !== order.order_id));
+                        } catch (err) {
+                          alert('Delete failed: ' + (err.response?.data?.detail || err.message));
+                        }
+                      }}
+                      className="inline-flex items-center justify-center w-8 h-8 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-lg transition-colors"
+                      title="Delete order"
+                      data-testid={`list-delete-btn-${order.order_id}`}
+                    >
+                      <Trash2 size={12} />
+                    </button>
                   </div>
                 </div>
 

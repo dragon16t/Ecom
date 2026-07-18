@@ -878,6 +878,17 @@ class OrderEmailUpdate(BaseModel):
     email: str
 
 
+@api_router.delete("/admin/orders/{order_id}")
+async def admin_delete_order(order_id: str, x_admin_token: str = Header(None, alias="X-Admin-Token")):
+    """Admin: hard-delete a single order document. Prefer status='cancelled'
+    for real-world use — this endpoint is for cleaning up test/spam rows."""
+    verify_admin_token(x_admin_token)
+    result = await db.orders.delete_one({"order_id": order_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Order not found")
+    return {"success": True, "deleted": order_id}
+
+
 @api_router.put("/orders/{order_id}/email")
 async def update_order_email(order_id: str, email_update: OrderEmailUpdate):
     """Update customer email for an order (Admin only)"""

@@ -33,6 +33,14 @@ function CartPage() {
 
   const appliedCouponRef = React.useRef(appliedCoupon);
   appliedCouponRef.current = appliedCoupon;
+
+  // Day-wise analytics — record the cart page visit exactly once per mount so
+  // the admin dashboard's `cart_visit_count` chart populates. Fires alongside
+  // the existing initiate_checkout tracker, not in place of it.
+  useEffect(() => {
+    trackAction('cart_view', { source: 'cart_page' }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const appliedGiftCardRef = React.useRef(appliedGiftCard);
   appliedGiftCardRef.current = appliedGiftCard;
   const initialLoadRef = React.useRef(true);
