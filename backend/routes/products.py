@@ -1232,6 +1232,21 @@ async def validate_cart(data: CartValidateRequest):
         ):
             combos_by_id[c["combo_id"]] = c
 
+    # Batch-load niches for any products referenced by combos but not directly
+    # in the cart — needed so we can compute a combo-level niche (used by the
+    # checkout page to decide COD availability for anti-aging-only carts).
+    combo_product_slugs = set()
+    for c in combos_by_id.values():
+        for s in (c.get("product_slugs") or []):
+            if s and s not in products_by_slug:
+                combo_product_slugs.add(s)
+    combo_slug_niches: Dict[str, str] = {}
+    if combo_product_slugs:
+        async for p in db.products.find(
+            {"slug": {"$in": list(combo_product_slugs)}}, {"_id": 0, "slug": 1, "niche": 1}
+        ):
+            combo_slug_niches[p["slug"]] = str(p.get("niche") or "").lower()
+
     for item in data.items:
         if item.product_slug:
             product = products_by_slug.get(item.product_slug)
@@ -1281,6 +1296,7 @@ async def validate_cart(data: CartValidateRequest):
                 "shade_name": chosen_shade.get("name") if chosen_shade else None,
                 "shade_hex": chosen_shade.get("hex") if chosen_shade else None,
                 "stock_left": available,
+                "niche": product.get("niche"),
             })
             subtotal += line_total
             mrp_total += mrp_line
@@ -1294,6 +1310,18 @@ async def validate_cart(data: CartValidateRequest):
             price = combo["combo_prepaid_price"]  # uniform prepaid base
             line_total = price * item.quantity
             mrp_line = combo["mrp_total"] * item.quantity
+            # Combo-level niche: derive from constituent product niches so the
+            # checkout page can gate COD correctly for anti-aging-only combos.
+            combo_niches = set()
+            for s in (combo.get("product_slugs") or []):
+                n = combo_slug_niches.get(s)
+                if n is None:
+                    n = str((products_by_slug.get(s) or {}).get("niche") or "").lower()
+                if n:
+                    combo_niches.add(n)
+            combo_niche = None
+            if combo_niches:
+                combo_niche = next(iter(combo_niches)) if len(combo_niches) == 1 else "mixed"
             validated_items.append({
                 "type": "combo",
                 "combo_id": combo["combo_id"],
@@ -1303,7 +1331,9 @@ async def validate_cart(data: CartValidateRequest):
                 "mrp_total": combo["mrp_total"],
                 "price": price,
                 "quantity": item.quantity,
-                "line_total": line_total
+                "line_total": line_total,
+                "niche": combo_niche,
+                "niches": sorted(combo_niches),
             })
             subtotal += line_total
             mrp_total += mrp_line
