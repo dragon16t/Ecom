@@ -1,5 +1,5 @@
 import React, { useEffect, lazy, Suspense, useState } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { loadNicheBrands } from './utils/brand';
 import ScrollToTop from './components/ScrollToTop';
 import { TrackingProvider } from './providers/TrackingProvider';
@@ -101,13 +101,31 @@ const LandingPage = lazy(() => import('./pages/LandingPage'));
 // Loading spinner for lazy loaded pages (delayed — only appears for slow chunk loads)
 const PageLoader = () => <DelayedLoader delay={280} />;
 
-// Admin layout wrapper (no tracking, minimal overhead) — includes mobile hamburger nav drawer
-const AdminLayout = ({ children }) => (
-  <Suspense fallback={<PageLoader />}>
-    <AdminMobileNav />
-    {children}
-  </Suspense>
-);
+// Admin layout wrapper — enforces auth before rendering any child admin page.
+// Previously each admin page relied on its own `useAdminAuth` check, which
+// meant a page with a slow-loading component (or one that forgot the check)
+// could momentarily reveal admin content before redirecting. This wrapper
+// short-circuits the render tree the moment we know there's no token.
+const AdminLayout = ({ children }) => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const isLoginRoute = location.pathname === '/admin' || location.pathname === '/admin/login';
+  const hasToken = typeof window !== 'undefined' && (
+    sessionStorage.getItem('adminToken') || localStorage.getItem('adminToken')
+  );
+  useEffect(() => {
+    if (!isLoginRoute && !hasToken) navigate('/admin', { replace: true });
+  }, [isLoginRoute, hasToken, navigate]);
+  if (!isLoginRoute && !hasToken) {
+    return <div className="min-h-screen bg-stone-50 flex items-center justify-center"><PageLoader /></div>;
+  }
+  return (
+    <Suspense fallback={<PageLoader />}>
+      <AdminMobileNav />
+      {children}
+    </Suspense>
+  );
+};
 
 function App() {
   // SplashScreen mounts once per browser session; it stays out of the way on

@@ -38,7 +38,7 @@ function CartPage() {
   // the admin dashboard's `cart_visit_count` chart populates. Fires alongside
   // the existing initiate_checkout tracker, not in place of it.
   useEffect(() => {
-    trackAction('cart_view', { source: 'cart_page' }).catch(() => {});
+    try { trackAction('cart_view', { source: 'cart_page' }); } catch (e) {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const appliedGiftCardRef = React.useRef(appliedGiftCard);

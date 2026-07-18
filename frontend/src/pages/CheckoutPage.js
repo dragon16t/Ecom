@@ -63,6 +63,7 @@ function CheckoutPage() {
     const allAntiAging = niches.size > 0 && [...niches].every((n) => n === 'anti-aging');
     return allAntiAging; // instant-delivery bonus is OR'd inside the payment JSX
   }, [cartData, codRestrictionEnabled]);
+
   const [formData, setFormData] = useState({ name: '', phone: '', email: '', house_number: '', area: '', city: '', pincode: '', state: '' });
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
@@ -78,6 +79,15 @@ function CheckoutPage() {
     } catch (_) { return null; }
   });
   const [pinInfo, setPinInfo] = useState(null); // { lat, lng, coverage, address }
+  // Auto-flip to prepaid when COD becomes unavailable while user had it selected.
+  // Uses a proper useEffect (never setState during render) so React can't blow up
+  // the cart/checkout tree. Declared AFTER pinInfo state to avoid TDZ.
+  useEffect(() => {
+    if (paymentMethod === 'COD' && !codAvailable && !(pinInfo?.coverage?.instant_available)) {
+      setPaymentMethod('prepaid');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [codAvailable, paymentMethod, pinInfo]);
 
   // Load saved addresses if customer is logged in
   useEffect(() => {
@@ -391,55 +401,50 @@ function CheckoutPage() {
               )}
             </div>
 
-            {/* Payment Method */}
-            <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
-              <h2 className="font-bold text-gray-900 text-sm mb-3">Payment Method</h2>
-              {(() => {
-                // Combined gate: baseline (all anti-aging) OR instant-delivery zone.
-                const instantOk = !!pinInfo?.coverage?.instant_available;
-                const canCOD = codAvailable || instantOk;
-                // Auto-flip to prepaid if COD was selected but no longer allowed
-                if (!canCOD && paymentMethod === 'COD') {
-                  setTimeout(() => setPaymentMethod('prepaid'), 0);
-                }
-                return (
-                  <div className="space-y-2.5">
-                    <label className={`flex items-center gap-3 p-3.5 rounded-xl border-2 cursor-pointer transition-all ${paymentMethod === 'prepaid' ? 'border-green-500 bg-green-50/50 shadow-sm' : 'border-gray-100 hover:border-gray-200'}`}>
-                      <input type="radio" name="pay" checked={paymentMethod === 'prepaid'} onChange={() => setPaymentMethod('prepaid')} className="text-green-600 w-4 h-4" data-testid="pay-method-prepaid" />
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <p className="font-bold text-sm text-gray-900">Prepaid (UPI / Card)</p>
-                          <span className="text-xs bg-green-600 text-white px-2 py-0.5 rounded-full font-bold">RECOMMENDED</span>
-                        </div>
-                        <p className="text-xs text-green-600 font-medium mt-0.5">Faster delivery · Best price</p>
-                      </div>
-                    </label>
-                    {canCOD ? (
-                      <label className={`flex items-center gap-3 p-3.5 rounded-xl border-2 cursor-pointer transition-all ${paymentMethod === 'COD' ? 'border-green-500 bg-green-50/50' : 'border-gray-100 hover:border-gray-200'}`}>
-                        <input type="radio" name="pay" checked={paymentMethod === 'COD'} onChange={() => setPaymentMethod('COD')} className="text-green-600 w-4 h-4" data-testid="pay-method-cod" />
+              {/* Payment Method */}
+              <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
+                <h2 className="font-bold text-gray-900 text-sm mb-3">Payment Method</h2>
+                {(() => {
+                  const instantOk = !!pinInfo?.coverage?.instant_available;
+                  const canCOD = codAvailable || instantOk;
+                  return (
+                    <div className="space-y-2.5">
+                      <label className={`flex items-center gap-3 p-3.5 rounded-xl border-2 cursor-pointer transition-all ${paymentMethod === 'prepaid' ? 'border-green-500 bg-green-50/50 shadow-sm' : 'border-gray-100 hover:border-gray-200'}`}>
+                        <input type="radio" name="pay" checked={paymentMethod === 'prepaid'} onChange={() => setPaymentMethod('prepaid')} className="text-green-600 w-4 h-4" data-testid="pay-method-prepaid" />
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
-                            <p className="font-bold text-sm text-gray-900">Cash on Delivery</p>
-                            {instantOk && !codAvailable && (
-                              <span className="text-[10px] bg-amber-500 text-white px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider">Instant Zone</span>
-                            )}
+                            <p className="font-bold text-sm text-gray-900">Prepaid (UPI / Card)</p>
+                            <span className="text-xs bg-green-600 text-white px-2 py-0.5 rounded-full font-bold">RECOMMENDED</span>
                           </div>
-                          <p className="text-xs text-gray-500 mt-0.5">₹0 advance · Pay full on delivery</p>
+                          <p className="text-xs text-green-600 font-medium mt-0.5">Faster delivery · Best price</p>
                         </div>
                       </label>
-                    ) : (
-                      <div className="flex items-start gap-2.5 p-3 rounded-xl bg-amber-50/70 border border-amber-200/60" data-testid="cod-unavailable-note">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-600 mt-0.5 flex-shrink-0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                        <div>
-                          <p className="text-xs font-bold text-amber-800">Cash on Delivery not available</p>
-                          <p className="text-[11px] text-amber-700 mt-0.5 leading-snug">COD is only offered on Celesta Glow&apos;s own anti-aging products, or when your address is in an <strong>instant-delivery zone</strong>. Prepaid works everywhere.</p>
+                      {canCOD ? (
+                        <label className={`flex items-center gap-3 p-3.5 rounded-xl border-2 cursor-pointer transition-all ${paymentMethod === 'COD' ? 'border-green-500 bg-green-50/50' : 'border-gray-100 hover:border-gray-200'}`}>
+                          <input type="radio" name="pay" checked={paymentMethod === 'COD'} onChange={() => setPaymentMethod('COD')} className="text-green-600 w-4 h-4" data-testid="pay-method-cod" />
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <p className="font-bold text-sm text-gray-900">Cash on Delivery</p>
+                              {instantOk && !codAvailable && (
+                                <span className="text-[10px] bg-amber-500 text-white px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider">Instant Zone</span>
+                              )}
+                            </div>
+                            <p className="text-xs text-gray-500 mt-0.5">₹0 advance · Pay full on delivery</p>
+                          </div>
+                        </label>
+                      ) : (
+                        <div className="flex items-start gap-2.5 p-3 rounded-xl bg-amber-50/70 border border-amber-200/60" data-testid="cod-unavailable-note">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-600 mt-0.5 flex-shrink-0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                          <div>
+                            <p className="text-xs font-bold text-amber-800">Cash on Delivery not available</p>
+                            <p className="text-[11px] text-amber-700 mt-0.5 leading-snug">COD is only offered on Celesta Glow&apos;s own anti-aging products, or when your address is in an <strong>instant-delivery zone</strong>. Prepaid works everywhere.</p>
+                          </div>
                         </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-            </div>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
 
             {/* Volume / buy-more discount panel removed per business policy. */}
 
