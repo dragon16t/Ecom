@@ -468,26 +468,44 @@ async def migrate_coupons_show_on_cart(db):
 
 
 async def migrate_repair_anti_aging_serum(db):
-    """Repair the `anti-aging-serum` product doc when its identity has been
-    overwritten with Gentle Cleanser data (regressed by a bad admin edit that
-    got baked into the Cloudinary snapshot). Idempotent — only patches when
-    the doc's name/short_name clearly does not match the serum SKU.
+    """Repair the `anti-aging-serum` product doc ONLY when it exactly matches
+    the "Gentle Cleanser overwrite" corruption pattern and the repair has
+    never run before.
 
-    Why this migration exists:
-      - Snapshot auto-restore on every backend boot re-hydrates products from
-        Cloudinary. That snapshot currently has the corrupted anti-aging-serum
-        record, so any one-off DB patch gets wiped on the next restart.
-      - This migration runs AFTER auto-restore + product seed, restoring the
-        canonical serum values so /product/anti-aging-serum always resolves
-        to the real serum and the Flat 50% OFF badge attaches correctly.
+    History:
+      - A bad admin edit copied Gentle Cleanser fields onto the anti-aging-serum
+        slug and that state was baked into the Cloudinary catalog snapshot.
+      - We used to force-restore the doc on every boot. That silently wiped
+        every legitimate admin change (name, price, images) after deploy.
+
+    New behaviour (safe):
+      - Skip entirely if the one-time flag is set on admin_settings.
+      - Otherwise repair ONLY if the doc's name/short_name literally contains
+        "Gentle Cleanser" — the exact corruption fingerprint. Any other value
+        means the admin has intentionally renamed the product and we must not
+        touch it.
+      - After a successful repair, persist the flag so the migration never
+        runs again on this DB.
     """
+    flags_doc = await db.admin_settings.find_one({"type": "migration_flags"}, {"_id": 0}) or {}
+    if flags_doc.get("anti_aging_serum_repaired"):
+        return  # already ran once — never touch admin data again
     doc = await db.products.find_one({"slug": "anti-aging-serum"}, {"_id": 0})
     if not doc:
         return
     name = str(doc.get("name") or "")
     short = str(doc.get("short_name") or "")
-    if "Serum" in name and "Serum" in short and doc.get("mrp", 0) >= 1500:
-        return  # already correct — nothing to do
+    # Exact corruption fingerprint: both name and short_name contain "Gentle Cleanser"
+    is_corrupted = ("Gentle Cleanser" in name) and ("Gentle Cleanser" in short)
+    if not is_corrupted:
+        # Doc is either canonical or has been legitimately edited — set the
+        # flag so we never touch it again.
+        await db.admin_settings.update_one(
+            {"type": "migration_flags"},
+            {"$set": {"anti_aging_serum_repaired": True, "reason": "doc_not_corrupted"}},
+            upsert=True,
+        )
+        return
     from datetime import datetime, timezone as _tz
     patch = {
         "name": "Celesta Glow Advanced Face Serum",
@@ -517,7 +535,12 @@ async def migrate_repair_anti_aging_serum(db):
         "updated_at": datetime.now(_tz.utc).isoformat(),
     }
     await db.products.update_one({"slug": "anti-aging-serum"}, {"$set": patch})
-    logging.info("[migration] repaired corrupted anti-aging-serum document")
+    await db.admin_settings.update_one(
+        {"type": "migration_flags"},
+        {"$set": {"anti_aging_serum_repaired": True, "reason": "corruption_repaired_once"}},
+        upsert=True,
+    )
+    logging.info("[migration] repaired corrupted anti-aging-serum document (one-time, flag persisted)")
 
 
 async def run_all_migrations(db):

@@ -16,6 +16,7 @@ const NAV_ITEMS = [
   { to: '/admin/products', label: 'Products', icon: Package, color: 'green' },
   { to: '/admin/bulk-import', label: 'Bulk Import (Excel)', icon: Upload, color: 'indigo' },
   { to: '/admin/master-tools', label: 'Master Tools', icon: Sparkles, color: 'emerald' },
+  { to: '/admin/media-tools', label: 'Test Reports & SEO', icon: Shield, color: 'purple' },
   { to: '/admin/concerns', label: 'Concerns & Categories', icon: Sparkles, color: 'pink' },
   { to: '/admin/niches', label: 'Niche Customization', icon: Settings, color: 'emerald' },
   { to: '/admin/categories-hub', label: 'Shop by Category Hub', icon: Sparkles, color: 'rose' },

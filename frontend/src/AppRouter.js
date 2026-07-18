@@ -54,6 +54,7 @@ const AdminOrders = lazy(() => import('./pages/admin/AdminOrders'));
 const AdminDeliveryMen = lazy(() => import('./pages/admin/AdminDeliveryMen'));
 const AdminWarehouses = lazy(() => import('./pages/admin/AdminWarehouses'));
 const AdminOffers = lazy(() => import('./pages/admin/AdminOffers'));
+const AdminMediaTools = lazy(() => import('./pages/admin/AdminMediaTools'));
 const AdminAIStudio = lazy(() => import('./pages/admin/AdminAIStudio'));
 const AdminConsultations = lazy(() => import('./pages/admin/AdminConsultations'));
 const AdminDoctorBookings = lazy(() => import('./pages/admin/AdminDoctorBookings'));
@@ -168,6 +169,7 @@ function App() {
         <Route path="/admin/delivery-men" element={<AdminLayout><AdminDeliveryMen /></AdminLayout>} />
         <Route path="/admin/warehouses" element={<AdminLayout><AdminWarehouses /></AdminLayout>} />
         <Route path="/admin/offers" element={<AdminLayout><AdminOffers /></AdminLayout>} />
+        <Route path="/admin/media-tools" element={<AdminLayout><AdminMediaTools /></AdminLayout>} />
         <Route path="/admin/ai-studio" element={<AdminLayout><AdminAIStudio /></AdminLayout>} />
         <Route path="/admin/consultations" element={<AdminLayout><AdminConsultations /></AdminLayout>} />
         <Route path="/admin/doctor-bookings" element={<AdminLayout><AdminDoctorBookings /></AdminLayout>} />

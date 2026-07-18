@@ -3494,16 +3494,10 @@ async def startup_seed():
         restore_res = await _cb.auto_restore_if_empty(db)
         if restore_res.get("restored"):
             logging.info(f"[catalog_backup] auto-restored taxonomy: {restore_res}")
-            # The Cloudinary snapshot still ships the corrupted anti-aging-serum
-            # record (name/short_name/mrp were overwritten with Gentle Cleanser
-            # data by a bad admin edit that got baked into the backup). Re-run
-            # the repair migration AFTER restore so the fix always wins over
-            # stale snapshot data.
-            try:
-                from migrations import migrate_repair_anti_aging_serum
-                await migrate_repair_anti_aging_serum(db)
-            except Exception as _e:
-                logging.warning(f"[migration] post-restore serum repair skipped: {_e}")
+            # Note: we intentionally DO NOT re-run the anti-aging-serum repair
+            # here anymore. The flag-gated migration in `run_all_migrations`
+            # runs exactly once per DB and is inert forever after. Re-running
+            # it post-restore was silently wiping legitimate admin edits.
     except Exception as e:
         logging.warning(f"[catalog_backup] auto-restore skipped: {e}")
     # Apply the CANONICAL taxonomy (Jan 2026 user spec): 13 skincare concerns

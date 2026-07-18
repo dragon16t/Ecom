@@ -182,6 +182,18 @@ class ProductUpdate(BaseModel):
     shades: Optional[List[Dict[str, Any]]] = None  # [{id,name,hex,image,sku,stock_qty}]
     # Price guard — must be explicitly true to allow prepaid_price/cod_price/mrp updates
     allow_price_change: Optional[bool] = False
+    # Dermatologist test-report (Feb 2026) — admin uploads the lab certificate image
+    # for the product; a "Dermatologically Tested" badge + report thumbnail then
+    # renders on the storefront (ProductCard + ProductDetailPage).
+    test_report_image: Optional[str] = None
+    test_report_lab: Optional[str] = None
+    test_report_date: Optional[str] = None  # ISO date string
+    is_dermat_tested: Optional[bool] = None
+    # SEO alt-text + keyword injector (Feb 2026) — populates <img alt> and
+    # emits a JSON-LD `keywords` block on the product page. Multiple keywords
+    # supported to widen long-tail organic reach.
+    image_alt_text: Optional[str] = None
+    seo_keywords: Optional[List[str]] = None
 
 class ProductCreate(BaseModel):
     slug: str
