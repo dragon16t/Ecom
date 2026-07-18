@@ -34,9 +34,26 @@ function formatDuration(seconds) {
   return `${m}m ${s}s`;
 }
 
-function formatPageName(page) {
+function formatPageName(page, productNames = {}) {
   if (!page) return '/';
   if (page === '/') return 'Homepage';
+  // Product page — show the friendly product name instead of the raw slug
+  // so admins can see WHICH product the visitor is looking at.
+  const m = page.match(/^\/product\/([^/?#]+)/);
+  if (m) {
+    const slug = m[1];
+    const name = productNames[slug];
+    return name ? `Product · ${name}` : `Product · ${slug}`;
+  }
+  if (page.startsWith('/shop')) return 'Shop';
+  if (page.startsWith('/cart')) return 'Cart';
+  if (page.startsWith('/checkout')) return 'Checkout';
+  if (page.startsWith('/concern/')) return `Concern · ${page.split('/')[2] || ''}`;
+  if (page.startsWith('/category/')) return `Category · ${page.split('/')[2] || ''}`;
+  if (page.startsWith('/routine')) return 'Routine Generator';
+  if (page.startsWith('/consultation')) return 'Doctor Consultation';
+  if (page.startsWith('/investor') || page.startsWith('/invest')) return 'Investor Form';
+  if (page.startsWith('/skin-issue') || page.startsWith('/skin-advice')) return 'Skin Advice Form';
   return page.length > 30 ? page.slice(0, 30) + '…' : page;
 }
 
@@ -55,6 +72,17 @@ export default function AdminLiveVisitors() {
   const [live, setLive] = useState({ total: 0, by_page: {} });
   const [stats, setStats] = useState({});
   const [visitors, setVisitors] = useState([]);
+  // Slug → short_name map so live visitor rows can show the actual product
+  // name instead of the raw /product/{slug} path.
+  const [productNames, setProductNames] = useState({});
+  useEffect(() => {
+    axios.get(`${API}/api/products?limit=200`).then((r) => {
+      const items = Array.isArray(r.data) ? r.data : (r.data.items || r.data.products || []);
+      const map = {};
+      items.forEach((p) => { if (p.slug) map[p.slug] = p.short_name || p.name || p.slug; });
+      setProductNames(map);
+    }).catch(() => {});
+  }, []);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all'); // all | claimed | accepted_cookies | mobile | desktop
@@ -285,7 +313,7 @@ export default function AdminLiveVisitors() {
                 return (
                   <div key={page} className="flex items-center gap-3">
                     <div className="w-40 sm:w-56 truncate text-xs font-medium text-gray-700">
-                      {formatPageName(page)}
+                      {formatPageName(page, productNames)}
                     </div>
                     <div className="flex-1 h-2 rounded-full bg-stone-100 overflow-hidden">
                       <div
@@ -397,7 +425,7 @@ export default function AdminLiveVisitors() {
                           </div>
                         </td>
                         <td className="px-5 py-3 text-xs text-gray-700">
-                          {formatPageName(v.last_page)}
+                          {formatPageName(v.last_page, productNames)}
                         </td>
                         <td className="px-5 py-3 text-xs text-gray-700">
                           {formatDuration(v.total_time_spent)}
