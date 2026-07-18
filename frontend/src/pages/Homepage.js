@@ -15,6 +15,7 @@ import { playCartSound } from '../utils/cartSound';
 import ReviewsCarousel from '../components/ReviewsCarousel';
 import { cachedGet, peek } from '../utils/apiCache';
 import SEOHead, { faqJsonLd, breadcrumbJsonLd } from '../components/SEOHead';
+import { trackAddToCart as metaTrackAddToCart } from '../utils/metaPixel';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 const ACCENT = '#0f766e';
@@ -129,7 +130,7 @@ if (typeof window !== 'undefined') {
   window.addEventListener('admin-data-changed', pruneTblItemsFromCart);
 }
 
-const addToCart = (slug, quantity = 1, shadeId = null) => {
+const addToCart = (slug, quantity = 1, shadeId = null, meta = {}) => {
   if (isProductTbl(slug)) {
     _toast('This product is coming soon — not available yet.');
     return false;
@@ -143,6 +144,9 @@ const addToCart = (slug, quantity = 1, shadeId = null) => {
   playCartSound();
   _toast('✓ Added to bag', 'success');
   try { window.dispatchEvent(new Event('cart-bounce')); } catch {}
+  // Meta Pixel — AddToCart. Callers with product context pass real price/name
+  // via `meta` for accurate value reporting; other entry points use defaults.
+  try { metaTrackAddToCart(meta.price, quantity, meta.name, [slug]); } catch {}
   return true;
 };
 const addComboToCart = (comboId, quantity = 1) => {
@@ -158,6 +162,8 @@ const addComboToCart = (comboId, quantity = 1) => {
   playCartSound();
   _toast('✓ Combo added to bag', 'success');
   try { window.dispatchEvent(new Event('cart-bounce')); } catch {}
+  // Meta Pixel — AddToCart for combos
+  try { metaTrackAddToCart(undefined, quantity, 'Celesta Glow Combo', [comboId]); } catch {}
   return true;
 };
 const setProductQty = (slug, quantity, shadeId = null) => {
@@ -177,6 +183,7 @@ const setProductQty = (slug, quantity, shadeId = null) => {
     playCartSound();
     _toast('✓ Added to bag', 'success');
     try { window.dispatchEvent(new Event('cart-bounce')); } catch {}
+    try { metaTrackAddToCart(undefined, quantity, undefined, [slug]); } catch {}
   }
   saveCart(cart);
   // Side-effect: increasing quantity for an item already in cart should also nudge the cart icon

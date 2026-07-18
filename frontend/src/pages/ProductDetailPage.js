@@ -256,19 +256,18 @@ function ProductDetailPage() {
     if (_hasShades && !selectedShadeId) { alert('Please pick a shade'); return; }
     if (_stockLeft <= 0) { alert('Out of stock'); return; }
     const finalQty = Math.min(qty, _stockLeft);
-    addToCart(slug, finalQty, _hasShades ? selectedShadeId : null);
+    addToCart(slug, finalQty, _hasShades ? selectedShadeId : null, { price: product?.prepaid_price, name: product?.name });
     trackAction('add_to_cart', { product_slug: slug, quantity: finalQty, shade_id: selectedShadeId });
-    if (window.fbq) window.fbq('track', 'AddToCart', { content_name: product?.name, content_ids: [slug], value: product?.prepaid_price * finalQty, currency: 'INR' });
   };
   const doBuy = () => {
     if (_hasShades && !selectedShadeId) { alert('Please pick a shade'); return; }
     if (_stockLeft <= 0) { alert('Out of stock'); return; }
     const finalQty = Math.min(qty, _stockLeft);
-    addToCart(slug, finalQty, _hasShades ? selectedShadeId : null);
+    addToCart(slug, finalQty, _hasShades ? selectedShadeId : null, { price: product?.prepaid_price, name: product?.name });
     navigate('/cart');
   };
   const doPreorder = () => {
-    addToCart(slug, qty, _hasShades ? selectedShadeId : null);
+    addToCart(slug, qty, _hasShades ? selectedShadeId : null, { price: product?.prepaid_price, name: product?.name });
     axios.post(`${API}/api/products/${slug}/preorder-count`).catch(()=>{});
     trackAction('preorder', { product_slug: slug, quantity: qty });
     navigate('/cart');
