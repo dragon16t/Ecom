@@ -25,6 +25,7 @@ from routes import consultation as consultation_routes
 from routes import doctor_consultation as doctor_consultation_routes
 from routes import skincare_extras as skincare_extras_routes
 from routes import sale_mode as sale_mode_routes
+from routes import payment_policy as payment_policy_routes
 from routes import delivery_men as delivery_men_routes
 from routes import geo as geo_routes
 from routes import warehouses as warehouses_routes
@@ -3336,6 +3337,8 @@ skincare_extras_routes.setup(db, verify_admin_token)
 app.include_router(skincare_extras_routes.router, prefix="/api")
 sale_mode_routes.setup(db, verify_admin_token)
 app.include_router(sale_mode_routes.router, prefix="/api")
+payment_policy_routes.setup(db, verify_admin_token)
+app.include_router(payment_policy_routes.router, prefix="/api")
 delivery_men_routes.setup(db, verify_admin_token)
 app.include_router(delivery_men_routes.router, prefix="/api")
 app.include_router(geo_routes.router, prefix="/api")

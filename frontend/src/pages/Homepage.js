@@ -362,6 +362,37 @@ function Homepage() {
 
       {/* Banner carousel removed per user request on Anti-Aging niche home. */}
 
+      {/* Bestsellers — our 5 products come FIRST on the anti-aging landing,
+          combo/Complete-Kit follows below (Feb-2026 user request). */}
+      {bs.enabled !== false && (
+      <section className="max-w-7xl mx-auto px-3 sm:px-6 pt-6 sm:pt-12" data-testid="anti-aging-bestsellers-top">
+        <div className="flex items-end justify-between mb-4 sm:mb-6 px-1 sm:px-0">
+          <div>
+            <p className="text-[10px] sm:text-[11px] font-bold tracking-[0.4em] uppercase mb-1 sm:mb-1.5 flex items-center gap-2" style={{ color: accent }}>
+              <Flame size={11} style={{ fill: accent, color: accent }} /> {bs.eyebrow || 'Trending now'}
+            </p>
+            <h2 className="font-heading text-lg sm:text-2xl lg:text-3xl font-black text-gray-900 leading-tight">
+              {bs.title_prefix || 'Anti-Aging'} <span className="italic" style={{ color: accent }}>{bs.title_highlight || 'Bestsellers'}</span>
+            </h2>
+          </div>
+          <Link to="/shop?niche=anti-aging" className="text-[11px] sm:text-xs font-bold flex items-center gap-1 hover:underline" style={{ color: accent }}>
+            View all <ArrowRight size={12} />
+          </Link>
+        </div>
+        {loading ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-5 animate-pulse">
+            {[...Array(5)].map((_, i) => <div key={i} className="aspect-[3/5] bg-gradient-to-br from-stone-100 to-stone-200 rounded-3xl" />)}
+          </div>
+        ) : sortedProducts.length === 0 ? (
+          <div className="bg-white rounded-2xl p-8 text-center text-sm text-gray-500 ring-1 ring-emerald-100">No bestsellers yet — check back soon.</div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-5">
+            {sortedProducts.map(p => <ProductCard key={p.slug} product={p} />)}
+          </div>
+        )}
+      </section>
+      )}
+
       {/* Complete Kit — flagship single-card offer (admin-toggleable) — premium brand-aligned design */}
       {niche.show_complete_kit !== false && kit && (
         <section className="max-w-7xl mx-auto px-3 sm:px-6 pt-6 sm:pt-12" data-testid="complete-kit-section">
@@ -500,35 +531,7 @@ function Homepage() {
         </section>
       )}
 
-      {/* Bestsellers — admin-toggleable */}
-      {bs.enabled !== false && (
-      <section className="max-w-7xl mx-auto px-3 sm:px-6 py-6 sm:py-10">
-        <div className="flex items-end justify-between mb-4 sm:mb-6 px-1 sm:px-0">
-          <div>
-            <p className="text-[10px] sm:text-[11px] font-bold tracking-[0.4em] uppercase mb-1 sm:mb-1.5 flex items-center gap-2" style={{ color: accent }}>
-              <Flame size={11} style={{ fill: accent, color: accent }} /> {bs.eyebrow || 'Trending now'}
-            </p>
-            <h2 className="font-heading text-lg sm:text-2xl lg:text-3xl font-black text-gray-900 leading-tight">
-              {bs.title_prefix || 'Anti-Aging'} <span className="italic" style={{ color: accent }}>{bs.title_highlight || 'Bestsellers'}</span>
-            </h2>
-          </div>
-          <Link to="/shop?niche=anti-aging" className="text-[11px] sm:text-xs font-bold flex items-center gap-1 hover:underline" style={{ color: accent }}>
-            View all <ArrowRight size={12} />
-          </Link>
-        </div>
-        {loading ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-5 animate-pulse">
-            {[...Array(5)].map((_, i) => <div key={i} className="aspect-[3/5] bg-gradient-to-br from-stone-100 to-stone-200 rounded-3xl" />)}
-          </div>
-        ) : sortedProducts.length === 0 ? (
-          <div className="bg-white rounded-2xl p-8 text-center text-sm text-gray-500 ring-1 ring-emerald-100">No bestsellers yet — check back soon.</div>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-5">
-            {sortedProducts.map(p => <ProductCard key={p.slug} product={p} />)}
-          </div>
-        )}
-      </section>
-      )}
+      {/* Bestsellers section moved above the Complete Kit (Feb-2026). */}
 
       {/* Customer reviews — auto-scrolling carousel pulled from /admin/reviews */}
       {niche.show_reviews !== false && (
