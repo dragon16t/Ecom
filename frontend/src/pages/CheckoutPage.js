@@ -34,7 +34,7 @@ const Field = React.memo(function Field({ label, field, type = 'text', placehold
 function CheckoutPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { trackAction, trackPurchase, trackGAEvent } = useTracking();
+  const { trackAction, trackGAEvent } = useTracking();
   const { cartData: passedCartData, paymentMethod: passedMethod, coupon, giftCard } = location.state || {};
   const [cartData, setCartData] = useState(passedCartData);
   const [paymentMethod, setPaymentMethod] = useState(passedMethod || 'prepaid');
@@ -216,7 +216,10 @@ function CheckoutPage() {
     };
     const fireConversion = (orderId) => {
       trackAction('order_complete', { order_id: orderId, total: cartData.total, items: cartData.item_count, payment_method: paymentMethod });
-      trackPurchase(orderId, cartData.total, paymentMethod);
+      // Meta Pixel Purchase is fired exclusively on OrderSuccessPage — firing
+      // here races with navigate() and browsers cancel the in-flight XHR on
+      // SPA route change, causing Purchase events to silently drop (very common
+      // failure mode for COD flows). GA is safe because gtag uses beacons.
       trackGAEvent('purchase', { transaction_id: orderId, value: cartData.total, currency: 'INR', items: cartData.item_count });
     };
     // Cache order + navigate with state so Order Success shows INSTANTLY (no loading spinner)

@@ -93,29 +93,38 @@ export const trackInitiateCheckout = (value = 999, numItems = 1, contentIds = ['
 
 /**
  * Purchase Event - Fire on Order Confirmation/Thank You Page
- * Trigger: When user successfully completes a purchase
- * 
- * @param {string} orderId - Unique order ID (REQUIRED for deduplication)
+ * Trigger: When user successfully completes a purchase (prepaid OR COD)
+ *
+ * @param {string} orderId - Unique order ID (REQUIRED for dedup + CAPI event_id)
  * @param {number} value - Purchase amount (REQUIRED)
+ * @param {object} extra - Optional { contents: [{id, quantity, item_price}], num_items, content_name }
  */
-export const trackPurchase = (orderId, value) => {
+export const trackPurchase = (orderId, value, extra = {}) => {
   if (!orderId) {
     console.error('[Meta Pixel] Purchase event requires order_id');
     return;
   }
-  
+
   waitForFbq(() => {
-    window.fbq('track', 'Purchase', {
-      value: value,
+    const contents = Array.isArray(extra.contents) ? extra.contents : null;
+    const contentIds = contents ? contents.map(c => c.id).filter(Boolean) : ['celesta_glow'];
+    const numItems = extra.num_items || (contents ? contents.reduce((s, c) => s + (c.quantity || 1), 0) : 1);
+
+    const payload = {
+      value: Number(value) || 0,
       currency: 'INR',
-      content_name: 'Celesta Glow Products',
+      content_name: extra.content_name || 'Celesta Glow Products',
       content_category: 'Skincare',
-      content_ids: ['celesta_glow'],
+      content_ids: contentIds,
       content_type: 'product',
-      num_items: 1,
-      order_id: orderId
-    });
-    console.log('[Meta Pixel] Purchase fired - order_id:', orderId, 'value:', value);
+      num_items: numItems,
+      order_id: orderId,
+    };
+    if (contents) payload.contents = contents;
+
+    // eventID enables server-side CAPI dedup with the same order_id key.
+    window.fbq('track', 'Purchase', payload, { eventID: orderId });
+    console.log('[Meta Pixel] Purchase fired - order_id:', orderId, 'value:', value, 'items:', numItems);
   });
 };
 

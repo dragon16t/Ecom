@@ -43,26 +43,23 @@ function OrderSuccessPage() {
 
         // Fire Purchase event ONLY ONCE
         if (!pixelFired && orderData) {
-          // Track Purchase via module
-          trackPurchase(orderData.order_id, orderData.amount);
+          // Build contents[] from actual line items — Meta uses this for
+          // value-based bidding / catalog matching / CAPI dedup.
+          const items = Array.isArray(orderData.items) ? orderData.items : [];
+          const contents = items.map(it => ({
+            id: it.slug || it.combo_id || it.product_slug || 'celesta_glow',
+            quantity: it.quantity || 1,
+            item_price: it.price || 0,
+          }));
+          const numItems = items.reduce((s, it) => s + (it.quantity || 1), 0) || 1;
+          const contentName = items.map(i => i.name || i.slug).filter(Boolean).join(', ') || 'Celesta Glow Products';
 
-          // Direct fbq call for Purchase - CRITICAL for Meta tracking
-          if (typeof window !== 'undefined' && window.fbq) {
-            // PageView for order success (consistent with other pages)
-            window.fbq('track', 'PageView', { page_name: 'order_success', content_category: 'Order' });
-
-            window.fbq('track', 'Purchase', {
-              value: orderData.amount,
-              currency: 'INR',
-              content_name: order?.items?.map(i => i.name || i.slug).join(', ') || 'Celesta Glow Products',
-              content_category: 'Skincare',
-              content_ids: ['celestaglow_serum_001'],
-              content_type: 'product',
-              num_items: 1,
-              order_id: orderData.order_id
-            });
-            console.log('[Meta Pixel] Purchase fired on order success page - order_id:', orderData.order_id, 'value:', orderData.amount);
-          }
+          // Retry-capable Meta Pixel Purchase (waits for fbq stub → fbevents.js).
+          trackPurchase(orderData.order_id, orderData.amount, {
+            contents,
+            num_items: numItems,
+            content_name: contentName,
+          });
 
           // Google Ads conversion tracking
           if (typeof window !== 'undefined' && window.gtag) {
