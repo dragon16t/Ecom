@@ -1,0 +1,160 @@
+"""
+Influencer Reels — creator-generated video posts assigned to products.
+
+Public endpoints:
+    GET  /api/reels/list?product_slug=X&limit=10  → active reels for a product
+                                                    (falls back to global reels
+                                                    when the product has none)
+    POST /api/reels/{reel_id}/view                → increments the view counter
+
+Admin endpoints (X-Admin-Token header required):
+    GET    /api/admin/reels               → list all reels (any state)
+    POST   /api/admin/reels               → create a new reel
+    PUT    /api/admin/reels/{reel_id}     → update
+    DELETE /api/admin/reels/{reel_id}     → soft-delete via is_active=False
+"""
+from __future__ import annotations
+
+import os
+import uuid
+from datetime import datetime, timezone
+from typing import List, Optional
+
+from fastapi import APIRouter, Header, HTTPException, Query
+from motor.motor_asyncio import AsyncIOMotorClient
+from pydantic import BaseModel, Field
+
+router = APIRouter()
+
+# Reuse the app-wide Mongo connection.
+_client = AsyncIOMotorClient(os.environ["MONGO_URL"])
+db = _client[os.environ["DB_NAME"]]
+
+ADMIN_TOKEN_ENV = "ADMIN_TOKEN"
+
+
+def _require_admin(token: Optional[str]) -> None:
+    expected = os.environ.get(ADMIN_TOKEN_ENV)
+    if not expected or token != expected:
+        raise HTTPException(status_code=401, detail="Admin auth required")
+
+
+# ---------- Models ----------
+
+class ReelIn(BaseModel):
+    video_url: str
+    thumbnail_url: Optional[str] = None
+    creator_name: str
+    creator_handle: Optional[str] = None
+    caption: Optional[str] = None
+    product_slugs: List[str] = Field(default_factory=list)  # empty = global
+    is_active: bool = True
+    sort_order: int = 0
+
+
+class ReelUpdate(BaseModel):
+    video_url: Optional[str] = None
+    thumbnail_url: Optional[str] = None
+    creator_name: Optional[str] = None
+    creator_handle: Optional[str] = None
+    caption: Optional[str] = None
+    product_slugs: Optional[List[str]] = None
+    is_active: Optional[bool] = None
+    sort_order: Optional[int] = None
+
+
+def _serialize(doc: dict) -> dict:
+    """Strip Mongo ObjectId and coerce datetime -> ISO for JSON transport."""
+    if not doc:
+        return doc
+    out = {k: v for k, v in doc.items() if k != "_id"}
+    for k in ("created_at", "updated_at"):
+        v = out.get(k)
+        if isinstance(v, datetime):
+            out[k] = v.isoformat()
+    return out
+
+
+# ---------- Public ----------
+
+@router.get("/reels/list")
+async def list_public_reels(
+    product_slug: Optional[str] = Query(None),
+    limit: int = Query(12, ge=1, le=50),
+):
+    """Return active reels for this product, or global reels if none exist."""
+    if product_slug:
+        product_reels = await db.influencer_reels.find(
+            {"is_active": True, "product_slugs": product_slug}
+        ).sort([("sort_order", 1), ("created_at", -1)]).limit(limit).to_list(length=limit)
+        if product_reels:
+            return {"items": [_serialize(d) for d in product_reels], "scope": "product"}
+    # Fallback: global reels (product_slugs is empty)
+    global_reels = await db.influencer_reels.find(
+        {"is_active": True, "product_slugs": {"$size": 0}}
+    ).sort([("sort_order", 1), ("created_at", -1)]).limit(limit).to_list(length=limit)
+    return {"items": [_serialize(d) for d in global_reels], "scope": "global"}
+
+
+@router.post("/reels/{reel_id}/view")
+async def bump_view(reel_id: str):
+    """Best-effort view counter. Never fails the caller."""
+    try:
+        await db.influencer_reels.update_one({"id": reel_id}, {"$inc": {"views": 1}})
+    except Exception:
+        pass
+    return {"ok": True}
+
+
+# ---------- Admin ----------
+
+@router.get("/admin/reels")
+async def admin_list_reels(x_admin_token: Optional[str] = Header(None)):
+    _require_admin(x_admin_token)
+    docs = await db.influencer_reels.find({}).sort(
+        [("sort_order", 1), ("created_at", -1)]
+    ).to_list(length=500)
+    return {"items": [_serialize(d) for d in docs]}
+
+
+@router.post("/admin/reels")
+async def admin_create_reel(reel: ReelIn, x_admin_token: Optional[str] = Header(None)):
+    _require_admin(x_admin_token)
+    now = datetime.now(timezone.utc).isoformat()
+    doc = {
+        "id": str(uuid.uuid4()),
+        **reel.model_dump(),
+        "views": 0,
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.influencer_reels.insert_one(doc)
+    return {"ok": True, "reel": _serialize(doc)}
+
+
+@router.put("/admin/reels/{reel_id}")
+async def admin_update_reel(
+    reel_id: str,
+    patch: ReelUpdate,
+    x_admin_token: Optional[str] = Header(None),
+):
+    _require_admin(x_admin_token)
+    update = {k: v for k, v in patch.model_dump(exclude_none=True).items()}
+    if not update:
+        raise HTTPException(status_code=400, detail="Nothing to update")
+    update["updated_at"] = datetime.now(timezone.utc).isoformat()
+    r = await db.influencer_reels.update_one({"id": reel_id}, {"$set": update})
+    if r.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Reel not found")
+    doc = await db.influencer_reels.find_one({"id": reel_id})
+    return {"ok": True, "reel": _serialize(doc)}
+
+
+@router.delete("/admin/reels/{reel_id}")
+async def admin_delete_reel(reel_id: str, x_admin_token: Optional[str] = Header(None)):
+    _require_admin(x_admin_token)
+    # Hard-delete (users can just set is_active=false via the update route to hide).
+    r = await db.influencer_reels.delete_one({"id": reel_id})
+    if r.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Reel not found")
+    return {"ok": True}

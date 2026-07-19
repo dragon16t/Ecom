@@ -41,8 +41,23 @@ def _verify(token: Optional[str]):
     raise HTTPException(status_code=403, detail="Invalid admin token")
 
 
-def _start_of_day_utc(d: datetime) -> str:
-    return d.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+def _start_of_day_ist_utc(d: datetime) -> str:
+    """Return the UTC ISO timestamp of the *IST* start-of-day for `d` (UTC input).
+
+    The store operates in India — admins reading the dashboard expect "today"
+    to mean midnight IST, not midnight UTC. Because created_at is stored as a
+    UTC ISO string, we convert IST-midnight back to UTC and hand that string
+    to Mongo. This fixes the classic "orders between 00:00 and 05:30 IST
+    disappear from today's count" bug.
+    """
+    ist = timezone(timedelta(hours=5, minutes=30))
+    ist_now = d.astimezone(ist)
+    ist_midnight = ist_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    return ist_midnight.astimezone(timezone.utc).isoformat()
+
+
+# Legacy alias — kept so other callers in this file don't break.
+_start_of_day_utc = _start_of_day_ist_utc
 
 
 @router.get("/summary")

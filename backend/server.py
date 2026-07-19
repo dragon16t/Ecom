@@ -29,6 +29,7 @@ from routes import payment_policy as payment_policy_routes
 from routes import delivery_men as delivery_men_routes
 from routes import geo as geo_routes
 from routes import warehouses as warehouses_routes
+from routes import reels as reels_routes
 from services.enhanced_analytics import EnhancedAnalyticsTracker, VisitorLeadTracker
 from services.ai_content_generator import AIContentGenerator
 from services.auto_blog_generator import AutoBlogGenerator
@@ -3445,6 +3446,7 @@ app.include_router(payment_policy_routes.router, prefix="/api")
 delivery_men_routes.setup(db, verify_admin_token)
 app.include_router(delivery_men_routes.router, prefix="/api")
 app.include_router(geo_routes.router, prefix="/api")
+app.include_router(reels_routes.router, prefix="/api")
 warehouses_routes.setup(db, verify_admin_token)
 app.include_router(warehouses_routes.router, prefix="/api")
 app.include_router(landing_page_routes.router, prefix="/api")

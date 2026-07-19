@@ -73,10 +73,11 @@ export default function AdminLiveVisitors() {
   const [stats, setStats] = useState({});
   const [visitors, setVisitors] = useState([]);
   // Slug → short_name map so live visitor rows can show the actual product
-  // name instead of the raw /product/{slug} path.
+  // name instead of the raw /product/{slug} path. Bumped to 1000 so brands
+  // with large catalogs don't drop product names for shoppers on the "tail".
   const [productNames, setProductNames] = useState({});
   useEffect(() => {
-    axios.get(`${API}/api/products?limit=200`).then((r) => {
+    axios.get(`${API}/api/products?limit=1000`).then((r) => {
       const items = Array.isArray(r.data) ? r.data : (r.data.items || r.data.products || []);
       const map = {};
       items.forEach((p) => { if (p.slug) map[p.slug] = p.short_name || p.name || p.slug; });
