@@ -26,9 +26,18 @@ from pydantic import BaseModel, Field
 
 router = APIRouter()
 
-# Reuse the app-wide Mongo connection.
-_client = AsyncIOMotorClient(os.environ["MONGO_URL"])
-db = _client[os.environ["DB_NAME"]]
+# Lazy-loaded Mongo handle — env vars aren't populated at module import time
+# (dotenv loads in server.py), so we resolve on first use.
+_client = None
+_db = None
+
+
+def _get_db():
+    global _client, _db
+    if _db is None:
+        _client = AsyncIOMotorClient(os.environ["MONGO_URL"])
+        _db = _client[os.environ["DB_NAME"]]
+    return _db
 
 ADMIN_TOKEN_ENV = "ADMIN_TOKEN"
 
@@ -84,13 +93,13 @@ async def list_public_reels(
 ):
     """Return active reels for this product, or global reels if none exist."""
     if product_slug:
-        product_reels = await db.influencer_reels.find(
+        product_reels = await _get_db().influencer_reels.find(
             {"is_active": True, "product_slugs": product_slug}
         ).sort([("sort_order", 1), ("created_at", -1)]).limit(limit).to_list(length=limit)
         if product_reels:
             return {"items": [_serialize(d) for d in product_reels], "scope": "product"}
     # Fallback: global reels (product_slugs is empty)
-    global_reels = await db.influencer_reels.find(
+    global_reels = await _get_db().influencer_reels.find(
         {"is_active": True, "product_slugs": {"$size": 0}}
     ).sort([("sort_order", 1), ("created_at", -1)]).limit(limit).to_list(length=limit)
     return {"items": [_serialize(d) for d in global_reels], "scope": "global"}
@@ -100,7 +109,7 @@ async def list_public_reels(
 async def bump_view(reel_id: str):
     """Best-effort view counter. Never fails the caller."""
     try:
-        await db.influencer_reels.update_one({"id": reel_id}, {"$inc": {"views": 1}})
+        await _get_db().influencer_reels.update_one({"id": reel_id}, {"$inc": {"views": 1}})
     except Exception:
         pass
     return {"ok": True}
@@ -111,7 +120,7 @@ async def bump_view(reel_id: str):
 @router.get("/admin/reels")
 async def admin_list_reels(x_admin_token: Optional[str] = Header(None)):
     _require_admin(x_admin_token)
-    docs = await db.influencer_reels.find({}).sort(
+    docs = await _get_db().influencer_reels.find({}).sort(
         [("sort_order", 1), ("created_at", -1)]
     ).to_list(length=500)
     return {"items": [_serialize(d) for d in docs]}
@@ -128,7 +137,7 @@ async def admin_create_reel(reel: ReelIn, x_admin_token: Optional[str] = Header(
         "created_at": now,
         "updated_at": now,
     }
-    await db.influencer_reels.insert_one(doc)
+    await _get_db().influencer_reels.insert_one(doc)
     return {"ok": True, "reel": _serialize(doc)}
 
 
@@ -143,18 +152,17 @@ async def admin_update_reel(
     if not update:
         raise HTTPException(status_code=400, detail="Nothing to update")
     update["updated_at"] = datetime.now(timezone.utc).isoformat()
-    r = await db.influencer_reels.update_one({"id": reel_id}, {"$set": update})
+    r = await _get_db().influencer_reels.update_one({"id": reel_id}, {"$set": update})
     if r.matched_count == 0:
         raise HTTPException(status_code=404, detail="Reel not found")
-    doc = await db.influencer_reels.find_one({"id": reel_id})
+    doc = await _get_db().influencer_reels.find_one({"id": reel_id})
     return {"ok": True, "reel": _serialize(doc)}
 
 
 @router.delete("/admin/reels/{reel_id}")
 async def admin_delete_reel(reel_id: str, x_admin_token: Optional[str] = Header(None)):
     _require_admin(x_admin_token)
-    # Hard-delete (users can just set is_active=false via the update route to hide).
-    r = await db.influencer_reels.delete_one({"id": reel_id})
+    r = await _get_db().influencer_reels.delete_one({"id": reel_id})
     if r.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Reel not found")
     return {"ok": True}

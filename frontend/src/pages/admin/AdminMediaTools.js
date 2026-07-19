@@ -89,6 +89,9 @@ export default function AdminMediaTools() {
           <TabButton active={tab === 'seo'} onClick={() => setTab('seo')} testId="tab-seo">
             <TagIcon size={14} /> SEO Keywords
           </TabButton>
+          <TabButton active={tab === 'broadcast'} onClick={() => setTab('broadcast')} testId="tab-broadcast">
+            <Sparkles size={14} /> Global Broadcast
+          </TabButton>
         </div>
       </div>
 
@@ -141,20 +144,143 @@ export default function AdminMediaTools() {
 
         {/* Right: editor pane */}
         <div className="lg:col-span-8">
-          {!selected && (
+          {tab === 'broadcast' && (
+            <GlobalKeywordBroadcast auth={auth} />
+          )}
+          {tab !== 'broadcast' && !selected && (
             <div className="bg-white rounded-2xl ring-1 ring-stone-200 p-10 text-center">
               <ImageIcon size={28} className="mx-auto text-stone-300 mb-3" />
               <p className="text-sm text-stone-500">Select a product on the left to edit its {tab === 'reports' ? 'test report' : 'SEO metadata'}.</p>
             </div>
           )}
-          {selected && tab === 'reports' && (
+          {tab !== 'broadcast' && selected && tab === 'reports' && (
             <TestReportEditor product={selected} onSave={saveProduct} auth={auth} />
           )}
-          {selected && tab === 'seo' && (
+          {tab !== 'broadcast' && selected && tab === 'seo' && (
             <SeoEditor product={selected} onSave={saveProduct} />
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Tab C — Global Broadcast (adds a keyword to EVERY product in one click)
+// ─────────────────────────────────────────────────────────────────────────
+
+function GlobalKeywordBroadcast({ auth }) {
+  const [keywords, setKeywords] = useState([]);
+  const [draft, setDraft] = useState('');
+  const [niche, setNiche] = useState('');       // '' = all niches
+  const [onlyActive, setOnlyActive] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const addDraft = () => {
+    const c = draft.trim().toLowerCase();
+    if (!c || keywords.includes(c)) { setDraft(''); return; }
+    setKeywords((p) => [...p, c]);
+    setDraft('');
+  };
+  const remove = (k) => setKeywords((p) => p.filter((x) => x !== k));
+
+  const broadcast = async () => {
+    if (!keywords.length) { alert('Add at least one keyword first'); return; }
+    const label = niche ? `all ${niche} products` : 'ALL products in the catalog';
+    if (!window.confirm(`Broadcast "${keywords.join(', ')}" to ${label}?`)) return;
+    setBusy(true);
+    setResult(null);
+    try {
+      const r = await axios.post(
+        `${API}/api/admin/seo-keywords/broadcast`,
+        { keywords, only_niche: niche || null, only_active: onlyActive },
+        auth,
+      );
+      setResult(r.data);
+      setKeywords([]);
+    } catch (e) {
+      alert('Broadcast failed: ' + (e.response?.data?.detail || e.message));
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="bg-white rounded-2xl ring-1 ring-stone-200 p-5 sm:p-6" data-testid="global-broadcast-tab">
+      <div className="flex items-center gap-2 mb-4">
+        <Sparkles size={16} className="text-emerald-600" />
+        <h2 className="text-base font-black text-stone-900">Global SEO Keyword Injector</h2>
+      </div>
+      <p className="text-xs text-stone-500 mb-5">
+        Add one or more keywords, then press <b>Broadcast</b>. Every product in the catalog gets those keywords appended to its <code>seo_keywords[]</code> (duplicates ignored).
+      </p>
+
+      <label className="block mb-4">
+        <span className="text-xs font-bold text-stone-700 uppercase tracking-wide">Keywords to broadcast</span>
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5 p-2 rounded-lg border border-stone-200 focus-within:ring-2 focus-within:ring-emerald-500/30">
+          {keywords.map((kw) => (
+            <span key={kw} className="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 bg-emerald-100 text-emerald-800 text-xs font-semibold rounded-full">
+              {kw}
+              <button onClick={() => remove(kw)} className="w-4 h-4 rounded-full hover:bg-emerald-200 flex items-center justify-center">
+                <X size={10} />
+              </button>
+            </span>
+          ))}
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addDraft(); }
+              else if (e.key === 'Backspace' && draft === '' && keywords.length) {
+                setKeywords((p) => p.slice(0, -1));
+              }
+            }}
+            onBlur={() => draft && addDraft()}
+            placeholder={keywords.length ? 'Add another…' : 'Type a keyword, press Enter to add'}
+            className="flex-1 min-w-[160px] px-1 py-1 text-sm bg-transparent focus:outline-none"
+            data-testid="broadcast-keyword-input"
+          />
+        </div>
+      </label>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+        <label>
+          <span className="text-xs font-bold text-stone-700 uppercase tracking-wide">Scope</span>
+          <select
+            value={niche}
+            onChange={(e) => setNiche(e.target.value)}
+            className="mt-1.5 w-full px-3 py-2 text-sm rounded-lg border border-stone-200 bg-white"
+            data-testid="broadcast-niche-select"
+          >
+            <option value="">All niches</option>
+            <option value="anti-aging">Anti-Aging only</option>
+            <option value="skincare">Skincare only</option>
+            <option value="cosmetics">Cosmetics only</option>
+          </select>
+        </label>
+        <label className="flex items-end gap-2 pb-2">
+          <input type="checkbox" checked={onlyActive} onChange={(e) => setOnlyActive(e.target.checked)} data-testid="broadcast-active-only" />
+          <span className="text-sm text-stone-700">Only active products (skip inactive)</span>
+        </label>
+      </div>
+
+      <button
+        onClick={broadcast}
+        disabled={busy || !keywords.length}
+        className="inline-flex items-center gap-2 bg-emerald-600 text-white font-bold text-sm px-5 py-2.5 rounded-full hover:bg-emerald-700 disabled:opacity-50"
+        data-testid="broadcast-submit"
+      >
+        {busy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+        {busy ? 'Broadcasting…' : `Broadcast to ${niche || 'All'} Products`}
+      </button>
+
+      {result && (
+        <div className="mt-4 bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+          <p className="text-sm font-bold text-emerald-800 mb-1 flex items-center gap-1.5"><Check size={14} /> Broadcast complete</p>
+          <p className="text-xs text-emerald-700">
+            {result.products_modified} of {result.products_matched} products updated · Keywords: {(result.keywords_added || []).join(', ')}
+          </p>
+        </div>
+      )}
     </div>
   );
 }

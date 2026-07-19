@@ -2736,17 +2736,71 @@ async def get_referral_stats(phone: str):
 @api_router.get("/admin/referrals")
 async def get_all_referrals(
     x_admin_token: str = Header(None, alias="X-Admin-Token"),
-    limit: int = Query(100)
+    limit: int = Query(100),
+    page: int = Query(1, ge=1),
+    q: Optional[str] = Query(None, description="Search by referrer name/phone/code"),
 ):
-    """Get all referrals for admin panel"""
+    """Get referrals with pagination + search."""
     verify_admin_token(x_admin_token)
-    
-    referrals = await referral_service.get_all_referrals(limit)
+
+    query: Dict[str, Any] = {}
+    if q:
+        pat = {"$regex": re.escape(q), "$options": "i"}
+        query["$or"] = [
+            {"referrer_name":  pat},
+            {"referrer_phone": pat},
+            {"referral_code":  pat},
+        ]
+
+    total = await db.referrals.count_documents(query)
+    skip = (page - 1) * limit
+    cursor = db.referrals.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit)
+    referrals = await cursor.to_list(length=limit)
     summary = await referral_service.get_referral_summary()
-    
+
     return {
         "referrals": referrals,
-        "summary": summary
+        "summary": summary,
+        "pagination": {
+            "page": page,
+            "limit": limit,
+            "total": total,
+            "pages": max(1, (total + limit - 1) // limit),
+        },
+    }
+
+
+class ManualReferralIn(BaseModel):
+    name: str
+    phone: str
+    email: Optional[str] = None
+
+
+@api_router.post("/admin/referrals/create-manual")
+async def create_manual_referral(
+    payload: ManualReferralIn,
+    x_admin_token: str = Header(None, alias="X-Admin-Token"),
+):
+    """Admin: manually create a referral link for a person without needing them
+    to place an order first. Idempotent — reusing the same phone returns the
+    existing code so admins can safely re-share the same link."""
+    verify_admin_token(x_admin_token)
+    if not payload.phone or not payload.name:
+        raise HTTPException(status_code=400, detail="name and phone are required")
+
+    result = await referral_service.create_referral({
+        "name": payload.name,
+        "phone": payload.phone,
+        "email": payload.email,
+        "order_id": None,  # manual — no linked order
+    })
+    return {
+        "success": True,
+        "referral_code": result["referral_code"],
+        "referral_link": result["referral_link"],
+        "is_new": result.get("is_new", False),
+        "referrer_name": payload.name,
+        "referrer_phone": payload.phone,
     }
 
 
@@ -2788,6 +2842,46 @@ async def get_referral_details(
     if not referral:
         raise HTTPException(status_code=404, detail="Referral not found")
     return referral
+
+
+class SeoBroadcastIn(BaseModel):
+    keywords: List[str]
+    only_niche: Optional[str] = None  # e.g. 'anti-aging' → limit scope
+    only_active: bool = True
+
+
+@api_router.post("/admin/seo-keywords/broadcast")
+async def broadcast_seo_keywords(
+    payload: SeoBroadcastIn,
+    x_admin_token: str = Header(None, alias="X-Admin-Token"),
+):
+    """Admin: append one or more keywords to *every* product's seo_keywords[]
+    in a single batch. Uses `$addToSet` so duplicates are silently ignored.
+    Optionally scoped to a specific niche or only active products."""
+    verify_admin_token(x_admin_token)
+
+    cleaned = sorted({str(k).strip().lower() for k in (payload.keywords or []) if str(k).strip()})
+    if not cleaned:
+        raise HTTPException(status_code=400, detail="At least one keyword required")
+
+    query: Dict[str, Any] = {}
+    if payload.only_active:
+        query["is_active"] = {"$ne": False}
+    if payload.only_niche:
+        query["niche"] = payload.only_niche
+
+    matched = await db.products.count_documents(query)
+    result = await db.products.update_many(
+        query,
+        {"$addToSet": {"seo_keywords": {"$each": cleaned}},
+         "$set": {"updated_at": datetime.now(timezone.utc).isoformat()}},
+    )
+    return {
+        "success": True,
+        "keywords_added": cleaned,
+        "products_matched": matched,
+        "products_modified": result.modified_count,
+    }
 
 
 @api_router.post("/admin/referrals/test-purchase")

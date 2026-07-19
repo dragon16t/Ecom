@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
-import { Star, ChevronLeft, ChevronRight, Shield, Truck, Award, Clock, Check, Sparkles, Minus, Plus, ChevronDown, User, FlaskConical, Package, Leaf, Droplets, Sun, Zap } from 'lucide-react';
+import { Star, ChevronLeft, ChevronRight, Shield, ShieldCheck, Truck, Award, Clock, Check, Sparkles, Minus, Plus, ChevronDown, User, FlaskConical, Package, Leaf, Droplets, Sun, Zap } from 'lucide-react';
 import { addToCart, addComboToCart, getCart, saveCart } from './Homepage';
 import { useTracking } from '../providers/TrackingProvider';
 import ReviewsCarousel from '../components/ReviewsCarousel';
+import InfluencerReelsSection from '../components/InfluencerReelsSection';
 import { cachedGet, peek } from '../utils/apiCache';
 import { getSocialProof } from '../utils/socialProof';
 import SEOHead, { productJsonLd, breadcrumbJsonLd, faqJsonLd, SITE } from '../components/SEOHead';
@@ -597,27 +598,59 @@ function ProductDetailPage() {
           </div>
         )}
 
-        {/* Dermatologist Approved — relevant for skincare & anti-aging only. Hidden for cosmetics. */}
-        {!isCos && (
-          <div className="mt-12">
-            <p className="text-xs font-bold text-gray-400 uppercase tracking-[0.15em] text-center mb-1">Expert Endorsements</p>
-            <h3 className="text-lg font-bold text-gray-900 text-center mb-5">Dermatologist Approved</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {dermats.map((d, i) => (
-                <div key={i} className="bg-gradient-to-b from-white to-stone-50 rounded-2xl p-4 border border-stone-100 shadow-sm">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="w-10 h-10 bg-green-50 rounded-full flex items-center justify-center ring-2 ring-green-200">
-                      <User size={18} className="text-green-600" />
-                    </div>
-                    <div>
-                      <p className="font-bold text-gray-900 text-sm">{d.n}</p>
-                      <p className="text-xs text-green-600 font-medium">{d.c}</p>
-                    </div>
+        {/* Loved by Creators — auto-swiping reel carousel replaces the old
+            static dermatologist card grid. Reels are managed from
+            /admin/reels; falls back to global reels when none are assigned. */}
+        <InfluencerReelsSection productSlug={slug} />
+
+        {/* Dermatologist Test Report — surfaces the certificate the admin
+            uploaded from /admin/media-tools (Test Reports tab). Renders only
+            when a report is on file for this product. */}
+        {product.test_report_image && (
+          <div className="mt-10" data-testid="pdp-test-report">
+            <p className="text-xs font-bold text-emerald-700 uppercase tracking-[0.15em] text-center mb-1 flex items-center justify-center gap-1.5">
+              <ShieldCheck size={14} /> Dermatologically Tested
+            </p>
+            <h3 className="text-lg font-bold text-gray-900 text-center mb-5">Lab-Verified Safety Report</h3>
+            <div className="max-w-2xl mx-auto bg-gradient-to-br from-emerald-50 via-white to-emerald-50 rounded-2xl ring-1 ring-emerald-200 overflow-hidden shadow-sm">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-0">
+                <a
+                  href={product.test_report_image}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block group aspect-[3/4] sm:aspect-auto bg-white flex items-center justify-center p-4 relative"
+                >
+                  <img
+                    src={product.test_report_image}
+                    alt={`${product.name} test report`}
+                    loading="lazy"
+                    className="max-w-full max-h-[380px] object-contain transition-transform group-hover:scale-[1.02]"
+                  />
+                  <span className="absolute bottom-3 right-3 text-[10px] font-black bg-emerald-600 text-white px-2 py-1 rounded-full">TAP TO ENLARGE</span>
+                </a>
+                <div className="p-5 flex flex-col justify-center">
+                  <div className="inline-flex items-center gap-1.5 text-[11px] font-black text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-full self-start mb-3">
+                    <Check size={12} /> DERMAT TESTED
                   </div>
-                  <div className="flex gap-0.5 mb-2">{[1,2,3,4,5].map(s => <Star key={s} size={11} className="fill-amber-400 text-amber-400" />)}</div>
-                  <p className="text-sm text-gray-600 italic leading-relaxed">"{d.q}"</p>
+                  <p className="text-sm text-gray-700 leading-relaxed mb-3">
+                    Independently tested for skin safety, irritation and long-term wear.
+                  </p>
+                  {product.test_report_lab && (
+                    <div className="mt-1">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Certified by</p>
+                      <p className="text-sm font-bold text-gray-900">{product.test_report_lab}</p>
+                    </div>
+                  )}
+                  {product.test_report_date && (
+                    <div className="mt-2">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Tested on</p>
+                      <p className="text-sm font-semibold text-gray-800">
+                        {new Date(product.test_report_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </p>
+                    </div>
+                  )}
                 </div>
-              ))}
+              </div>
             </div>
           </div>
         )}

@@ -261,6 +261,9 @@ function AdminDashboard() {
           <Link to="/admin/media-tools" className="flex items-center gap-3 px-4 py-3 text-purple-600 hover:bg-purple-50 rounded-xl" data-testid="nav-media-tools">
             <Shield size={20} /> Alt-Text &amp; SEO Keywords
           </Link>
+          <Link to="/admin/reels" className="flex items-center gap-3 px-4 py-3 text-rose-600 hover:bg-rose-50 rounded-xl" data-testid="nav-reels">
+            <Sparkles size={20} /> Influencer Reels
+          </Link>
           <Link to="/admin/gift-cards" className="flex items-center gap-3 px-4 py-3 text-rose-600 hover:bg-rose-50 rounded-xl" data-testid="nav-gift-cards">
             <Gift size={20} /> Gift Cards
           </Link>
