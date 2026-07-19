@@ -10,6 +10,14 @@ const STORED_LOCATION_KEY = 'cg_delivery_location';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
+// Small cookie reader — used to lift the Facebook browser cookies (`_fbp`,
+// `_fbc`) so we can forward them to the server-side CAPI Purchase event.
+const getCookie = (name) => {
+  if (typeof document === 'undefined') return null;
+  const match = document.cookie.split('; ').find((r) => r.startsWith(`${name}=`));
+  return match ? decodeURIComponent(match.split('=').slice(1).join('=')) : null;
+};
+
 // Defined at module scope so React doesn't remount the <input> on every keystroke
 // (which was causing the mobile keyboard to auto-dismiss after each character).
 const Field = React.memo(function Field({ label, field, type = 'text', placeholder, span, value, error, onChange, inputMode }) {
@@ -38,6 +46,10 @@ function CheckoutPage() {
   const { cartData: passedCartData, paymentMethod: passedMethod, coupon, giftCard } = location.state || {};
   const [cartData, setCartData] = useState(passedCartData);
   const [paymentMethod, setPaymentMethod] = useState(passedMethod || 'prepaid');
+  // ₹100 OFF Prepaid Bonus — opt-in toggle. When ON, we force paymentMethod
+  // to 'prepaid' + pass `prepaid_bonus:true` to /api/cart/validate. Backend
+  // enforces the same rule so COD orders can never claim the bonus.
+  const [prepaidBonus, setPrepaidBonus] = useState(false);
   // Payment policy — admin toggles COD restriction from /admin/offers. When
   // the flag is off (default), COD works exactly like before. When on, COD is
   // gated to Celesta Glow's own anti-aging products OR instant-delivery zones.
@@ -88,6 +100,15 @@ function CheckoutPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [codAvailable, paymentMethod, pinInfo]);
+
+  // Auto-disable prepaid bonus when user selects COD — server would strip it
+  // anyway, but keeping the UI in sync avoids a confusing "₹100 saved" chip
+  // that vanishes after the next re-validate.
+  useEffect(() => {
+    if (paymentMethod !== 'prepaid' && prepaidBonus) {
+      setPrepaidBonus(false);
+    }
+  }, [paymentMethod, prepaidBonus]);
 
   // Load saved addresses if customer is logged in
   useEffect(() => {
@@ -144,7 +165,7 @@ function CheckoutPage() {
     if (!cartData) {
       const cart = getCart();
       if (!cart.items.length) { navigate('/cart'); return; }
-      axios.post(`${API}/api/cart/validate`, { items: cart.items, payment_method: paymentMethod, coupon_code: coupon?.code, gift_card_code: giftCard?.code || null })
+      axios.post(`${API}/api/cart/validate`, { items: cart.items, payment_method: paymentMethod, coupon_code: coupon?.code, gift_card_code: giftCard?.code || null, prepaid_bonus: prepaidBonus })
         .then(res => setCartData(res.data)).catch(() => navigate('/cart'));
     }
   }, []);
@@ -173,15 +194,16 @@ function CheckoutPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Re-validate cart when payment method changes (so COD/prepaid totals update live)
+  // Re-validate cart when payment method OR prepaid-bonus flag changes so
+  // the summary shows the ₹100 discount live.
   useEffect(() => {
     if (!cartData) return;
     const cart = getCart();
     if (!cart.items.length) return;
-    axios.post(`${API}/api/cart/validate`, { items: cart.items, payment_method: paymentMethod, coupon_code: coupon?.code, gift_card_code: giftCard?.code || null })
+    axios.post(`${API}/api/cart/validate`, { items: cart.items, payment_method: paymentMethod, coupon_code: coupon?.code, gift_card_code: giftCard?.code || null, prepaid_bonus: prepaidBonus })
       .then(res => setCartData(res.data)).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paymentMethod]);
+  }, [paymentMethod, prepaidBonus]);
 
   const validate = () => {
     const e = {};
@@ -213,6 +235,13 @@ function CheckoutPage() {
       delivery_lng: pinInfo?.lng || null,
       delivery_type: pinInfo?.coverage?.delivery_type || null,
       assigned_warehouse_id: pinInfo?.coverage?.assigned_warehouse_id || null,
+      // Prepaid ₹100 bonus flag (server enforces payment_method='prepaid').
+      prepaid_bonus: prepaidBonus,
+      // Meta CAPI plumbing — cookies + UA. Server dedups the browser Pixel
+      // Purchase event with the server-side one by event_id = order_id.
+      fbp: getCookie('_fbp') || null,
+      fbc: getCookie('_fbc') || null,
+      client_user_agent: (typeof navigator !== 'undefined') ? navigator.userAgent : null,
     };
     const fireConversion = (orderId) => {
       trackAction('order_complete', { order_id: orderId, total: cartData.total, items: cartData.item_count, payment_method: paymentMethod });
@@ -407,6 +436,74 @@ function CheckoutPage() {
               {/* Payment Method */}
               <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
                 <h2 className="font-bold text-gray-900 text-sm mb-3">Payment Method</h2>
+
+                {/* ₹100 OFF Prepaid Bonus — beautiful opt-in card */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !prepaidBonus;
+                    if (next) setPaymentMethod('prepaid');
+                    setPrepaidBonus(next);
+                    try { trackAction(next ? 'prepaid_bonus_claim' : 'prepaid_bonus_unclaim', { amount: 100 }); } catch {}
+                  }}
+                  data-testid="prepaid-bonus-toggle"
+                  className={`group relative w-full mb-3 overflow-hidden rounded-2xl border-2 text-left transition-all duration-300 ${
+                    prepaidBonus
+                      ? 'border-emerald-500 shadow-[0_8px_24px_-8px_rgba(16,185,129,0.55)]'
+                      : 'border-emerald-200 hover:border-emerald-400 hover:shadow-[0_6px_18px_-6px_rgba(16,185,129,0.35)]'
+                  }`}
+                >
+                  {/* Animated gradient background */}
+                  <span
+                    aria-hidden
+                    className={`absolute inset-0 transition-opacity duration-300 ${prepaidBonus ? 'opacity-100' : 'opacity-90 group-hover:opacity-100'}`}
+                    style={{
+                      background: prepaidBonus
+                        ? 'linear-gradient(135deg,#059669 0%,#10b981 45%,#34d399 100%)'
+                        : 'linear-gradient(135deg,#ecfdf5 0%,#d1fae5 55%,#a7f3d0 100%)',
+                    }}
+                  />
+                  {/* Sparkle overlay */}
+                  <span
+                    aria-hidden
+                    className="absolute -right-6 -top-8 h-32 w-32 rounded-full blur-2xl opacity-40"
+                    style={{ background: prepaidBonus ? '#fef3c7' : '#10b981' }}
+                  />
+                  <div className="relative flex items-center gap-3 p-4">
+                    {/* Icon badge */}
+                    <div className={`flex-shrink-0 w-11 h-11 rounded-2xl flex items-center justify-center text-xl font-black ${
+                      prepaidBonus ? 'bg-white text-emerald-700' : 'bg-emerald-600 text-white'
+                    }`}>
+                      <Gift size={22} strokeWidth={2.5} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className={`font-black text-[15px] tracking-tight ${prepaidBonus ? 'text-white' : 'text-emerald-900'}`}>
+                          Flat ₹100 OFF
+                        </p>
+                        <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${
+                          prepaidBonus ? 'bg-yellow-300 text-emerald-900' : 'bg-emerald-700 text-white'
+                        }`}>
+                          PREPAID ONLY
+                        </span>
+                      </div>
+                      <p className={`text-[11.5px] mt-0.5 leading-snug ${prepaidBonus ? 'text-emerald-50' : 'text-emerald-700/90'}`}>
+                        {prepaidBonus
+                          ? '₹100 unlocked — enjoy fastest delivery + safest checkout.'
+                          : 'Tap to unlock — save an extra ₹100 when you pay online.'}
+                      </p>
+                    </div>
+                    {/* CTA pill */}
+                    <div className={`flex-shrink-0 rounded-full px-3.5 py-2 text-[11px] font-black uppercase tracking-wider transition-all ${
+                      prepaidBonus
+                        ? 'bg-white text-emerald-700 shadow-inner'
+                        : 'bg-emerald-700 text-white group-hover:bg-emerald-800'
+                    }`}>
+                      {prepaidBonus ? '✓ Applied' : 'Grab Now'}
+                    </div>
+                  </div>
+                </button>
+
                 {(() => {
                   const instantOk = !!pinInfo?.coverage?.instant_available;
                   const canCOD = codAvailable || instantOk;
@@ -538,6 +635,14 @@ function CheckoutPage() {
                   <div className="flex justify-between text-rose-600 font-medium" data-testid="checkout-giftcard-row">
                     <span>🎁 Gift Card ({cartData.gift_card?.code})</span>
                     <span>-₹{cartData.gift_card_discount}</span>
+                  </div>
+                )}
+                {cartData.prepaid_bonus_applied > 0 && (
+                  <div className="flex justify-between text-emerald-700 font-semibold" data-testid="checkout-prepaid-bonus-row">
+                    <span className="flex items-center gap-1.5">
+                      <Gift size={13} strokeWidth={2.6} /> Prepaid Bonus
+                    </span>
+                    <span>-₹{cartData.prepaid_bonus_applied}</span>
                   </div>
                 )}
                 <div className="border-t border-gray-100 pt-2 flex justify-between font-bold text-gray-900 text-lg"><span>Total</span><span>₹{cartData.total?.toLocaleString()}</span></div>

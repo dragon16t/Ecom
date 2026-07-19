@@ -1195,6 +1195,7 @@ class CartValidateRequest(BaseModel):
     coupon_code: Optional[str] = None
     gift_card_code: Optional[str] = None
     payment_method: str = "prepaid"
+    prepaid_bonus: bool = False  # ₹100 off — only honored when payment_method == 'prepaid'
 
 
 @router.post("/cart/validate")
@@ -1491,6 +1492,15 @@ async def validate_cart(data: CartValidateRequest):
             }
             break
 
+    # ---- Prepaid bonus (₹100 off, prepaid only) ----
+    # Frontend toggles this via a checkout button. Server enforces both the
+    # flag AND payment_method='prepaid' so COD orders can never abuse it.
+    PREPAID_BONUS_AMOUNT = 100
+    prepaid_bonus_applied = 0
+    if data.prepaid_bonus and data.payment_method == "prepaid" and final_total > PREPAID_BONUS_AMOUNT:
+        prepaid_bonus_applied = PREPAID_BONUS_AMOUNT
+        final_total = max(0, final_total - PREPAID_BONUS_AMOUNT)
+
     return {
         "items": validated_items,
         "mrp_total": int(round(mrp_total)),
@@ -1517,8 +1527,10 @@ async def validate_cart(data: CartValidateRequest):
         "payment_method": data.payment_method,
         "gift_card": gift_card_info,
         "gift_card_discount": int(round(gift_card_discount)),
+        "prepaid_bonus_applied": prepaid_bonus_applied,
+        "prepaid_bonus_amount": PREPAID_BONUS_AMOUNT,
         "total": int(round(final_total)),
-        "savings": int(round(total_savings)),
+        "savings": int(round(total_savings + prepaid_bonus_applied)),
         "item_count": total_items,
         "prepaid_savings_hint": int(round(cod_premium)),
         "stock_warnings": stock_warnings,

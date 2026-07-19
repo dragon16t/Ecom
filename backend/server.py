@@ -132,6 +132,12 @@ class OrderCreate(BaseModel):
     delivery_type: Optional[str] = None  # 'instant' | 'standard'
     assigned_warehouse_id: Optional[str] = None
     eta_minutes: Optional[int] = None
+    prepaid_bonus: bool = False  # ₹100 off when user opts-in on checkout (prepaid only)
+    # Meta CAPI plumbing — browser sends fbp/fbc cookies + client user-agent so
+    # the server-side Purchase event can dedup with the browser Pixel via event_id.
+    fbp: Optional[str] = None
+    fbc: Optional[str] = None
+    client_user_agent: Optional[str] = None
 
 
 class Order(BaseModel):
@@ -174,10 +180,12 @@ class RazorpayPaymentVerify(BaseModel):
 
 async def send_order_confirmation_email(order: Order, referral_data: dict = None):
     """Routes through services.email_service — auto-switches Gmail → SendGrid
-    past 250 emails/day (IST). One call sends BOTH customer + business emails."""
+    past 250 emails/day (IST). One call sends BOTH customer + business emails.
+    Business notifications support comma-separated recipients via BUSINESS_EMAIL."""
     from services import email_service
     try:
-        business_email = os.environ.get("BUSINESS_EMAIL") or os.environ.get("SMTP_USER")
+        business_email_raw = os.environ.get("BUSINESS_EMAIL") or os.environ.get("SMTP_USER") or ""
+        business_recipients = [e.strip() for e in business_email_raw.split(",") if e.strip()]
         full_address = f"{order.house_number}, {order.area}, {order.state} - {order.pincode}"
         items_list = ", ".join(f"{it.name} ×{it.quantity}" for it in (order.items or []))
 
@@ -234,7 +242,7 @@ async def send_order_confirmation_email(order: Order, referral_data: dict = None
                 f"{referral_block_html}"
                 "</div>"
                 "<div style=\"text-align:center;margin-top:20px;color:#666;font-size:12px;\">"
-                f"<p>Questions? Contact us at {business_email or 'support@celestaglow.com'}</p>"
+                f"<p>Questions? Contact us at {(business_recipients[0] if business_recipients else 'support@celestaglow.com')}</p>"
                 "<p style=\"margin-top:10px;\">&copy; 2025 Celesta Glow. All rights reserved.</p>"
                 "</div></div></body></html>"
             )
@@ -249,7 +257,7 @@ async def send_order_confirmation_email(order: Order, referral_data: dict = None
                 logging.warning(f"[order-email] customer send failed for {order.order_id}: {res_c.get('reason')}")
 
         # ---- Business notification email ----
-        if business_email:
+        for biz_to in business_recipients:
             text_b = (
                 f"New Order: {order.order_id}\n"
                 f"Items: {items_list}\nTotal: {chr(0x20B9)}{order.amount}\n"
@@ -280,14 +288,14 @@ async def send_order_confirmation_email(order: Order, referral_data: dict = None
                 "</div></div></body></html>"
             )
             res_b = await email_service.send_email(
-                to=business_email,
+                to=biz_to,
                 subject=f"New Order Received - {order.order_id}",
                 text=text_b, html=html_b,
             )
             if res_b.get("success"):
-                logging.info(f"[order-email] business notif sent for {order.order_id} via {res_b.get('channel')}")
+                logging.info(f"[order-email] business notif sent to {biz_to} for {order.order_id} via {res_b.get('channel')}")
             else:
-                logging.warning(f"[order-email] business send failed for {order.order_id}: {res_b.get('reason')}")
+                logging.warning(f"[order-email] business send failed for {biz_to} / {order.order_id}: {res_b.get('reason')}")
     except Exception as e:
         logging.error(f"Failed to send order email: {e}")
 
@@ -373,7 +381,7 @@ async def verify_payment(payment_data: RazorpayPaymentVerify):
 
 
 @api_router.post("/orders", response_model=Order)
-async def create_order(order_input: OrderCreate):
+async def create_order(order_input: OrderCreate, request: Request):
     # ===== STOCK VALIDATION + DECREMENT =====
     # Build a list of (slug, qty, shade_id) tuples from incoming items + combo (combos decrement underlying products too)
     stock_changes = []  # list of (slug, qty, shade_id_or_None)
@@ -438,6 +446,7 @@ async def create_order(order_input: OrderCreate):
         coupon_code=order_input.coupon_code,
         gift_card_code=order_input.gift_card_code,
         payment_method=(order_input.payment_method or "prepaid"),
+        prepaid_bonus=bool(order_input.prepaid_bonus),
     ))
 
     # MOQ enforcement (cart/validate only flags; we hard-block at checkout)
@@ -600,6 +609,56 @@ async def create_order(order_input: OrderCreate):
     order_obj_dict['referral_link'] = referral_data['referral_link']
     
     await send_order_confirmation_email(order_obj, referral_data)
+
+    # ===== Meta Conversions API — Purchase (server-side, dedups with browser Pixel via event_id=order_id) =====
+    try:
+        from services import meta_capi
+        if meta_capi.is_enabled():
+            # Split full name → first / last (Meta prefers separate fields)
+            _name_parts = (order_obj.name or "").strip().split(maxsplit=1)
+            _fn = _name_parts[0] if _name_parts else None
+            _ln = _name_parts[1] if len(_name_parts) > 1 else None
+            _client_ip = (request.headers.get("x-forwarded-for") or request.client.host or "").split(",")[0].strip() or None
+            _ua = order_input.client_user_agent or request.headers.get("user-agent")
+
+            _contents = []
+            for it in (order_obj.items or []):
+                _contents.append({
+                    "id": it.get("slug") or it.get("combo_id") or "celesta_glow",
+                    "quantity": it.get("quantity") or 1,
+                    "item_price": float(it.get("price") or 0),
+                })
+            _num_items = sum((it.get("quantity") or 1) for it in (order_obj.items or [])) or 1
+            _content_name = ", ".join((it.get("name") or it.get("slug") or "") for it in (order_obj.items or [])) or "Celesta Glow Products"
+
+            _user_data = meta_capi.build_user_data(
+                email=order_obj.email,
+                phone=order_obj.phone,
+                first_name=_fn,
+                last_name=_ln,
+                city=(order_obj.address or ""),
+                state=order_obj.state,
+                pincode=order_obj.pincode,
+                country="in",
+                external_id=order_obj.phone or order_obj.email or order_obj.order_id,
+                client_ip=_client_ip,
+                client_user_agent=_ua,
+                fbp=order_input.fbp,
+                fbc=order_input.fbc,
+            )
+            # Fire and forget — never block checkout on Meta latency
+            import asyncio
+            asyncio.create_task(meta_capi.track_purchase(
+                order_id=order_obj.order_id,
+                value=float(order_obj.amount or 0),
+                contents=_contents,
+                num_items=_num_items,
+                user_data=_user_data,
+                content_name=_content_name,
+                event_source_url=f"https://celestaglow.com/order-success/{order_obj.order_id}",
+            ))
+    except Exception as _capi_err:
+        logging.warning(f"[meta_capi] Purchase dispatch failed for {order_obj.order_id}: {_capi_err}")
 
     # Auto-Delhivery DISABLED — admin reviews each order, calls the customer, then
     # manually clicks "Send to Delhivery" from the admin panel.
@@ -2146,12 +2205,13 @@ async def track_blog_view(data: dict):
 
 
 @api_router.post("/tracking/discount-claimed")
-async def track_discount_claimed(data: dict):
+async def track_discount_claimed(data: dict, request: Request):
     """Track when a visitor claims a discount"""
     visitor_id = data.get("visitor_id")
     discount_type = data.get("discount_type", "regular")  # "regular" (₹50) or "exit" (₹100)
     discount_amount = data.get("amount", 50)
     phone = data.get("phone", "")
+    email = data.get("email", "")
     
     if visitor_id:
         update_data = {
@@ -2165,13 +2225,43 @@ async def track_discount_claimed(data: dict):
         
         if phone:
             update_data["$set"]["phone"] = phone
+        if email:
+            update_data["$set"]["email"] = email
         
         await db.visitor_profiles.update_one(
             {"visitor_id": visitor_id},
             update_data,
             upsert=True
         )
-    
+
+    # Meta CAPI — Lead event (server-side, dedups with browser Pixel via event_id)
+    try:
+        from services import meta_capi
+        if meta_capi.is_enabled() and (phone or email):
+            _client_ip = (request.headers.get("x-forwarded-for") or (request.client.host if request.client else "") or "").split(",")[0].strip() or None
+            _ua = data.get("client_user_agent") or request.headers.get("user-agent")
+            _user_data = meta_capi.build_user_data(
+                email=email or None,
+                phone=phone or None,
+                country="in",
+                external_id=phone or email or visitor_id,
+                client_ip=_client_ip,
+                client_user_agent=_ua,
+                fbp=data.get("fbp"),
+                fbc=data.get("fbc"),
+            )
+            _event_id = data.get("event_id") or f"lead_{visitor_id}_{int(datetime.now(timezone.utc).timestamp())}"
+            import asyncio
+            asyncio.create_task(meta_capi.track_lead(
+                event_id=_event_id,
+                source=discount_type or "discount_popup",
+                user_data=_user_data,
+                event_source_url=request.headers.get("referer"),
+                value=float(discount_amount or 0),
+            ))
+    except Exception as _capi_err:
+        logging.warning(f"[meta_capi] Lead dispatch failed: {_capi_err}")
+
     return {"tracked": True}
 
 
