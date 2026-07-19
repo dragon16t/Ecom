@@ -69,7 +69,7 @@ function CheckoutPage() {
   // 3-min window the anti-aging perks + prepaid bonus + zero tax/delivery are
   // ALL available. After 3 min they lock. After 2 days the timer auto-resets.
   const PROMO_KEY = 'cg_promo_offer_v1';
-  const PROMO_WINDOW_MS = 3 * 60 * 1000;         // 3 minutes
+  const PROMO_WINDOW_MS = 10 * 60 * 1000;        // 10 minutes
   const PROMO_COOLDOWN_MS = 2 * 24 * 60 * 60 * 1000; // 2 days
   const readPromoState = () => {
     try {
