@@ -6,7 +6,7 @@ import {
   TrendingUp, Package, Eye, IndianRupee, ChevronRight, Plus,
   Activity, Phone, Globe, Clock, Zap, RefreshCw, Sparkles, Stethoscope,
   Home, ShoppingCart, Lock, Settings, Calendar, Filter, ChevronDown,
-  MousePointer, Route, MessageSquare, Bell, Volume2, Gift, CreditCard, CheckCircle, Shield, Star, Image as ImageIcon
+  MousePointer, Route, MessageSquare, Bell, Volume2, Gift, CreditCard, CheckCircle, Shield, Star, Image as ImageIcon, Warehouse, Percent
 } from 'lucide-react';
 import { useOrderNotifications } from '../../utils/orderNotifications';
 import { getAdminToken, clearAdminToken } from '../../utils/adminAuth';
@@ -248,6 +248,21 @@ function AdminDashboard() {
           </Link>
           <Link to="/admin/orders" className="flex items-center gap-3 px-4 py-3 text-gray-600 hover:bg-gray-50 rounded-xl" data-testid="nav-orders">
             <Package size={20} /> Orders
+          </Link>
+          <Link to="/admin/warehouses" className="flex items-center gap-3 px-4 py-3 text-emerald-600 hover:bg-emerald-50 rounded-xl" data-testid="nav-warehouses">
+            <Warehouse size={20} /> Warehouses
+          </Link>
+          <Link to="/admin/delivery-men" className="flex items-center gap-3 px-4 py-3 text-emerald-600 hover:bg-emerald-50 rounded-xl" data-testid="nav-delivery-men">
+            <Users size={20} /> Delivery Men
+          </Link>
+          <Link to="/admin/offers" className="flex items-center gap-3 px-4 py-3 text-rose-600 hover:bg-rose-50 rounded-xl" data-testid="nav-offers">
+            <Percent size={20} /> Offers, COD &amp; Sale
+          </Link>
+          <Link to="/admin/media-tools" className="flex items-center gap-3 px-4 py-3 text-purple-600 hover:bg-purple-50 rounded-xl" data-testid="nav-media-tools">
+            <Shield size={20} /> Alt-Text &amp; SEO Keywords
+          </Link>
+          <Link to="/admin/gift-cards" className="flex items-center gap-3 px-4 py-3 text-rose-600 hover:bg-rose-50 rounded-xl" data-testid="nav-gift-cards">
+            <Gift size={20} /> Gift Cards
           </Link>
           <Link to="/admin/ai-studio" className="flex items-center gap-3 px-4 py-3 text-gray-600 hover:bg-gray-50 rounded-xl" data-testid="nav-ai">
             <Sparkles size={20} /> AI Studio

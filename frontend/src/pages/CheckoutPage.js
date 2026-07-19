@@ -44,7 +44,20 @@ function CheckoutPage() {
   const location = useLocation();
   const { trackAction, trackGAEvent } = useTracking();
   const { cartData: passedCartData, paymentMethod: passedMethod, coupon, giftCard } = location.state || {};
-  const [cartData, setCartData] = useState(passedCartData);
+  const [cartData, setCartData] = useState(() => {
+    // PERF: hydrate instantly from sessionStorage so the checkout renders in
+    // one paint. The live re-validate below still runs on mount so any stale
+    // price/stock is corrected within a network round-trip.
+    if (passedCartData) return passedCartData;
+    try {
+      const cached = sessionStorage.getItem('cg_checkout_cart_v1');
+      if (cached) {
+        const j = JSON.parse(cached);
+        if (j && j.__at && Date.now() - j.__at < 5 * 60 * 1000) return j;
+      }
+    } catch (_) {}
+    return null;
+  });
   const [paymentMethod, setPaymentMethod] = useState(passedMethod || 'prepaid');
   // ₹100 OFF Prepaid Bonus — opt-in toggle. When ON, we force paymentMethod
   // to 'prepaid' + pass `prepaid_bonus:true` to /api/cart/validate. Backend
@@ -206,15 +219,30 @@ function CheckoutPage() {
   }, []);
 
   // Re-validate cart when payment method OR prepaid-bonus flag changes so
-  // the summary shows the ₹100 discount live.
+  // the summary shows the ₹100 discount live. Debounced 250ms to avoid a
+  // burst of validate calls when React batches state updates.
   useEffect(() => {
     if (!cartData) return;
     const cart = getCart();
     if (!cart.items.length) return;
-    axios.post(`${API}/api/cart/validate`, { items: cart.items, payment_method: paymentMethod, coupon_code: coupon?.code, gift_card_code: giftCard?.code || null, prepaid_bonus: prepaidBonus })
-      .then(res => setCartData(res.data)).catch(() => {});
+    const t = setTimeout(() => {
+      axios.post(`${API}/api/cart/validate`, { items: cart.items, payment_method: paymentMethod, coupon_code: coupon?.code, gift_card_code: giftCard?.code || null, prepaid_bonus: prepaidBonus })
+        .then(res => setCartData(res.data)).catch(() => {});
+    }, 250);
+    return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paymentMethod, prepaidBonus]);
+
+  // PERF: persist the freshest cartData to sessionStorage so a page refresh
+  // or navigate-back to /checkout paints the summary in one frame instead of
+  // waiting on the network. Storage is scoped per tab (session) and expires
+  // after 5 minutes (checked on hydrate above).
+  useEffect(() => {
+    if (!cartData) return;
+    try {
+      sessionStorage.setItem('cg_checkout_cart_v1', JSON.stringify({ ...cartData, __at: Date.now() }));
+    } catch (_) {}
+  }, [cartData]);
 
   const validate = () => {
     const e = {};
@@ -448,7 +476,7 @@ function CheckoutPage() {
               <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
                 <h2 className="font-bold text-gray-900 text-sm mb-3">Payment Method</h2>
 
-                {/* ₹100 OFF Prepaid Bonus — beautiful opt-in card */}
+                {/* ₹100 OFF Prepaid Bonus — clean single-column card */}
                 {(() => {
                   const eligible = (cartData?.subtotal || 0) >= (cartData?.prepaid_bonus_min_subtotal ?? 800);
                   const shortBy = Math.max(0, (cartData?.prepaid_bonus_min_subtotal ?? 800) - (cartData?.subtotal || 0));
@@ -464,76 +492,52 @@ function CheckoutPage() {
                     try { trackAction(next ? 'prepaid_bonus_claim' : 'prepaid_bonus_unclaim', { amount: 100 }); } catch {}
                   }}
                   data-testid="prepaid-bonus-toggle"
-                  className={`group relative w-full mb-3 overflow-hidden rounded-2xl border-2 text-left transition-all duration-300 ${
+                  className={`relative w-full mb-3 overflow-hidden rounded-2xl border text-left transition-all duration-300 ${
                     !eligible
-                      ? 'border-gray-200 opacity-70 cursor-not-allowed'
+                      ? 'border-gray-200 bg-gray-50 cursor-not-allowed opacity-80'
                       : prepaidBonus
-                        ? 'border-emerald-500 shadow-[0_8px_24px_-8px_rgba(16,185,129,0.55)]'
-                        : 'border-emerald-200 hover:border-emerald-400 hover:shadow-[0_6px_18px_-6px_rgba(16,185,129,0.35)]'
+                        ? 'border-emerald-500 bg-gradient-to-br from-emerald-500 via-emerald-500 to-emerald-600 shadow-[0_10px_28px_-10px_rgba(16,185,129,0.6)]'
+                        : 'border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-emerald-50 hover:border-emerald-400 hover:shadow-md'
                   }`}
                 >
-                  {/* Animated gradient background */}
-                  <span
-                    aria-hidden
-                    className={`absolute inset-0 transition-opacity duration-300 ${prepaidBonus && eligible ? 'opacity-100' : 'opacity-90 group-hover:opacity-100'}`}
-                    style={{
-                      background: !eligible
-                        ? 'linear-gradient(135deg,#f3f4f6 0%,#e5e7eb 100%)'
-                        : prepaidBonus
-                          ? 'linear-gradient(135deg,#059669 0%,#10b981 45%,#34d399 100%)'
-                          : 'linear-gradient(135deg,#ecfdf5 0%,#d1fae5 55%,#a7f3d0 100%)',
-                    }}
-                  />
-                  {/* Sparkle overlay */}
-                  <span
-                    aria-hidden
-                    className="absolute -right-6 -top-8 h-32 w-32 rounded-full blur-2xl opacity-40"
-                    style={{ background: prepaidBonus && eligible ? '#fef3c7' : (eligible ? '#10b981' : '#9ca3af') }}
-                  />
-                  <div className="relative flex items-center gap-3 p-4">
-                    {/* Icon badge */}
-                    <div className={`flex-shrink-0 w-11 h-11 rounded-2xl flex items-center justify-center text-xl font-black ${
-                      !eligible ? 'bg-gray-300 text-gray-600'
-                        : prepaidBonus ? 'bg-white text-emerald-700'
+                  <div className="relative flex items-center gap-3 px-4 py-3.5">
+                    {/* Icon */}
+                    <div className={`flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center ${
+                      !eligible ? 'bg-gray-200 text-gray-500'
+                        : prepaidBonus ? 'bg-white/20 text-white ring-1 ring-white/40'
                         : 'bg-emerald-600 text-white'
                     }`}>
-                      <Gift size={22} strokeWidth={2.5} />
+                      <Gift size={20} strokeWidth={2.5} />
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className={`font-black text-[15px] tracking-tight ${
-                          !eligible ? 'text-gray-600' : prepaidBonus ? 'text-white' : 'text-emerald-900'
-                        }`}>
-                          Flat ₹100 OFF
-                        </p>
-                        <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${
-                          !eligible ? 'bg-gray-400 text-white'
-                            : prepaidBonus ? 'bg-yellow-300 text-emerald-900'
-                            : 'bg-emerald-700 text-white'
-                        }`}>
-                          PREPAID · MIN ₹800
-                        </span>
-                      </div>
-                      <p className={`text-[11.5px] mt-0.5 leading-snug ${
-                        !eligible ? 'text-gray-600'
-                          : prepaidBonus ? 'text-emerald-50'
-                          : 'text-emerald-700/90'
+
+                    {/* Text block */}
+                    <div className="flex-1 min-w-0 leading-tight">
+                      <p className={`font-extrabold text-[15px] tracking-tight ${
+                        !eligible ? 'text-gray-700' : prepaidBonus ? 'text-white' : 'text-emerald-900'
+                      }`}>
+                        Flat ₹100 OFF
+                      </p>
+                      <p className={`text-[11.5px] mt-0.5 font-medium ${
+                        !eligible ? 'text-gray-500'
+                          : prepaidBonus ? 'text-emerald-50/95'
+                          : 'text-emerald-700'
                       }`}>
                         {!eligible
-                          ? `Add ₹${shortBy.toLocaleString()} more to unlock this offer.`
+                          ? `Add ₹${shortBy.toLocaleString()} more to unlock`
                           : prepaidBonus
-                            ? '₹100 unlocked — enjoy fastest delivery + safest checkout.'
-                            : 'Tap to unlock — save an extra ₹100 when you pay online.'}
+                            ? 'Applied · Prepaid · Min ₹800'
+                            : 'Prepaid orders · Min cart ₹800'}
                       </p>
                     </div>
-                    {/* CTA pill */}
-                    <div className={`flex-shrink-0 rounded-full px-3.5 py-2 text-[11px] font-black uppercase tracking-wider transition-all ${
-                      !eligible ? 'bg-gray-300 text-gray-500'
-                        : prepaidBonus ? 'bg-white text-emerald-700 shadow-inner'
-                        : 'bg-emerald-700 text-white group-hover:bg-emerald-800'
+
+                    {/* Compact CTA */}
+                    <span className={`flex-shrink-0 rounded-full px-3.5 py-1.5 text-[10.5px] font-black uppercase tracking-wider whitespace-nowrap ${
+                      !eligible ? 'bg-gray-200 text-gray-500'
+                        : prepaidBonus ? 'bg-white text-emerald-700'
+                        : 'bg-emerald-700 text-white'
                     }`}>
                       {!eligible ? 'Locked' : prepaidBonus ? '✓ Applied' : 'Grab Now'}
-                    </div>
+                    </span>
                   </div>
                 </button>
                   );

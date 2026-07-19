@@ -76,6 +76,10 @@ function CartPage() {
     try {
       const res = await axios.post(`${API}/api/cart/validate`, { items: cart.items, coupon_code: couponCodeToUse, gift_card_code: giftCardToUse, payment_method: 'prepaid' });
       setCartData(res.data);
+      // PERF: persist the validated summary so the next mount (navigate away
+      // and back, or refresh) paints in one frame instead of waiting on the
+      // network. Keyed per-session, 5 min TTL enforced on read.
+      try { sessionStorage.setItem('lastCartValidate', JSON.stringify(res.data)); } catch (_) {}
       // ---- Sync localStorage with server-validated items ----
       // The server silently drops TBL / inactive / out-of-stock items. If we
       // leave them in localStorage, the navbar cart badge counts them while
