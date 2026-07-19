@@ -133,6 +133,7 @@ class OrderCreate(BaseModel):
     assigned_warehouse_id: Optional[str] = None
     eta_minutes: Optional[int] = None
     prepaid_bonus: bool = False  # ₹100 off when user opts-in on checkout (prepaid only)
+    promo_active: bool = True  # Flash-offer 3-min timer; False = timer expired, strip perks
     # Meta CAPI plumbing — browser sends fbp/fbc cookies + client user-agent so
     # the server-side Purchase event can dedup with the browser Pixel via event_id.
     fbp: Optional[str] = None
@@ -447,6 +448,7 @@ async def create_order(order_input: OrderCreate, request: Request):
         gift_card_code=order_input.gift_card_code,
         payment_method=(order_input.payment_method or "prepaid"),
         prepaid_bonus=bool(order_input.prepaid_bonus),
+        promo_active=bool(order_input.promo_active),
     ))
 
     # MOQ enforcement (cart/validate only flags; we hard-block at checkout)

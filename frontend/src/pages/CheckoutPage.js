@@ -63,6 +63,45 @@ function CheckoutPage() {
   // to 'prepaid' + pass `prepaid_bonus:true` to /api/cart/validate. Backend
   // enforces the same rule so COD orders can never claim the bonus.
   const [prepaidBonus, setPrepaidBonus] = useState(false);
+
+  // ---- Flash Offer Timer (3 min urgency, 2 day cooldown) ----
+  // On first checkout visit we stamp `startedAt` in localStorage. During the
+  // 3-min window the anti-aging perks + prepaid bonus + zero tax/delivery are
+  // ALL available. After 3 min they lock. After 2 days the timer auto-resets.
+  const PROMO_KEY = 'cg_promo_offer_v1';
+  const PROMO_WINDOW_MS = 3 * 60 * 1000;         // 3 minutes
+  const PROMO_COOLDOWN_MS = 2 * 24 * 60 * 60 * 1000; // 2 days
+  const readPromoState = () => {
+    try {
+      const raw = localStorage.getItem(PROMO_KEY);
+      const j = raw ? JSON.parse(raw) : null;
+      const now = Date.now();
+      if (!j || !j.startedAt) return { startedAt: now, fresh: true };
+      // 2-day cooldown reset — treat as brand-new window
+      if (now - j.startedAt >= PROMO_COOLDOWN_MS) return { startedAt: now, fresh: true };
+      return { startedAt: j.startedAt, fresh: false };
+    } catch (_) { return { startedAt: Date.now(), fresh: true }; }
+  };
+  const [promoStartedAt] = useState(() => {
+    const s = readPromoState();
+    if (s.fresh) {
+      try { localStorage.setItem(PROMO_KEY, JSON.stringify({ startedAt: s.startedAt })); } catch (_) {}
+    }
+    return s.startedAt;
+  });
+  const [nowTs, setNowTs] = useState(Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNowTs(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const promoExpiresAt = promoStartedAt + PROMO_WINDOW_MS;
+  const promoRemainingMs = Math.max(0, promoExpiresAt - nowTs);
+  const promoActive = promoRemainingMs > 0;
+  const promoMinutes = Math.floor(promoRemainingMs / 60000);
+  const promoSeconds = Math.floor((promoRemainingMs % 60000) / 1000);
+  // Time until offer reactivates (after 3-min lock + 2-day cooldown from start)
+  const promoReactivateAt = promoStartedAt + PROMO_COOLDOWN_MS;
+  const hoursUntilReactivate = Math.max(0, Math.ceil((promoReactivateAt - nowTs) / (60 * 60 * 1000)));
   // Payment policy — admin toggles COD restriction from /admin/offers. When
   // the flag is off (default), COD works exactly like before. When on, COD is
   // gated to Celesta Glow's own anti-aging products OR instant-delivery zones.
@@ -189,7 +228,7 @@ function CheckoutPage() {
     if (!cartData) {
       const cart = getCart();
       if (!cart.items.length) { navigate('/cart'); return; }
-      axios.post(`${API}/api/cart/validate`, { items: cart.items, payment_method: paymentMethod, coupon_code: coupon?.code, gift_card_code: giftCard?.code || null, prepaid_bonus: prepaidBonus })
+      axios.post(`${API}/api/cart/validate`, { items: cart.items, payment_method: paymentMethod, coupon_code: coupon?.code, gift_card_code: giftCard?.code || null, prepaid_bonus: prepaidBonus, promo_active: promoActive })
         .then(res => setCartData(res.data)).catch(() => navigate('/cart'));
     }
   }, []);
@@ -218,20 +257,29 @@ function CheckoutPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Re-validate cart when payment method OR prepaid-bonus flag changes so
-  // the summary shows the ₹100 discount live. Debounced 250ms to avoid a
-  // burst of validate calls when React batches state updates.
+  // Re-validate cart when payment method, prepaid-bonus flag, OR promo timer
+  // state changes so the summary reflects the current perks live. Debounced
+  // 250ms to coalesce React state batches.
   useEffect(() => {
     if (!cartData) return;
     const cart = getCart();
     if (!cart.items.length) return;
     const t = setTimeout(() => {
-      axios.post(`${API}/api/cart/validate`, { items: cart.items, payment_method: paymentMethod, coupon_code: coupon?.code, gift_card_code: giftCard?.code || null, prepaid_bonus: prepaidBonus })
+      axios.post(`${API}/api/cart/validate`, { items: cart.items, payment_method: paymentMethod, coupon_code: coupon?.code, gift_card_code: giftCard?.code || null, prepaid_bonus: prepaidBonus, promo_active: promoActive })
         .then(res => setCartData(res.data)).catch(() => {});
     }, 250);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paymentMethod, prepaidBonus]);
+  }, [paymentMethod, prepaidBonus, promoActive]);
+
+  // Auto-untoggle prepaid bonus the moment the 3-min timer expires so the UI
+  // doesn't lie. Server strips it anyway (promo_active=false), but this keeps
+  // the "Applied" chip in sync.
+  useEffect(() => {
+    if (!promoActive && prepaidBonus) {
+      setPrepaidBonus(false);
+    }
+  }, [promoActive, prepaidBonus]);
 
   // PERF: persist the freshest cartData to sessionStorage so a page refresh
   // or navigate-back to /checkout paints the summary in one frame instead of
@@ -276,6 +324,8 @@ function CheckoutPage() {
       assigned_warehouse_id: pinInfo?.coverage?.assigned_warehouse_id || null,
       // Prepaid ₹100 bonus flag (server enforces payment_method='prepaid').
       prepaid_bonus: prepaidBonus,
+      // Flash offer window still open when the user hit Place Order
+      promo_active: promoActive,
       // Meta CAPI plumbing — cookies + UA. Server dedups the browser Pixel
       // Purchase event with the server-side one by event_id = order_id.
       fbp: getCookie('_fbp') || null,
@@ -395,6 +445,75 @@ function CheckoutPage() {
           </div>
         </div>
 
+        {/* ---------- Flash Offer Banner (3-min urgency + 2-day cooldown) ---------- */}
+        {promoActive ? (
+          <div
+            data-testid="promo-timer-banner"
+            className="relative overflow-hidden rounded-2xl mb-5 border border-amber-300/60 shadow-[0_10px_30px_-12px_rgba(217,119,6,0.5)]"
+          >
+            {/* Warm gradient background */}
+            <div
+              aria-hidden
+              className="absolute inset-0"
+              style={{ background: 'linear-gradient(120deg,#f59e0b 0%,#f97316 45%,#ef4444 100%)' }}
+            />
+            {/* Subtle animated shine */}
+            <div
+              aria-hidden
+              className="absolute inset-y-0 -left-16 w-16 opacity-40 blur-xl"
+              style={{ background: 'linear-gradient(90deg,transparent,white,transparent)', animation: 'cgShine 3.6s ease-in-out infinite' }}
+            />
+            <style>{`@keyframes cgShine{0%{transform:translateX(0)}100%{transform:translateX(600%)}}`}</style>
+
+            <div className="relative flex items-center gap-3 px-4 py-3">
+              {/* Pulsing dot */}
+              <span className="relative flex-shrink-0 flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-70"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-white"></span>
+              </span>
+
+              <div className="flex-1 min-w-0 leading-tight">
+                <p className="font-black text-white text-[14px] tracking-tight">
+                  Your special price expires soon
+                </p>
+                <p className="text-white/90 text-[11.5px] mt-0.5 font-medium">
+                  ₹100 OFF · Zero Tax · Free Delivery — only while the timer runs.
+                </p>
+              </div>
+
+              {/* Countdown clock */}
+              <div
+                className="flex-shrink-0 bg-white/95 text-red-600 rounded-xl px-3 py-1.5 font-black text-[15px] tabular-nums tracking-widest shadow-inner"
+                data-testid="promo-timer-clock"
+              >
+                {String(promoMinutes).padStart(2, '0')}:{String(promoSeconds).padStart(2, '0')}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div
+            data-testid="promo-timer-expired"
+            className="rounded-2xl mb-5 border border-stone-200 bg-white shadow-sm"
+          >
+            <div className="flex items-center gap-3 px-4 py-3">
+              <div className="flex-shrink-0 w-9 h-9 rounded-xl bg-stone-100 flex items-center justify-center">
+                <Clock size={18} className="text-stone-500" />
+              </div>
+              <div className="flex-1 min-w-0 leading-tight">
+                <p className="font-bold text-stone-800 text-[13.5px] tracking-tight">
+                  Offer window closed — full price shown below
+                </p>
+                <p className="text-stone-500 text-[11.5px] mt-0.5">
+                  {hoursUntilReactivate > 24
+                    ? `Come back in ~${Math.ceil(hoursUntilReactivate/24)} day${Math.ceil(hoursUntilReactivate/24)===1?'':'s'} to unlock the promo again.`
+                    : `Come back in ~${hoursUntilReactivate} hour${hoursUntilReactivate===1?'':'s'} to unlock the promo again.`}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* ---------- end banner ---------- */}
+
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
           {/* Form */}
           <div className="lg:col-span-3 space-y-4">
@@ -478,8 +597,15 @@ function CheckoutPage() {
 
                 {/* ₹100 OFF Prepaid Bonus — clean single-column card */}
                 {(() => {
-                  const eligible = (cartData?.subtotal || 0) >= (cartData?.prepaid_bonus_min_subtotal ?? 800);
+                  const meetsMin = (cartData?.subtotal || 0) >= (cartData?.prepaid_bonus_min_subtotal ?? 800);
+                  const eligible = meetsMin && promoActive;
                   const shortBy = Math.max(0, (cartData?.prepaid_bonus_min_subtotal ?? 800) - (cartData?.subtotal || 0));
+                  const lockReason = !promoActive
+                    ? 'Promo timer ended · come back later'
+                    : !meetsMin
+                      ? `Add ₹${shortBy.toLocaleString()} more to unlock`
+                      : null;
+                  const ctaLabel = !promoActive ? 'Expired' : !meetsMin ? 'Locked' : (prepaidBonus ? '✓ Applied' : 'Grab Now');
                   return (
                 <button
                   type="button"
@@ -522,8 +648,8 @@ function CheckoutPage() {
                           : prepaidBonus ? 'text-emerald-50/95'
                           : 'text-emerald-700'
                       }`}>
-                        {!eligible
-                          ? `Add ₹${shortBy.toLocaleString()} more to unlock`
+                        {lockReason
+                          ? lockReason
                           : prepaidBonus
                             ? 'Applied · Prepaid · Min ₹800'
                             : 'Prepaid orders · Min cart ₹800'}
@@ -536,7 +662,7 @@ function CheckoutPage() {
                         : prepaidBonus ? 'bg-white text-emerald-700'
                         : 'bg-emerald-700 text-white'
                     }`}>
-                      {!eligible ? 'Locked' : prepaidBonus ? '✓ Applied' : 'Grab Now'}
+                      {ctaLabel}
                     </span>
                   </div>
                 </button>

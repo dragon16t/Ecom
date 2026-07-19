@@ -1196,6 +1196,11 @@ class CartValidateRequest(BaseModel):
     gift_card_code: Optional[str] = None
     payment_method: str = "prepaid"
     prepaid_bonus: bool = False  # ₹100 off — only honored when payment_method == 'prepaid'
+    # Flash-offer window (3 min countdown started on first /checkout landing,
+    # 2-day cooldown). When False the anti-aging tax/delivery perks + prepaid
+    # bonus are ALL stripped so the user sees the "regular" price. Server never
+    # trusts this blindly for money — it's just a signal from the client.
+    promo_active: bool = True
 
 
 @router.post("/cart/validate")
@@ -1417,7 +1422,10 @@ async def validate_cart(data: CartValidateRequest):
     # promise valid regardless of the sale schedule.
     sale_cfg = await _get_sale_cfg()
     sale_perks_applied = {"delivery": False, "tax": False, "reason": None}
-    if sale_cfg and validated_items and (sale_cfg.get("zero_shipping") or sale_cfg.get("zero_tax")):
+    # Flash-offer gate: when the 3-min countdown has expired on the client,
+    # `promo_active=False` is sent, so we skip the anti-aging tax/delivery
+    # waivers entirely — the user sees the "regular" price with full charges.
+    if data.promo_active and sale_cfg and validated_items and (sale_cfg.get("zero_shipping") or sale_cfg.get("zero_tax")):
         elig_niches = set((sale_cfg.get("applies_to_niches") or ["anti-aging"]))
         # Only apply when every physical product line qualifies. Standalone combos
         # skip this fast-path since their niche field isn't a simple string.
@@ -1501,6 +1509,7 @@ async def validate_cart(data: CartValidateRequest):
     prepaid_bonus_applied = 0
     if (
         data.prepaid_bonus
+        and data.promo_active
         and data.payment_method == "prepaid"
         and subtotal >= PREPAID_BONUS_MIN_SUBTOTAL
         and final_total > PREPAID_BONUS_AMOUNT
