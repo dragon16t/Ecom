@@ -1492,12 +1492,19 @@ async def validate_cart(data: CartValidateRequest):
             }
             break
 
-    # ---- Prepaid bonus (₹100 off, prepaid only) ----
-    # Frontend toggles this via a checkout button. Server enforces both the
-    # flag AND payment_method='prepaid' so COD orders can never abuse it.
+    # ---- Prepaid bonus (₹100 off, prepaid only, cart subtotal ≥ ₹800) ----
+    # Frontend toggles this via a checkout button. Server enforces all three
+    # rules (flag on, payment_method='prepaid', subtotal >= threshold) so the
+    # discount can never be abused via COD or low-value carts.
     PREPAID_BONUS_AMOUNT = 100
+    PREPAID_BONUS_MIN_SUBTOTAL = 800
     prepaid_bonus_applied = 0
-    if data.prepaid_bonus and data.payment_method == "prepaid" and final_total > PREPAID_BONUS_AMOUNT:
+    if (
+        data.prepaid_bonus
+        and data.payment_method == "prepaid"
+        and subtotal >= PREPAID_BONUS_MIN_SUBTOTAL
+        and final_total > PREPAID_BONUS_AMOUNT
+    ):
         prepaid_bonus_applied = PREPAID_BONUS_AMOUNT
         final_total = max(0, final_total - PREPAID_BONUS_AMOUNT)
 
@@ -1529,6 +1536,8 @@ async def validate_cart(data: CartValidateRequest):
         "gift_card_discount": int(round(gift_card_discount)),
         "prepaid_bonus_applied": prepaid_bonus_applied,
         "prepaid_bonus_amount": PREPAID_BONUS_AMOUNT,
+        "prepaid_bonus_min_subtotal": PREPAID_BONUS_MIN_SUBTOTAL,
+        "prepaid_bonus_eligible": subtotal >= PREPAID_BONUS_MIN_SUBTOTAL,
         "total": int(round(final_total)),
         "savings": int(round(total_savings + prepaid_bonus_applied)),
         "item_count": total_items,

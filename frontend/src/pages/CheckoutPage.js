@@ -110,6 +110,17 @@ function CheckoutPage() {
     }
   }, [paymentMethod, prepaidBonus]);
 
+  // Auto-disable prepaid bonus when subtotal drops below the ₹800 threshold
+  // (e.g., user removes an item after opting in). Server strips it anyway,
+  // but this keeps the UI honest so the user doesn't see a phantom discount.
+  useEffect(() => {
+    if (!prepaidBonus || !cartData) return;
+    const min = cartData.prepaid_bonus_min_subtotal ?? 800;
+    if ((cartData.subtotal || 0) < min) {
+      setPrepaidBonus(false);
+    }
+  }, [cartData, prepaidBonus]);
+
   // Load saved addresses if customer is logged in
   useEffect(() => {
     const token = (typeof window !== 'undefined') ? localStorage.getItem('cg_auth_token') : null;
@@ -438,9 +449,15 @@ function CheckoutPage() {
                 <h2 className="font-bold text-gray-900 text-sm mb-3">Payment Method</h2>
 
                 {/* ₹100 OFF Prepaid Bonus — beautiful opt-in card */}
+                {(() => {
+                  const eligible = (cartData?.subtotal || 0) >= (cartData?.prepaid_bonus_min_subtotal ?? 800);
+                  const shortBy = Math.max(0, (cartData?.prepaid_bonus_min_subtotal ?? 800) - (cartData?.subtotal || 0));
+                  return (
                 <button
                   type="button"
+                  disabled={!eligible}
                   onClick={() => {
+                    if (!eligible) return;
                     const next = !prepaidBonus;
                     if (next) setPaymentMethod('prepaid');
                     setPrepaidBonus(next);
@@ -448,61 +465,79 @@ function CheckoutPage() {
                   }}
                   data-testid="prepaid-bonus-toggle"
                   className={`group relative w-full mb-3 overflow-hidden rounded-2xl border-2 text-left transition-all duration-300 ${
-                    prepaidBonus
-                      ? 'border-emerald-500 shadow-[0_8px_24px_-8px_rgba(16,185,129,0.55)]'
-                      : 'border-emerald-200 hover:border-emerald-400 hover:shadow-[0_6px_18px_-6px_rgba(16,185,129,0.35)]'
+                    !eligible
+                      ? 'border-gray-200 opacity-70 cursor-not-allowed'
+                      : prepaidBonus
+                        ? 'border-emerald-500 shadow-[0_8px_24px_-8px_rgba(16,185,129,0.55)]'
+                        : 'border-emerald-200 hover:border-emerald-400 hover:shadow-[0_6px_18px_-6px_rgba(16,185,129,0.35)]'
                   }`}
                 >
                   {/* Animated gradient background */}
                   <span
                     aria-hidden
-                    className={`absolute inset-0 transition-opacity duration-300 ${prepaidBonus ? 'opacity-100' : 'opacity-90 group-hover:opacity-100'}`}
+                    className={`absolute inset-0 transition-opacity duration-300 ${prepaidBonus && eligible ? 'opacity-100' : 'opacity-90 group-hover:opacity-100'}`}
                     style={{
-                      background: prepaidBonus
-                        ? 'linear-gradient(135deg,#059669 0%,#10b981 45%,#34d399 100%)'
-                        : 'linear-gradient(135deg,#ecfdf5 0%,#d1fae5 55%,#a7f3d0 100%)',
+                      background: !eligible
+                        ? 'linear-gradient(135deg,#f3f4f6 0%,#e5e7eb 100%)'
+                        : prepaidBonus
+                          ? 'linear-gradient(135deg,#059669 0%,#10b981 45%,#34d399 100%)'
+                          : 'linear-gradient(135deg,#ecfdf5 0%,#d1fae5 55%,#a7f3d0 100%)',
                     }}
                   />
                   {/* Sparkle overlay */}
                   <span
                     aria-hidden
                     className="absolute -right-6 -top-8 h-32 w-32 rounded-full blur-2xl opacity-40"
-                    style={{ background: prepaidBonus ? '#fef3c7' : '#10b981' }}
+                    style={{ background: prepaidBonus && eligible ? '#fef3c7' : (eligible ? '#10b981' : '#9ca3af') }}
                   />
                   <div className="relative flex items-center gap-3 p-4">
                     {/* Icon badge */}
                     <div className={`flex-shrink-0 w-11 h-11 rounded-2xl flex items-center justify-center text-xl font-black ${
-                      prepaidBonus ? 'bg-white text-emerald-700' : 'bg-emerald-600 text-white'
+                      !eligible ? 'bg-gray-300 text-gray-600'
+                        : prepaidBonus ? 'bg-white text-emerald-700'
+                        : 'bg-emerald-600 text-white'
                     }`}>
                       <Gift size={22} strokeWidth={2.5} />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <p className={`font-black text-[15px] tracking-tight ${prepaidBonus ? 'text-white' : 'text-emerald-900'}`}>
+                        <p className={`font-black text-[15px] tracking-tight ${
+                          !eligible ? 'text-gray-600' : prepaidBonus ? 'text-white' : 'text-emerald-900'
+                        }`}>
                           Flat ₹100 OFF
                         </p>
                         <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${
-                          prepaidBonus ? 'bg-yellow-300 text-emerald-900' : 'bg-emerald-700 text-white'
+                          !eligible ? 'bg-gray-400 text-white'
+                            : prepaidBonus ? 'bg-yellow-300 text-emerald-900'
+                            : 'bg-emerald-700 text-white'
                         }`}>
-                          PREPAID ONLY
+                          PREPAID · MIN ₹800
                         </span>
                       </div>
-                      <p className={`text-[11.5px] mt-0.5 leading-snug ${prepaidBonus ? 'text-emerald-50' : 'text-emerald-700/90'}`}>
-                        {prepaidBonus
-                          ? '₹100 unlocked — enjoy fastest delivery + safest checkout.'
-                          : 'Tap to unlock — save an extra ₹100 when you pay online.'}
+                      <p className={`text-[11.5px] mt-0.5 leading-snug ${
+                        !eligible ? 'text-gray-600'
+                          : prepaidBonus ? 'text-emerald-50'
+                          : 'text-emerald-700/90'
+                      }`}>
+                        {!eligible
+                          ? `Add ₹${shortBy.toLocaleString()} more to unlock this offer.`
+                          : prepaidBonus
+                            ? '₹100 unlocked — enjoy fastest delivery + safest checkout.'
+                            : 'Tap to unlock — save an extra ₹100 when you pay online.'}
                       </p>
                     </div>
                     {/* CTA pill */}
                     <div className={`flex-shrink-0 rounded-full px-3.5 py-2 text-[11px] font-black uppercase tracking-wider transition-all ${
-                      prepaidBonus
-                        ? 'bg-white text-emerald-700 shadow-inner'
+                      !eligible ? 'bg-gray-300 text-gray-500'
+                        : prepaidBonus ? 'bg-white text-emerald-700 shadow-inner'
                         : 'bg-emerald-700 text-white group-hover:bg-emerald-800'
                     }`}>
-                      {prepaidBonus ? '✓ Applied' : 'Grab Now'}
+                      {!eligible ? 'Locked' : prepaidBonus ? '✓ Applied' : 'Grab Now'}
                     </div>
                   </div>
                 </button>
+                  );
+                })()}
 
                 {(() => {
                   const instantOk = !!pinInfo?.coverage?.instant_available;
