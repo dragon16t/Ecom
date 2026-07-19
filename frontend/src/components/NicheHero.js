@@ -37,8 +37,8 @@ export default function NicheHero({
     <section className="px-3 sm:px-6 pt-3 sm:pt-6" data-testid={testId}>
       <div className="max-w-7xl mx-auto relative overflow-hidden rounded-2xl sm:rounded-3xl ring-1 ring-stone-200/70 shadow-sm bg-stone-100">
         {/* Background banner artwork — separate <img> for mobile vs desktop */}
-        <img src={mobileImg} alt="" loading="eager" aria-hidden className="absolute inset-0 w-full h-full object-cover object-right sm:hidden" />
-        <img src={bgImage}    alt="" loading="eager" aria-hidden className="absolute inset-0 w-full h-full object-cover object-right hidden sm:block" />
+        <img src={mobileImg} alt="" loading="eager" fetchpriority="high" decoding="async" aria-hidden className="absolute inset-0 w-full h-full object-cover object-right sm:hidden" />
+        <img src={bgImage}    alt="" loading="eager" fetchpriority="high" decoding="async" aria-hidden className="absolute inset-0 w-full h-full object-cover object-right hidden sm:block" />
 
         {/* Left-fading legibility overlay */}
         <div

@@ -569,8 +569,8 @@ function ShopPage() {
         ) : (
           <>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-5 mb-6">
-              {visibleProducts.map(product => (
-                <ProductCard key={product.slug} product={product} />
+              {visibleProducts.map((product, i) => (
+                <ProductCard key={product.slug} product={product} priority={i < 4} />
               ))}
             </div>
             {hasMore && (

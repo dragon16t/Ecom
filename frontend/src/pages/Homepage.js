@@ -8,6 +8,7 @@ import TrustStrip from '../components/TrustStrip';
 import SaleBadge from '../components/SaleBadge';
 import HomepageSaleStrip from '../components/HomepageSaleStrip';
 import NicheHero from '../components/NicheHero';
+import InfluencerReelsSection from '../components/InfluencerReelsSection';
 import NicheOffersGrid from '../components/NicheOffersGrid';
 import HeroCarousel from '../components/HeroCarousel'; // eslint-disable-line no-unused-vars
 import { ProductCard } from './ConcernCategoryPage';
@@ -394,7 +395,7 @@ function Homepage() {
           <div className="bg-white rounded-2xl p-8 text-center text-sm text-gray-500 ring-1 ring-emerald-100">No bestsellers yet — check back soon.</div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-5">
-            {sortedProducts.map(p => <ProductCard key={p.slug} product={p} />)}
+            {sortedProducts.map((p, i) => <ProductCard key={p.slug} product={p} priority={i < 4} />)}
           </div>
         )}
       </section>
@@ -548,8 +549,10 @@ function Homepage() {
         />
       )}
 
-      {/* Dermatologist section — admin-toggleable + editable copy */}
-      {niche.show_dermatologist !== false && <DermatologistSection accent={accent} accentDark={accentDark} cfg={niche.dermatologist} />}
+      {/* Influencer Reels — replaces the static dermatologist section.
+          Global reels (no product_slugs) show here on the homepage. Managed
+          from /admin/reels. Silent no-op when the shop has no reels yet. */}
+      <InfluencerReelsSection />
 
       {/* FAQ — admin-toggleable + admin-editable list */}
       {niche.show_faq !== false && <FaqSection accent={accent} accentDark={accentDark} faqs={niche.faqs} title={niche.faq_title} eyebrow={niche.faq_eyebrow} />}

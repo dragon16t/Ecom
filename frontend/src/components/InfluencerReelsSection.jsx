@@ -24,8 +24,8 @@ export default function InfluencerReelsSection({ productSlug }) {
   useEffect(() => {
     let cancelled = false;
     const url = productSlug
-      ? `${API}/api/reels/list?product_slug=${encodeURIComponent(productSlug)}&limit=12`
-      : `${API}/api/reels/list?limit=12`;
+      ? `${API}/api/reels/list?product_slug=${encodeURIComponent(productSlug)}&limit=200`
+      : `${API}/api/reels/list?limit=200`;
     axios.get(url).then((r) => {
       if (!cancelled) setReels(r.data?.items || []);
     }).catch(() => {});

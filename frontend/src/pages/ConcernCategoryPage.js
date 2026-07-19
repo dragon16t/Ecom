@@ -446,7 +446,7 @@ export default function ConcernCategoryPage({ mode = 'concern' }) {
         ) : (
           <>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-5">
-              {visibleProducts.map(product => <ProductCard key={product.slug} product={product} />)}
+              {visibleProducts.map((product, i) => <ProductCard key={product.slug} product={product} priority={i < 4} />)}
             </div>
             {hasMore && (
               <>
@@ -490,7 +490,7 @@ export default function ConcernCategoryPage({ mode = 'concern' }) {
  *  - Star rating + review count.
  *  - Pill "ADD TO BAG" button in brand green at the bottom.
  */
-export function ProductCard({ product, compact = false }) {
+export function ProductCard({ product, compact = false, priority = false }) {
   const [wished, setWished] = React.useState(() => isWishlisted(product.slug));
   React.useEffect(() => {
     const onUpd = () => setWished(isWishlisted(product.slug));
@@ -579,15 +579,20 @@ export function ProductCard({ product, compact = false }) {
                 <img
                   src={resolveImageUrl(product.images[0])}
                   alt={product.short_name}
-                  loading="lazy"
+                  loading={priority ? 'eager' : 'lazy'}
+                  fetchpriority={priority ? 'high' : 'auto'}
+                  decoding={priority ? 'sync' : 'async'}
+                  width="400"
+                  height="400"
                   className="relative z-[2] max-w-full max-h-full w-auto h-auto object-contain transition-all duration-700 ease-out group-hover:scale-[1.04]"
                 />
-                {/* Secondary image crossfade on hover */}
+                {/* Secondary image crossfade on hover — always lazy, hover-only */}
                 {product.images?.[1] && (
                   <img
                     src={resolveImageUrl(product.images[1])}
                     alt=""
                     loading="lazy"
+                    decoding="async"
                     className="absolute inset-0 m-auto max-w-[88%] max-h-[88%] w-auto h-auto object-contain opacity-0 group-hover:opacity-100 transition-opacity duration-500 z-[3]"
                   />
                 )}

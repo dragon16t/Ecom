@@ -4,7 +4,7 @@ import axios from 'axios';
 import { 
   Users, DollarSign, MousePointer, ShoppingBag, 
   ArrowLeft, Copy, CheckCircle, RefreshCw, Gift,
-  TrendingUp, Clock, ExternalLink, CreditCard, Eye, X
+  TrendingUp, Clock, ExternalLink, CreditCard, Eye, X, Plus, Loader2, Search, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { useAdminAuth } from '../../utils/adminAuth';
 
@@ -24,20 +24,53 @@ function AdminReferrals() {
   // Withdrawal queue (option-A manual payouts)
   const [withdrawals, setWithdrawals] = useState([]);
   const [wdLoading, setWdLoading] = useState(false);
+  // Pagination + search
+  const [page, setPage] = useState(1);
+  const [pageInfo, setPageInfo] = useState({ page: 1, pages: 1, total: 0, limit: 25 });
+  const [searchQ, setSearchQ] = useState('');
+  // Manual referral create modal
+  const [showCreate, setShowCreate] = useState(false);
+  const [createBusy, setCreateBusy] = useState(false);
+  const [createdInfo, setCreatedInfo] = useState(null);
 
-  const fetchReferrals = async (token) => {
+  const fetchReferrals = async (token, opts = {}) => {
     if (!token) return;
     setLoading(true);
     try {
-      const res = await axios.get(`${API}/admin/referrals`, {
+      const p = opts.page || page;
+      const q = opts.q ?? searchQ;
+      const qs = new URLSearchParams({ page: String(p), limit: '25' });
+      if (q) qs.set('q', q);
+      const res = await axios.get(`${API}/admin/referrals?${qs.toString()}`, {
         headers: { 'X-Admin-Token': token }
       });
       setReferrals(res.data.referrals || []);
       setSummary(res.data.summary || {});
+      if (res.data.pagination) setPageInfo(res.data.pagination);
     } catch (err) {
       console.error('Failed to fetch referrals:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCreateManual = async ({ name, phone, email }) => {
+    setCreateBusy(true);
+    setCreatedInfo(null);
+    try {
+      const res = await axios.post(
+        `${API}/admin/referrals/create-manual`,
+        { name, phone, email: email || null },
+        { headers: { 'X-Admin-Token': adminToken } },
+      );
+      setCreatedInfo(res.data);
+      // Refresh list so the new referral appears at the top
+      fetchReferrals(adminToken, { page: 1 });
+      setPage(1);
+    } catch (err) {
+      alert('Create failed: ' + (err.response?.data?.detail || err.message));
+    } finally {
+      setCreateBusy(false);
     }
   };
 
@@ -191,13 +224,22 @@ function AdminReferrals() {
               <p className="text-sm text-gray-500">Track referrals and earnings</p>
             </div>
           </div>
-          <button
-            onClick={() => fetchReferrals(adminToken)}
-            className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium"
-          >
-            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-            Refresh
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => { setCreatedInfo(null); setShowCreate(true); }}
+              className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-bold"
+              data-testid="create-manual-referral-btn"
+            >
+              <Plus size={16} /> Create Referral Link
+            </button>
+            <button
+              onClick={() => fetchReferrals(adminToken)}
+              className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium"
+            >
+              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+              Refresh
+            </button>
+          </div>
         </div>
       </div>
 
@@ -383,11 +425,35 @@ function AdminReferrals() {
 
         {/* Referrals Table */}
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="p-4 border-b border-gray-100">
+          <div className="p-4 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
             <h3 className="font-semibold text-gray-900 flex items-center gap-2">
               <Gift size={18} className="text-purple-500" />
-              All Referrers ({referrals.length})
+              All Referrers ({pageInfo.total})
             </h3>
+            {/* Search — server-side, debounced by submitting on Enter */}
+            <form
+              onSubmit={(e) => { e.preventDefault(); setPage(1); fetchReferrals(adminToken, { page: 1, q: searchQ }); }}
+              className="flex items-center gap-1.5"
+            >
+              <div className="relative">
+                <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  value={searchQ}
+                  onChange={(e) => setSearchQ(e.target.value)}
+                  placeholder="Search name, phone, code…"
+                  className="pl-7 pr-3 py-1.5 text-xs rounded-full border border-gray-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 w-56"
+                  data-testid="referrals-search-input"
+                />
+              </div>
+              {searchQ && (
+                <button
+                  type="button"
+                  onClick={() => { setSearchQ(''); setPage(1); fetchReferrals(adminToken, { page: 1, q: '' }); }}
+                  className="p-1.5 rounded-full hover:bg-gray-100 text-gray-500"
+                  aria-label="Clear search"
+                ><X size={12} /></button>
+              )}
+            </form>
           </div>
           
           {loading ? (
@@ -488,6 +554,28 @@ function AdminReferrals() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+          {/* Pagination footer */}
+          {pageInfo.pages > 1 && (
+            <div className="px-4 py-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-600" data-testid="referrals-pagination">
+              <span>
+                Page <b>{pageInfo.page}</b> of <b>{pageInfo.pages}</b> · {pageInfo.total} total
+              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  disabled={pageInfo.page <= 1}
+                  onClick={() => { const p = pageInfo.page - 1; setPage(p); fetchReferrals(adminToken, { page: p }); }}
+                  className="p-1.5 rounded-lg hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                  data-testid="pagination-prev"
+                ><ChevronLeft size={14} /></button>
+                <button
+                  disabled={pageInfo.page >= pageInfo.pages}
+                  onClick={() => { const p = pageInfo.page + 1; setPage(p); fetchReferrals(adminToken, { page: p }); }}
+                  className="p-1.5 rounded-lg hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                  data-testid="pagination-next"
+                ><ChevronRight size={14} /></button>
+              </div>
             </div>
           )}
         </div>
@@ -607,6 +695,148 @@ function AdminReferrals() {
           </div>
         </div>
       )}
+
+      {/* ─────── Create Manual Referral Link modal ─────── */}
+      {showCreate && (
+        <ManualReferralModal
+          busy={createBusy}
+          createdInfo={createdInfo}
+          onSubmit={handleCreateManual}
+          onClose={() => { setShowCreate(false); setCreatedInfo(null); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Manual Referral modal ───────────────────────────────────────────────
+function ManualReferralModal({ busy, createdInfo, onSubmit, onClose }) {
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  const submit = (e) => {
+    e.preventDefault();
+    const cleanPhone = phone.trim().replace(/\D/g, '');
+    if (!name.trim() || cleanPhone.length < 10) {
+      alert('Enter a name and a valid 10-digit phone number.');
+      return;
+    }
+    onSubmit({ name: name.trim(), phone: cleanPhone, email: email.trim() || null });
+  };
+
+  const copyLink = async () => {
+    if (!createdInfo?.referral_link) return;
+    try {
+      await navigator.clipboard.writeText(createdInfo.referral_link);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch (_) {}
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
+      onClick={onClose}
+      data-testid="manual-referral-modal"
+    >
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-stone-100">
+          <h2 className="font-black text-lg text-stone-900">Create Referral Link</h2>
+          <button onClick={onClose} className="p-2 -mr-2 rounded-lg hover:bg-stone-100"><X size={18} /></button>
+        </div>
+
+        {!createdInfo ? (
+          <form onSubmit={submit} className="p-5 space-y-3">
+            <label className="block">
+              <span className="text-xs font-bold text-stone-700 uppercase tracking-wide">Name *</span>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="mt-1.5 w-full px-3 py-2 text-sm rounded-lg border border-stone-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                placeholder="Priya Sharma"
+                autoFocus
+                data-testid="manual-referral-name"
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs font-bold text-stone-700 uppercase tracking-wide">Phone *</span>
+              <input
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                inputMode="tel"
+                className="mt-1.5 w-full px-3 py-2 text-sm rounded-lg border border-stone-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                placeholder="9876543210"
+                data-testid="manual-referral-phone"
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs font-bold text-stone-700 uppercase tracking-wide">Email (optional)</span>
+              <input
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                type="email"
+                className="mt-1.5 w-full px-3 py-2 text-sm rounded-lg border border-stone-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                placeholder="priya@example.com"
+              />
+            </label>
+            <p className="text-[11px] text-stone-500 pt-1">
+              Reusing the same phone number returns the existing referral code — safe to re-share the same link.
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-semibold text-stone-600 hover:bg-stone-100 rounded-full">Cancel</button>
+              <button
+                type="submit"
+                disabled={busy}
+                className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold px-5 py-2 rounded-full disabled:opacity-50"
+                data-testid="manual-referral-submit"
+              >
+                {busy ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                {busy ? 'Creating…' : 'Create Link'}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="p-5 space-y-4" data-testid="manual-referral-result">
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+              <p className="text-xs font-bold text-emerald-700 uppercase tracking-wide mb-1">
+                {createdInfo.is_new ? 'Referral created' : 'Existing referral loaded'}
+              </p>
+              <p className="text-sm text-stone-700">
+                For <b>{createdInfo.referrer_name}</b> · +91 {createdInfo.referrer_phone}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-bold text-stone-700 uppercase tracking-wide mb-1.5">Referral Code</p>
+              <div className="font-mono text-base font-bold text-emerald-700 bg-stone-50 rounded-lg px-3 py-2 border border-stone-200">
+                {createdInfo.referral_code}
+              </div>
+            </div>
+            <div>
+              <p className="text-xs font-bold text-stone-700 uppercase tracking-wide mb-1.5">Shareable Link</p>
+              <div className="flex items-center gap-2">
+                <input
+                  readOnly
+                  value={createdInfo.referral_link}
+                  className="flex-1 px-3 py-2 text-xs bg-stone-50 border border-stone-200 rounded-lg font-mono"
+                />
+                <button
+                  onClick={copyLink}
+                  className="flex-shrink-0 inline-flex items-center gap-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg"
+                  data-testid="copy-referral-link"
+                >
+                  {copied ? <CheckCircle size={13} /> : <Copy size={13} />}
+                  {copied ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button onClick={onClose} className="px-4 py-2 text-sm font-semibold text-stone-600 hover:bg-stone-100 rounded-full">Close</button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

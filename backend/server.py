@@ -2276,7 +2276,10 @@ async def get_blog_stats(x_admin_token: str = Header(None)):
     total_blogs = await db.blogs.count_documents({})
     
     # Today's blogs
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    # IST-anchored "today" so admins in India see counts that match the wall
+    # clock. UTC boundary was excluding all events between 00:00-05:30 IST.
+    _ist = timezone(timedelta(hours=5, minutes=30))
+    today = datetime.now(_ist).strftime("%Y-%m-%d")
     today_blogs = await db.blogs.count_documents({"created_at": {"$regex": f"^{today}"}})
     
     # Total views
@@ -2466,8 +2469,9 @@ async def get_cron_status(x_admin_token: str = Header(None)):
         job_map = {0: "Mix Blogs", 6: "Location Blogs", 12: "Topic Blogs", 18: "Trending Batch"}
         next_type = job_map.get(next_scheduled.hour, "Auto Blogs")
     
-    # Get today's blog count
-    today_str = now.strftime("%Y-%m-%d")
+    # Get today's blog count — IST-anchored so admins see wall-clock counts
+    _ist = timezone(timedelta(hours=5, minutes=30))
+    today_str = datetime.now(_ist).strftime("%Y-%m-%d")
     today_blogs = await db.blogs.count_documents({"created_at": {"$regex": f"^{today_str}"}})
     total_blogs = await db.blogs.count_documents({})
     trending_blogs = await db.blogs.count_documents({"is_trending": True})

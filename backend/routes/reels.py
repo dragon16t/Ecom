@@ -89,9 +89,13 @@ def _serialize(doc: dict) -> dict:
 @router.get("/reels/list")
 async def list_public_reels(
     product_slug: Optional[str] = Query(None),
-    limit: int = Query(12, ge=1, le=50),
+    limit: int = Query(200, ge=1, le=1000),
 ):
-    """Return active reels for this product, or global reels if none exist."""
+    """Return active reels for this product, or global reels if none exist.
+
+    Cap raised so brands with lots of creator content aren't silently truncated
+    (12 → 1000). The 1000 ceiling still protects the wire from a runaway query.
+    """
     if product_slug:
         product_reels = await _get_db().influencer_reels.find(
             {"is_active": True, "product_slugs": product_slug}
@@ -122,7 +126,7 @@ async def admin_list_reels(x_admin_token: Optional[str] = Header(None)):
     _require_admin(x_admin_token)
     docs = await _get_db().influencer_reels.find({}).sort(
         [("sort_order", 1), ("created_at", -1)]
-    ).to_list(length=500)
+    ).to_list(length=10000)
     return {"items": [_serialize(d) for d in docs]}
 
 
