@@ -43,9 +43,32 @@ ADMIN_TOKEN_ENV = "ADMIN_TOKEN"
 
 
 def _require_admin(token: Optional[str]) -> None:
-    expected = os.environ.get(ADMIN_TOKEN_ENV)
-    if not expected or token != expected:
-        raise HTTPException(status_code=401, detail="Admin auth required")
+    """Session-based admin auth — mirrors server.verify_admin_token so the
+    same login session used everywhere else in the admin panel works here too.
+    Lazy imports dodge the circular dependency with server.py."""
+    if not token:
+        raise HTTPException(status_code=401, detail="Admin token required")
+    import hashlib as _hashlib
+    from datetime import datetime, timezone
+    from server import admin_sessions
+    from services.admin_auth import get_cached_active_admin_hash
+
+    if token in admin_sessions:
+        session = admin_sessions[token]
+        expires_at = session["expires_at"]
+        if isinstance(expires_at, str):
+            expires_at = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+        elif isinstance(expires_at, datetime) and expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) < expires_at:
+            return
+        del admin_sessions[token]
+        raise HTTPException(status_code=401, detail="Session expired, please login again")
+
+    if _hashlib.sha256(token.encode()).hexdigest() == get_cached_active_admin_hash():
+        return
+
+    raise HTTPException(status_code=403, detail="Invalid admin token")
 
 
 # ---------- Models ----------
