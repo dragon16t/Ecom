@@ -144,6 +144,42 @@ async def bump_view(reel_id: str):
 
 # ---------- Admin ----------
 
+@router.get("/admin/reels/analytics")
+async def admin_reels_analytics(x_admin_token: Optional[str] = Header(None)):
+    """Aggregate reel performance for the admin dashboard.
+    Returns: total_reels, active_reels, total_views, top creators (by views),
+    top reels (by views)."""
+    _require_admin(x_admin_token)
+    db_ = _get_db()
+    total = await db_.influencer_reels.count_documents({})
+    active = await db_.influencer_reels.count_documents({"is_active": True})
+    # Total views across all reels
+    pipeline_total = [{"$group": {"_id": None, "views": {"$sum": "$views"}}}]
+    tvr = await db_.influencer_reels.aggregate(pipeline_total).to_list(1)
+    total_views = (tvr[0]["views"] if tvr else 0) or 0
+    # Top 5 creators by cumulative views
+    pipeline_creators = [
+        {"$group": {"_id": "$creator_name", "views": {"$sum": "$views"}, "reels": {"$sum": 1}}},
+        {"$sort": {"views": -1}},
+        {"$limit": 5},
+    ]
+    top_creators = [
+        {"creator_name": r["_id"], "views": r["views"] or 0, "reels": r["reels"]}
+        for r in await db_.influencer_reels.aggregate(pipeline_creators).to_list(5)
+    ]
+    # Top 5 reels
+    top_docs = await db_.influencer_reels.find({}).sort("views", -1).limit(5).to_list(5)
+    top_reels = [{
+        "id": d["id"], "creator_name": d.get("creator_name"),
+        "creator_handle": d.get("creator_handle"),
+        "thumbnail_url": d.get("thumbnail_url"),
+        "views": d.get("views", 0) or 0,
+        "is_active": d.get("is_active", True),
+    } for d in top_docs]
+    return {"total_reels": total, "active_reels": active, "total_views": total_views,
+            "top_creators": top_creators, "top_reels": top_reels}
+
+
 @router.get("/admin/reels")
 async def admin_list_reels(x_admin_token: Optional[str] = Header(None)):
     _require_admin(x_admin_token)

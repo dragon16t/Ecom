@@ -2854,6 +2854,51 @@ class SeoBroadcastIn(BaseModel):
     only_active: bool = True
 
 
+class AltTextBackfillIn(BaseModel):
+    only_niche: Optional[str] = None
+    only_active: bool = True
+    overwrite: bool = False  # False = only fill empties
+
+
+@api_router.post("/admin/seo-keywords/bulk-alt-text")
+async def bulk_generate_alt_text(
+    payload: AltTextBackfillIn,
+    x_admin_token: str = Header(None, alias="X-Admin-Token"),
+):
+    """Admin: auto-generate `image_alt_text` on every matching product using
+    the pattern `{name} — {niche} skincare from Celesta Glow`. Skips products
+    that already have alt text unless `overwrite=True`. Fires Google image
+    search discoverability without needing per-product manual entry."""
+    verify_admin_token(x_admin_token)
+
+    query: Dict[str, Any] = {}
+    if payload.only_active:
+        query["is_active"] = {"$ne": False}
+    if payload.only_niche:
+        query["niche"] = payload.only_niche
+    if not payload.overwrite:
+        query["$or"] = [
+            {"image_alt_text": {"$exists": False}},
+            {"image_alt_text": None},
+            {"image_alt_text": ""},
+        ]
+
+    matched = 0
+    modified = 0
+    _NICHE_LABEL = {"anti-aging": "anti-aging", "skincare": "skincare", "cosmetics": "cosmetics"}
+    async for p in db.products.find(query, {"_id": 0, "slug": 1, "name": 1, "niche": 1}):
+        matched += 1
+        nlabel = _NICHE_LABEL.get(str(p.get("niche") or "").lower(), "skincare")
+        alt = f"{p.get('name') or p.get('slug')} — dermatologist recommended {nlabel} from Celesta Glow Kerala"
+        r = await db.products.update_one(
+            {"slug": p["slug"]},
+            {"$set": {"image_alt_text": alt, "updated_at": datetime.now(timezone.utc).isoformat()}},
+        )
+        modified += r.modified_count
+
+    return {"success": True, "products_matched": matched, "products_modified": modified}
+
+
 @api_router.post("/admin/seo-keywords/broadcast")
 async def broadcast_seo_keywords(
     payload: SeoBroadcastIn,

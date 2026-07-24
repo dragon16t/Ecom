@@ -21,6 +21,7 @@ export default function AdminReels() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null); // reel object OR "new"
   const [products, setProducts] = useState([]);
+  const [analytics, setAnalytics] = useState(null);
 
   useEffect(() => {
     if (!adminToken) return;
@@ -28,14 +29,19 @@ export default function AdminReels() {
     Promise.all([
       axios.get(`${API}/api/admin/reels`, auth).catch(() => ({ data: { items: [] } })),
       axios.get(`${API}/api/products?limit=1000`).catch(() => ({ data: { items: [] } })),
-    ]).then(([r, p]) => {
+      axios.get(`${API}/api/admin/reels/analytics`, auth).catch(() => ({ data: null })),
+    ]).then(([r, p, a]) => {
       setReels(r.data?.items || []);
       const items = Array.isArray(p.data) ? p.data : (p.data.items || p.data.products || []);
       setProducts(items.map((x) => ({ slug: x.slug, name: x.short_name || x.name })));
+      setAnalytics(a.data || null);
     }).finally(() => setLoading(false));
   }, [adminToken, auth]);
 
-  const refresh = () => axios.get(`${API}/api/admin/reels`, auth).then((r) => setReels(r.data?.items || []));
+  const refresh = () => Promise.all([
+    axios.get(`${API}/api/admin/reels`, auth).then((r) => setReels(r.data?.items || [])),
+    axios.get(`${API}/api/admin/reels/analytics`, auth).then((r) => setAnalytics(r.data)).catch(() => {}),
+  ]);
 
   const handleDelete = async (id) => {
     if (!window.confirm('Delete this reel? This cannot be undone.')) return;
@@ -73,6 +79,33 @@ export default function AdminReels() {
       </div>
 
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
+        {/* Analytics strip */}
+        {analytics && (
+          <div className="mb-5 grid grid-cols-2 sm:grid-cols-4 gap-3" data-testid="reels-analytics">
+            <div className="bg-white rounded-2xl ring-1 ring-stone-200 p-3">
+              <p className="text-[10px] font-black uppercase text-stone-400 tracking-wider">Total Reels</p>
+              <p className="text-2xl font-black text-stone-900 mt-0.5">{analytics.total_reels}</p>
+            </div>
+            <div className="bg-white rounded-2xl ring-1 ring-stone-200 p-3">
+              <p className="text-[10px] font-black uppercase text-stone-400 tracking-wider">Active</p>
+              <p className="text-2xl font-black text-emerald-600 mt-0.5">{analytics.active_reels}</p>
+            </div>
+            <div className="bg-white rounded-2xl ring-1 ring-stone-200 p-3">
+              <p className="text-[10px] font-black uppercase text-stone-400 tracking-wider">Total Views</p>
+              <p className="text-2xl font-black text-rose-600 mt-0.5">{analytics.total_views.toLocaleString('en-IN')}</p>
+            </div>
+            <div className="bg-white rounded-2xl ring-1 ring-stone-200 p-3">
+              <p className="text-[10px] font-black uppercase text-stone-400 tracking-wider">Top Creator</p>
+              <p className="text-sm font-black text-stone-900 mt-0.5 truncate">
+                {analytics.top_creators?.[0]?.creator_name || '—'}
+              </p>
+              <p className="text-[10px] text-stone-500">
+                {analytics.top_creators?.[0]?.views?.toLocaleString('en-IN') || 0} views
+              </p>
+            </div>
+          </div>
+        )}
+
         {reels.length === 0 && (
           <div className="bg-white rounded-2xl ring-1 ring-stone-200 p-10 text-center">
             <Video size={32} className="mx-auto text-stone-300 mb-3" />

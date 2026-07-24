@@ -184,6 +184,9 @@ function ProductDetailPage() {
   const [imgIdx, setImgIdx] = useState(0);
   const [openSection, setOpenSection] = useState('desc');
   const [openFaq, setOpenFaq] = useState(null);
+  // Test-report lightbox — 1×–4× zoom, double-tap to toggle 1↔2
+  const [certOpen, setCertOpen] = useState(false);
+  const [certZoom, setCertZoom] = useState(1);
   const [selectedShadeId, setSelectedShadeId] = useState(() => {
     const shadesArr = (_cachedProduct && _cachedProduct.shades) || [];
     if (!Array.isArray(shadesArr) || shadesArr.length === 0) return null;
@@ -614,20 +617,20 @@ function ProductDetailPage() {
             <h3 className="text-lg font-bold text-gray-900 text-center mb-5">Lab-Verified Safety Report</h3>
             <div className="max-w-2xl mx-auto bg-gradient-to-br from-emerald-50 via-white to-emerald-50 rounded-2xl ring-1 ring-emerald-200 overflow-hidden shadow-sm">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-0">
-                <a
-                  href={product.test_report_image}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block group aspect-[3/4] sm:aspect-auto bg-white flex items-center justify-center p-4 relative"
+                <button
+                  type="button"
+                  onClick={() => setCertOpen(true)}
+                  className="block group aspect-[3/4] sm:aspect-auto bg-white flex items-center justify-center p-4 relative w-full focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                  data-testid="pdp-test-report-open"
                 >
                   <img
                     src={product.test_report_image}
-                    alt={`${product.name} test report`}
+                    alt={`${product.name} lab safety report`}
                     loading="lazy"
                     className="max-w-full max-h-[380px] object-contain transition-transform group-hover:scale-[1.02]"
                   />
-                  <span className="absolute bottom-3 right-3 text-[10px] font-black bg-emerald-600 text-white px-2 py-1 rounded-full">TAP TO ENLARGE</span>
-                </a>
+                  <span className="absolute bottom-3 right-3 text-[10px] font-black bg-emerald-600 text-white px-2 py-1 rounded-full">TAP TO ZOOM</span>
+                </button>
                 <div className="p-5 flex flex-col justify-center">
                   <div className="inline-flex items-center gap-1.5 text-[11px] font-black text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-full self-start mb-3">
                     <Check size={12} /> DERMAT TESTED
@@ -652,6 +655,41 @@ function ProductDetailPage() {
                 </div>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Certificate lightbox — pinch/wheel zoom + drag to pan. Mobile shoppers
+            can now actually read the lab report text. */}
+        {certOpen && product.test_report_image && (
+          <div
+            className="fixed inset-0 z-[110] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4"
+            onClick={() => { setCertOpen(false); setCertZoom(1); }}
+            data-testid="pdp-test-report-lightbox"
+          >
+            <button
+              onClick={(e) => { e.stopPropagation(); setCertOpen(false); setCertZoom(1); }}
+              className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center backdrop-blur-md"
+              aria-label="Close certificate"
+              data-testid="pdp-test-report-close"
+            >
+              <span className="text-2xl leading-none">×</span>
+            </button>
+            <div
+              className="absolute top-4 left-4 flex items-center gap-1 bg-white/10 backdrop-blur-md rounded-full p-1"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button onClick={() => setCertZoom(z => Math.max(1, +(z - 0.5).toFixed(2)))} className="w-9 h-9 rounded-full text-white hover:bg-white/20 text-lg font-bold" aria-label="Zoom out">−</button>
+              <span className="text-white text-xs px-2 tabular-nums">{Math.round(certZoom * 100)}%</span>
+              <button onClick={() => setCertZoom(z => Math.min(4, +(z + 0.5).toFixed(2)))} className="w-9 h-9 rounded-full text-white hover:bg-white/20 text-lg font-bold" aria-label="Zoom in">+</button>
+            </div>
+            <img
+              src={product.test_report_image}
+              alt={`${product.name} lab safety report - full`}
+              onClick={(e) => e.stopPropagation()}
+              onDoubleClick={() => setCertZoom(z => z >= 2 ? 1 : 2)}
+              style={{ transform: `scale(${certZoom})`, transition: 'transform 250ms ease' }}
+              className="max-w-[92vw] max-h-[86vh] object-contain cursor-zoom-in select-none"
+            />
           </div>
         )}
 

@@ -281,6 +281,36 @@ function GlobalKeywordBroadcast({ auth }) {
           </p>
         </div>
       )}
+
+      {/* ─── Bulk alt-text auto-fill ─── */}
+      <div className="mt-8 pt-6 border-t border-dashed border-stone-200">
+        <div className="flex items-center gap-2 mb-2">
+          <ImageIcon size={14} className="text-blue-600" />
+          <h3 className="text-sm font-black text-stone-900">Auto-Fill Alt Text (all products)</h3>
+        </div>
+        <p className="text-xs text-stone-500 mb-3">
+          Backfills <code>image_alt_text</code> on every active product using<br />
+          <b><code>{'{Product Name} — dermatologist recommended {niche} from Celesta Glow Kerala'}</code></b>
+          <br />Skips products that already have alt text. This is what Google image search reads.
+        </p>
+        <button
+          onClick={async () => {
+            if (!window.confirm('Auto-fill alt text on all active products missing it?')) return;
+            try {
+              const r = await axios.post(
+                `${API}/api/admin/seo-keywords/bulk-alt-text`,
+                { only_active: true, overwrite: false },
+                auth,
+              );
+              alert(`Alt text backfilled — ${r.data.products_modified} of ${r.data.products_matched} products updated.`);
+            } catch (e) { alert('Failed: ' + (e.response?.data?.detail || e.message)); }
+          }}
+          className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold px-4 py-2 rounded-full"
+          data-testid="alt-text-backfill-btn"
+        >
+          <Sparkles size={14} /> Auto-Fill Alt Text
+        </button>
+      </div>
     </div>
   );
 }
