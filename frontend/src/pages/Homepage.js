@@ -317,8 +317,8 @@ function Homepage() {
       {/* HomepageSaleStrip moved into Navigation so it renders above the
           LocationStrip on every page (was here below the niche banners). */}
       <SEOHead
-        title="Celesta Glow – India's #1 Anti-Aging Skincare Brand"
-        description="Shop Celesta Glow's complete anti-aging system — Serum, Night Cream, Under Eye Cream, Sunscreen & Cleanser. Dermatologist-approved formulas for Indian skin. Free shipping. 7-day sealed-bottle return."
+        title="Dermatologist Recommended Skin Care Brand | Celesta Glow"
+        description="Shop dermatologist-recommended vegan skin care products in Kerala, including face serums, cleansers, sunscreen, and moisturizers. Buy now!"
         canonicalPath="/"
         jsonLd={[
           breadcrumbJsonLd([{ name: 'Home', url: '/' }]),

@@ -8,8 +8,8 @@ function AboutPage() {
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
       <SEOHead
-        title="About Celesta Glow | India's Trusted Anti-Aging Skincare Brand"
-        description="Celesta Glow is India's #1 complete anti-aging skincare brand by Veegal Enterprises LLP. Dermatologist-approved formulas for Indian skin. Trusted by 50,000+ Indians."
+        title="About Celesta Glow | Dermatologist Approved Skincare Brand"
+        description="Discover Celesta Glow, a dermatologist recommended skin care brand in Kerala offering vegan skin care and dermatologist-approved skincare."
         canonicalPath="/about"
         jsonLd={breadcrumbJsonLd([{ name: 'Home', url: '/' }, { name: 'About', url: '/about' }])}
       />

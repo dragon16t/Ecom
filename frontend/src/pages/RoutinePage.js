@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import BackButton from '../components/BackButton';
+import SEOHead, { breadcrumbJsonLd } from '../components/SEOHead';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { Sparkles, Sunrise, Moon, Droplet, Shield, Wand2, ArrowRight, Loader2, Check, Camera, X, ShoppingCart, Plus } from 'lucide-react';
@@ -164,6 +165,12 @@ export default function RoutinePage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 via-stone-950 to-slate-950 text-white pb-28" data-testid="routine-page">
+      <SEOHead
+        title="Dermatologist Recommended Skin Care Routine | Celesta Glow"
+        description="Build your AM & PM skincare routine with dermatologist-approved skincare in Kerala for fine lines, dry skin, and a healthy glow."
+        canonicalPath="/routine"
+        jsonLd={breadcrumbJsonLd([{ name: 'Home', url: '/' }, { name: 'Routine', url: '/routine' }])}
+      />
       <div className="max-w-7xl mx-auto px-3 sm:px-6 pt-3 sm:pt-4"><BackButton /></div>
       {/* Glow orbs background */}
       <div className="fixed inset-0 pointer-events-none opacity-50" aria-hidden>

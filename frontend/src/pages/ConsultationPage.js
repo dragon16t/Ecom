@@ -14,9 +14,9 @@ const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 // SEO Meta Data for Skin Analysis Page
 const SEO_DATA = {
-  title: "Free AI Skin Analysis & Anti-Aging Consultation | Celesta Glow",
-  description: "Get your FREE personalized skin analysis in 60 seconds. AI-powered anti-aging consultation with beauty score, aging assessment & custom skincare routine. Trusted by 10,000+ Indian women.",
-  keywords: "free skin analysis, skin consultation online, anti-aging test, skin type test, beauty score, wrinkle analysis, skin assessment free, dermatologist consultation online india, skincare routine generator, personalized skincare, skin concerns analysis, aging skin treatment, fine lines treatment, pigmentation solution, dull skin remedy",
+  title: "Book a Free Skincare Consultation | Celesta Glow | Kerala",
+  description: "Discover Celesta Glow, Kerala's dermatologist-recommended skin care brand offering dermatologist-approved skincare and clean vegan skin care.",
+  keywords: "dermatologist recommended skin care brand, dermatologist approved skin care, vegan skin care kerala, best skin care products recommended by dermatologists, kerala skincare consultation, free skin analysis, personalized skincare routine",
   canonical: "https://celestaglow.com/consultation",
   ogImage: "https://celestaglow.com/og-skin-analysis.jpg"
 };

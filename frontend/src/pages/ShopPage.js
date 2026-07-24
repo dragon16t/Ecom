@@ -263,11 +263,11 @@ function ShopPage() {
   const _niche = nicheParam || null;
   const _meta = NICHE_META[_niche] || null;
   const seoTitle = _meta
-    ? `${_meta.label} Products | Shop Celesta Glow India`
-    : 'Shop All Products | Celesta Glow India';
+    ? `Shop ${_meta.label} — Dermatologist-Approved Skincare | Celesta Glow | Kerala`
+    : 'Shop Dermatologist-Approved Skincare | Celesta Glow | Kerala';
   const seoDesc = _meta
-    ? `Shop Celesta Glow ${_meta.label.toLowerCase()} products — dermatologist-approved formulas for Indian skin. Free shipping across India. 7-day sealed-bottle return.`
-    : 'Shop the full Celesta Glow catalog — anti-aging, skincare and cosmetics for Indian skin. Free shipping. 7-day sealed-bottle return.';
+    ? `Explore dermatologist-approved vegan ${_meta.label.toLowerCase()} in Kerala, including face serum, cleanser, sunscreen, eye cream, and night cream. Shop now.`
+    : 'Explore dermatologist-approved vegan skin care in Kerala, including face serum, cleanser, sunscreen, eye cream, and night cream. Shop now.';
   const seoCanonical = _niche ? `/shop?niche=${_niche}` : '/shop';
 
   return (

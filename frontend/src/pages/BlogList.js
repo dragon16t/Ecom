@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import BackButton from '../components/BackButton';
+import SEOHead, { breadcrumbJsonLd } from '../components/SEOHead';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { 
@@ -285,6 +286,12 @@ function BlogList() {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
+      <SEOHead
+        title="Dermatologist Approved Skincare Guides | Celesta Glow Blog"
+        description="Master your skincare routine in Kerala. Learn expert tips on face serums, night creams, and clean skincare from dermatologist-approved guidance."
+        canonicalPath="/blog"
+        jsonLd={breadcrumbJsonLd([{ name: 'Home', url: '/' }, { name: 'Blog', url: '/blog' }])}
+      />
       {/* Hero Section */}
       <div className="bg-gradient-to-br from-green-500 via-green-500 to-teal-600 text-white">
         <div className="max-w-6xl mx-auto px-4 py-12 lg:py-16">
