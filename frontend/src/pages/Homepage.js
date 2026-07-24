@@ -352,11 +352,11 @@ function Homepage() {
       <NicheHero
         bgImage={hero.image_desktop || BANNER_IMG}
         mobileBgImage={hero.image_mobile || BANNER_IMG_MOBILE}
-        eyebrow={hero.eyebrow || 'Anti-Aging'}
+        eyebrow={hero.eyebrow || 'Dermatologist Recommended'}
         eyebrowDot={accent}
         eyebrowText={accentDark}
-        title={<>{hero.title_line1 || 'Visible firming'}<br/><span className="italic font-light" style={{ color: accentDark }}>{hero.title_line2 || '\u0026 youthful glow.'}</span></>}
-        subtitle={hero.subtitle || 'Clinical-grade Retinol, Vitamin C and Peptides — formulated for Indian skin to reduce fine lines and brighten in 4 weeks.'}
+        title={<>{hero.title_line1 || 'Dermatologist recommended'}<br/><span className="italic font-light" style={{ color: accentDark }}>{hero.title_line2 || 'skin care brand.'}</span></>}
+        subtitle={hero.subtitle || 'Shop dermatologist-approved vegan skin care from Kerala — face serums, cleansers, sunscreen, night cream and under-eye cream. Clinically tested. Free shipping.'}
         cta1={{ label: hero.cta1_label || 'Shop the routine', to: hero.cta1_link || '/categories' }}
         cta2={{ label: hero.cta2_label || 'Free Skin Analysis', to: hero.cta2_link || '/routine' }}
         accent={accent}
