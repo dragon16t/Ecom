@@ -98,19 +98,43 @@ async def admin_set_niche_mode(payload: NicheModePatch, x_admin_token: str = Hea
 # Admin sets the ₹X OFF combo bonus amount that auto-applies when the cart
 # holds ≥ N anti-aging products. Falls back to sensible defaults.
 
+class ComboBonusTier(BaseModel):
+    items: int
+    amount: int
+
+
 class ComboBonusPatch(BaseModel):
+    tiers: Optional[List[ComboBonusTier]] = None
+    min_subtotal: Optional[int] = None
+    # Legacy single-tier fields (still accepted for backwards compatibility)
     amount: Optional[int] = None
     min_items: Optional[int] = None
-    min_subtotal: Optional[int] = None
+
+
+DEFAULT_COMBO_TIERS = [
+    {"items": 2, "amount": 99},
+    {"items": 3, "amount": 150},
+    {"items": 4, "amount": 200},
+]
 
 
 @router.get("/admin/combo-bonus")
 async def admin_get_combo_bonus(x_admin_token: str = Header(None, alias="X-Admin-Token")):
     verify_auth(x_admin_token=x_admin_token)
     doc = await db.admin_settings.find_one({"type": "combo_bonus"}, {"_id": 0}) or {}
+    tiers = doc.get("tiers")
+    if not isinstance(tiers, list) or not tiers:
+        # Migrate legacy single-tier config into a proper tier list
+        if doc.get("amount"):
+            tiers = [{"items": int(doc.get("min_items") or 2), "amount": int(doc["amount"])}]
+        else:
+            tiers = list(DEFAULT_COMBO_TIERS)
+    tiers = sorted(
+        [{"items": int(t.get("items") or 0), "amount": int(t.get("amount") or 0)} for t in tiers if int(t.get("items") or 0) >= 2 and int(t.get("amount") or 0) > 0],
+        key=lambda t: t["items"],
+    )
     return {
-        "amount": int(doc.get("amount") or 99),
-        "min_items": int(doc.get("min_items") or 2),
+        "tiers": tiers,
         "min_subtotal": int(doc.get("min_subtotal") or 500),
     }
 
@@ -120,19 +144,84 @@ async def admin_update_combo_bonus(
     payload: ComboBonusPatch, x_admin_token: str = Header(None, alias="X-Admin-Token")
 ):
     verify_auth(x_admin_token=x_admin_token)
-    upd = {k: int(v) for k, v in payload.dict().items() if v is not None}
+    upd: Dict[str, Any] = {}
+    if payload.tiers is not None:
+        cleaned = []
+        for t in payload.tiers:
+            if t.items >= 2 and 0 < t.amount <= 5000:
+                cleaned.append({"items": int(t.items), "amount": int(t.amount)})
+        if not cleaned:
+            raise HTTPException(400, "At least one valid tier required (items>=2, 0<amount<=5000)")
+        cleaned = sorted(cleaned, key=lambda t: t["items"])
+        upd["tiers"] = cleaned
+    if payload.min_subtotal is not None:
+        upd["min_subtotal"] = max(0, int(payload.min_subtotal))
+    # Legacy
+    if payload.amount is not None and "tiers" not in upd:
+        upd["tiers"] = [{"items": int(payload.min_items or 2), "amount": int(payload.amount)}]
     if not upd:
         raise HTTPException(400, "Nothing to update")
-    if "amount" in upd and (upd["amount"] < 0 or upd["amount"] > 5000):
-        raise HTTPException(400, "amount must be between 0 and 5000")
     upd["type"] = "combo_bonus"
     upd["updated_at"] = datetime.now(timezone.utc).isoformat()
     await db.admin_settings.update_one({"type": "combo_bonus"}, {"$set": upd}, upsert=True)
     doc = await db.admin_settings.find_one({"type": "combo_bonus"}, {"_id": 0}) or {}
     return {
-        "amount": int(doc.get("amount") or 99),
-        "min_items": int(doc.get("min_items") or 2),
+        "tiers": doc.get("tiers") or list(DEFAULT_COMBO_TIERS),
         "min_subtotal": int(doc.get("min_subtotal") or 500),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Top Banner config (Feb-2026) — homepage top strip separate from niche hero
+# ---------------------------------------------------------------------------
+
+class TopBannerPatch(BaseModel):
+    image_desktop: Optional[str] = None
+    image_mobile: Optional[str] = None
+    link_url: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+@router.get("/top-banner")
+async def public_top_banner(response: Response):
+    """Public: get the homepage top banner (image + click destination)."""
+    response.headers["Cache-Control"] = "public, max-age=30, stale-while-revalidate=60"
+    doc = await db.admin_settings.find_one({"type": "top_banner"}, {"_id": 0}) or {}
+    return {
+        "image_desktop": doc.get("image_desktop") or "",
+        "image_mobile": doc.get("image_mobile") or doc.get("image_desktop") or "",
+        "link_url": doc.get("link_url") or "/shop?niche=anti-aging",
+        "is_active": bool(doc.get("is_active", True)),
+    }
+
+
+@router.get("/admin/top-banner")
+async def admin_get_top_banner(x_admin_token: str = Header(None, alias="X-Admin-Token")):
+    verify_auth(x_admin_token=x_admin_token)
+    doc = await db.admin_settings.find_one({"type": "top_banner"}, {"_id": 0}) or {}
+    return {
+        "image_desktop": doc.get("image_desktop") or "",
+        "image_mobile": doc.get("image_mobile") or "",
+        "link_url": doc.get("link_url") or "/shop?niche=anti-aging",
+        "is_active": bool(doc.get("is_active", True)),
+    }
+
+
+@router.put("/admin/top-banner")
+async def admin_update_top_banner(payload: TopBannerPatch, x_admin_token: str = Header(None, alias="X-Admin-Token")):
+    verify_auth(x_admin_token=x_admin_token)
+    upd = {k: v for k, v in payload.dict().items() if v is not None}
+    if not upd:
+        raise HTTPException(400, "Nothing to update")
+    upd["type"] = "top_banner"
+    upd["updated_at"] = datetime.now(timezone.utc).isoformat()
+    await db.admin_settings.update_one({"type": "top_banner"}, {"$set": upd}, upsert=True)
+    doc = await db.admin_settings.find_one({"type": "top_banner"}, {"_id": 0}) or {}
+    return {
+        "image_desktop": doc.get("image_desktop") or "",
+        "image_mobile": doc.get("image_mobile") or "",
+        "link_url": doc.get("link_url") or "/shop?niche=anti-aging",
+        "is_active": bool(doc.get("is_active", True)),
     }
 
 def _apply_sale_one(p: dict, cfg: dict):
@@ -1654,30 +1743,46 @@ async def validate_cart(data: CartValidateRequest):
         checkout_bonus_applied = CHECKOUT_BONUS_AMOUNT
         final_total = max(0, final_total - CHECKOUT_BONUS_AMOUNT)
 
-    # ---- Cart Combo Bonus (admin-configurable, default ₹99) OFF ----
-    # When the cart contains ≥ 2 distinct anti-aging products, we treat it as a
-    # "customer-built combo" and knock the admin-set amount off automatically.
-    # Not stackable with combo line items — if any explicit combo is already in
-    # the cart, we skip this so we don't double-discount.
+    # ---- Cart Combo Bonus (admin-configurable, tiered) OFF ----
+    # Defaults: 2 anti-aging items = ₹99, 3 = ₹150, 4+ = ₹200. Fully
+    # configurable via `admin_settings.{type: 'combo_bonus'}.tiers`.
+    # Not stackable with explicit combo line items.
     combo_bonus_cfg = await db.admin_settings.find_one({"type": "combo_bonus"}, {"_id": 0}) or {}
-    COMBO_BONUS_AMOUNT = int(combo_bonus_cfg.get("amount") or 99)
-    COMBO_BONUS_MIN_ITEMS = int(combo_bonus_cfg.get("min_items") or 2)
+    combo_tiers = combo_bonus_cfg.get("tiers")
+    if not isinstance(combo_tiers, list) or not combo_tiers:
+        # Backwards compatible: derive a single-tier list from the legacy amount field
+        legacy_amount = int(combo_bonus_cfg.get("amount") or 99)
+        legacy_min = int(combo_bonus_cfg.get("min_items") or 2)
+        combo_tiers = [{"items": legacy_min, "amount": legacy_amount}]
+    # Normalise + sort by items ascending
+    combo_tiers = sorted(
+        [{"items": int(t.get("items") or 0), "amount": int(t.get("amount") or 0)} for t in combo_tiers if int(t.get("items") or 0) >= 2 and int(t.get("amount") or 0) > 0],
+        key=lambda t: t["items"],
+    )
     COMBO_BONUS_MIN_SUBTOTAL = int(combo_bonus_cfg.get("min_subtotal") or 500)
     combo_bonus_applied = 0
     combo_bonus_eligible = False
     combo_bonus_message = None
+    combo_bonus_next_tier = None  # {items_needed, amount} — what's next
     product_lines_only = [it for it in validated_items if it.get("type") == "product"]
     has_explicit_combo = any(it.get("type") == "combo" for it in validated_items)
-    if not has_explicit_combo and len(product_lines_only) >= COMBO_BONUS_MIN_ITEMS:
-        # All product lines must be anti-aging for the combo bonus to trigger
-        aa_niches = {"anti-aging"}
-        item_niches = {str((it.get("niche") or "")).lower() for it in product_lines_only}
-        if item_niches and item_niches.issubset(aa_niches):
+    aa_item_count = sum(1 for it in product_lines_only if str((it.get("niche") or "")).lower() == "anti-aging")
+    all_aa = aa_item_count == len(product_lines_only) and aa_item_count > 0
+    if not has_explicit_combo and combo_tiers and all_aa:
+        # Pick the highest tier the customer already qualifies for
+        active_tier = None
+        for t in combo_tiers:
+            if aa_item_count >= t["items"]:
+                active_tier = t
+            else:
+                combo_bonus_next_tier = {"items_needed": t["items"] - aa_item_count, "amount": t["amount"], "target_items": t["items"]}
+                break
+        if active_tier:
             combo_bonus_eligible = True
-            if final_total > COMBO_BONUS_AMOUNT and subtotal >= COMBO_BONUS_MIN_SUBTOTAL:
-                combo_bonus_applied = COMBO_BONUS_AMOUNT
-                final_total = max(0, final_total - COMBO_BONUS_AMOUNT)
-                combo_bonus_message = f"Combo bonus ₹{COMBO_BONUS_AMOUNT} OFF applied — {len(product_lines_only)} anti-aging products"
+            if final_total > active_tier["amount"] and subtotal >= COMBO_BONUS_MIN_SUBTOTAL:
+                combo_bonus_applied = active_tier["amount"]
+                final_total = max(0, final_total - active_tier["amount"])
+                combo_bonus_message = f"Combo Bonus ₹{active_tier['amount']} OFF applied — {aa_item_count} anti-aging products"
 
     return {
         "items": validated_items,
@@ -1714,9 +1819,11 @@ async def validate_cart(data: CartValidateRequest):
         "checkout_bonus_min_subtotal": CHECKOUT_BONUS_MIN_SUBTOTAL,
         "checkout_bonus_eligible": bool(checkout_bonus_eligible),
         "combo_bonus_applied": combo_bonus_applied,
-        "combo_bonus_amount": COMBO_BONUS_AMOUNT,
+        "combo_bonus_tiers": combo_tiers,
+        "combo_bonus_next_tier": combo_bonus_next_tier,
         "combo_bonus_eligible": bool(combo_bonus_eligible),
         "combo_bonus_message": combo_bonus_message,
+        "combo_bonus_aa_count": aa_item_count,
         "total": int(round(final_total)),
         "savings": int(round(total_savings + prepaid_bonus_applied + checkout_bonus_applied + combo_bonus_applied)),
         "item_count": total_items,

@@ -5,6 +5,7 @@ import { Shield, Truck, ArrowLeft, Check, MapPin, Clock, Star, Award, Gift, Lock
 import { getCart, saveCart, addToCart } from './Homepage';
 import { useTracking } from '../providers/TrackingProvider';
 import CheckoutMap from '../components/CheckoutMap';
+import CheckoutSurpriseModal from '../components/CheckoutSurpriseModal';
 
 const STORED_LOCATION_KEY = 'cg_delivery_location';
 
@@ -435,6 +436,21 @@ function CheckoutPage() {
           <span className="flex items-center gap-1.5 hidden sm:flex"><Shield size={13} /> 7-Day Sealed Return</span>
         </div>
       </div>
+
+      {/* Surprise reveal — one-shot per checkout session. Only fires when the
+          customer is eligible for the extra ₹50 (prepaid + subtotal > threshold
+          + flash timer running). We nudge them to prepaid inside the modal. */}
+      {promoActive && (cartData?.checkout_bonus_amount || 50) > 0 && (
+        <CheckoutSurpriseModal
+          amount={cartData?.checkout_bonus_amount || 50}
+          minSubtotal={cartData?.checkout_bonus_min_subtotal || 1000}
+          timerLabel="10-minute flash offer"
+          onClaim={() => {
+            // Nudge onto prepaid so the discount actually applies server-side
+            if (paymentMethod !== 'prepaid') setPaymentMethod('prepaid');
+          }}
+        />
+      )}
 
       <div className="max-w-4xl mx-auto px-4 py-4 sm:py-6">
         <div className="flex items-center gap-3 mb-5">

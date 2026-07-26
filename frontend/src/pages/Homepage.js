@@ -10,6 +10,7 @@ import HomepageSaleStrip from '../components/HomepageSaleStrip';
 import NicheHero from '../components/NicheHero';
 import InfluencerReelsSection from '../components/InfluencerReelsSection';
 import BeforeAfterCarousel from '../components/BeforeAfterCarousel';
+import TopBanner from '../components/TopBanner';
 import NicheOffersGrid from '../components/NicheOffersGrid';
 import HeroCarousel from '../components/HeroCarousel'; // eslint-disable-line no-unused-vars
 import { ProductCard } from './ConcernCategoryPage';
@@ -338,6 +339,10 @@ function Homepage() {
         ]}
       />
       <SearchBar accent={accent} niche="anti-aging" testId="anti-aging-search-bar" />
+
+      {/* Top hero banner (independent from the niche hero card) — admin manages
+          this via /admin/media-tools → Top Banner. Silent no-op if unset. */}
+      <TopBanner />
 
       <SaleBadge cfg={niche.sale_badge} niche="anti-aging" testIdPrefix="anti-aging-sale-badge" />
 

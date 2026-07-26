@@ -443,35 +443,89 @@ function CartPage() {
               </div>
             )}
 
-            {/* Combo Bonus banner — surfaces the auto-applied combo discount, or
-                nudges the customer to add one more anti-aging product to unlock it. */}
-            {cartData.combo_bonus_applied > 0 ? (
-              <div className="bg-gradient-to-r from-purple-50 to-fuchsia-50 border border-purple-200 rounded-2xl p-4 flex items-center gap-3" data-testid="cart-combo-bonus-banner">
-                <div className="w-10 h-10 rounded-full bg-purple-600 text-white flex items-center justify-center shadow-md shrink-0">
-                  <Award size={18} strokeWidth={2.5} />
-                </div>
-                <div>
-                  <p className="text-sm font-black text-purple-900">Combo Bonus ₹{cartData.combo_bonus_applied} OFF unlocked</p>
-                  <p className="text-[11px] text-purple-700 mt-0.5">
-                    {cartData.combo_bonus_message || 'Applied automatically — no code needed.'}
-                  </p>
-                </div>
-              </div>
-            ) : (() => {
-              // Nudge only when the cart is 1 product away from unlocking
-              const aaCount = (cartData.items || []).filter(it => it.type === 'product' && String(it.niche || '').toLowerCase() === 'anti-aging').length;
+            {/* Combo Bonus banner + tiered progress bar. Shows current tier
+                unlocked, next tier target, and how many items away. */}
+            {(cartData.combo_bonus_tiers?.length > 0 || cartData.combo_bonus_applied > 0) && (() => {
+              const tiers = cartData.combo_bonus_tiers || [];
+              const aaCount = cartData.combo_bonus_aa_count || 0;
+              const applied = cartData.combo_bonus_applied || 0;
+              const next = cartData.combo_bonus_next_tier;
               const hasCombo = (cartData.items || []).some(it => it.type === 'combo');
-              if (hasCombo || aaCount === 0 || aaCount >= 2) return null;
+              if (hasCombo || tiers.length === 0) return null;
+              const maxItems = tiers[tiers.length - 1].items;
+              const progressPct = Math.min(100, (aaCount / maxItems) * 100);
               return (
-                <div className="bg-white border border-dashed border-purple-300 rounded-2xl p-4 flex items-center gap-3" data-testid="cart-combo-bonus-nudge">
-                  <div className="w-10 h-10 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
-                    <Award size={18} strokeWidth={2.5} />
+                <div className="bg-gradient-to-br from-purple-50 via-fuchsia-50 to-rose-50 border border-purple-200/70 rounded-2xl p-4 sm:p-5" data-testid="cart-combo-bonus-banner">
+                  <div className="flex items-center gap-2.5 mb-3">
+                    <div className="w-9 h-9 rounded-full bg-purple-600 text-white flex items-center justify-center shadow-md shrink-0">
+                      <Award size={17} strokeWidth={2.5} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      {applied > 0 ? (
+                        <>
+                          <p className="text-sm font-black text-purple-900 leading-tight">Combo Bonus ₹{applied} OFF unlocked!</p>
+                          {next && (
+                            <p className="text-[11px] text-purple-700 mt-0.5">
+                              Add <b>{next.items_needed} more</b> anti-aging product{next.items_needed > 1 ? 's' : ''} to jump to <b>₹{next.amount} OFF</b>
+                            </p>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-sm font-black text-purple-900 leading-tight">Combo Bonus — up to ₹{tiers[tiers.length - 1].amount} OFF</p>
+                          {next ? (
+                            <p className="text-[11px] text-purple-700 mt-0.5">
+                              Add <b>{next.items_needed} more</b> anti-aging product{next.items_needed > 1 ? 's' : ''} to unlock <b>₹{next.amount} OFF</b>
+                            </p>
+                          ) : (
+                            <p className="text-[11px] text-purple-700 mt-0.5">Any 2+ anti-aging products unlocks an automatic discount.</p>
+                          )}
+                        </>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-black text-purple-900">Add 1 more anti-aging product</p>
-                    <p className="text-[11px] text-purple-700 mt-0.5">Unlock an automatic <b>₹{cartData.combo_bonus_amount || 99} OFF</b> combo bonus at checkout.</p>
+
+                  {/* Progress rail */}
+                  <div className="relative px-2 sm:px-3">
+                    <div className="h-2 bg-white/70 rounded-full overflow-hidden ring-1 ring-purple-100" data-testid="cart-combo-progress">
+                      <div
+                        className="h-full bg-gradient-to-r from-purple-500 via-fuchsia-500 to-rose-500 rounded-full transition-all duration-500"
+                        style={{ width: `${progressPct}%` }}
+                      />
+                    </div>
+                    {/* Tier markers — compact on mobile so they never overflow */}
+                    <div className="relative mt-2 h-7 sm:h-8">
+                      {tiers.map((t, i) => {
+                        const pct = (t.items / maxItems) * 100;
+                        const unlocked = aaCount >= t.items;
+                        const isFirst = i === 0;
+                        const isLast = i === tiers.length - 1;
+                        // Anchor edges so labels don't clip off the rail on mobile
+                        const alignClass = isFirst
+                          ? 'left-0 items-start text-left'
+                          : isLast
+                            ? 'right-0 items-end text-right'
+                            : 'left-1/2 -translate-x-1/2 items-center text-center';
+                        const styleProp = isFirst || isLast ? undefined : { left: `${pct}%` };
+                        return (
+                          <div
+                            key={i}
+                            className={`absolute flex flex-col ${alignClass}`}
+                            style={styleProp}
+                            data-testid={`cart-combo-tier-${t.items}`}
+                          >
+                            <div className={`w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full -mt-[20px] sm:-mt-[22px] ring-2 ${unlocked ? 'bg-purple-600 ring-white shadow' : 'bg-white ring-purple-300'} ${isFirst ? 'ml-0.5' : isLast ? 'mr-0.5' : ''}`} />
+                            <div className={`text-[9px] sm:text-[10px] font-black leading-none mt-1 whitespace-nowrap ${unlocked ? 'text-purple-800' : 'text-stone-500'}`}>
+                              {t.items} items
+                            </div>
+                            <div className={`text-[9px] sm:text-[10px] leading-none mt-0.5 whitespace-nowrap ${unlocked ? 'text-purple-700 font-bold' : 'text-stone-400'}`}>
+                              ₹{t.amount} OFF
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                  <Link to="/shop?niche=anti-aging" className="bg-purple-600 hover:bg-purple-700 text-white text-[11px] font-black px-3 py-1.5 rounded-lg" data-testid="cart-combo-bonus-nudge-cta">Add</Link>
                 </div>
               );
             })()}

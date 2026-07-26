@@ -3,8 +3,40 @@
 ## Original problem statement
 Clone the "Celesta Glow" website with pixel-perfect React frontend + FastAPI/MongoDB backend. Has grown into a full DTC skincare e-commerce platform.
 
-## Current state (Feb 2026 preview)
-Pivot to **Anti-Aging Only** brand focus. Homepage, PDP, cart, checkout all wired to the brand's 6 flagship SKUs. Multi-warehouse instant delivery, ₹100 OFF prepaid promo, ₹99 combo bonus (admin-configurable), 10-min flash timer with a suppressed ₹50 checkout discount, Meta Pixel + CAPI, MS Clarity, admin CRUD across 20+ areas, referral engine, influencer reels, dermatologist test reports, before/after transformation strip.
+## Admin panel — `/admin/media-tools` (6 tabs)
+1. **Certificates** — per-product lab report / test-report image (existing `TestReportEditor`)
+2. **SEO Keywords** — per-product alt text + keyword injection
+3. **Global Broadcast** — bulk SEO keyword broadcast
+4. **Top Banner** (Feb-2026) — dedicated homepage top-strip image, desktop + mobile, click destination, active toggle
+5. **Before / After** (Feb-2026) — CRUD for customer transformation images (global + per-product)
+6. **Niche & Combo** (Feb-2026) — Anti-Aging Only ↔ Three Niche toggle + tiered combo bonus editor
+
+## Recently delivered (Feb 2026 — combined summary)
+- **Top Banner separate from niche hero** — new `GET|PUT /api/(admin/)top-banner` endpoints, new `TopBanner.js` component, new admin manager. No more text bleed between niche hero overlay and the top banner artwork.
+- **Tiered Combo Bonus** — default 2 items → ₹99, 3 → ₹150, 4 → ₹200. Fully editable in admin (add / remove tiers, adjust items + amount). Server returns `combo_bonus_tiers`, `combo_bonus_next_tier`, `combo_bonus_aa_count`, `combo_bonus_message`, `combo_bonus_applied`.
+- **Cart progress bar** — live gradient rail with 3 tier markers, unlocked pills, "add N more products to jump to ₹X OFF" nudge. Testids: `cart-combo-bonus-banner`, `cart-combo-progress`, `cart-combo-tier-{N}`.
+- **Checkout Surprise Modal** — first-load gift-box reveal on `/checkout` announcing the ₹50 flash-timer discount. Wiggles → auto-reveals → confetti + "Claim my ₹50 OFF" CTA. Session-scoped so it only fires once.
+- **Anti-Aging Only** niche mode default in production (~8k SKUs off the public API).
+- **Before / After** carousel on Homepage (globals only) + PDP (product + globals), seeded with 5 uploaded transformation images.
+- **DiscountPopup removed**, `/concern` + `/category` routes redirect to `/shop`.
+- **Certificates** unchanged — served via `test_report_image` on `/api/products/{slug}`.
+
+## Known production issue
+- Last production deploy **failed** (Google Cloud Build "manifest invalid" — infra hiccup, not code). Preview is healthy. Retry the deploy to push all Feb-2026 changes live.
+
+## Key API endpoints (Feb-2026)
+- `GET|PUT /api/top-banner` + `GET|PUT /api/admin/top-banner`
+- `GET|PUT /api/admin/combo-bonus` (tiered)
+- `GET /api/niche-mode` / `PUT /api/admin/niche-mode`
+- `GET /api/before-after?only_global=true` / `GET /api/before-after/:slug`
+- `POST|PUT|DELETE /api/admin/before-after(/:id)`
+- `POST /api/cart/validate` returns `combo_bonus_tiers`, `combo_bonus_next_tier`, `combo_bonus_aa_count`, `checkout_bonus_applied`
+
+## Pending / backlog (P1)
+- IST fix for `today_blogs` / `today_views` counters in `server.py`
+- Meta domain verification for celestaglow.com
+- `server.py` modularisation (>3900 lines)
+
 
 ## Recently delivered (Feb 2026)
 - **Global Niche Toggle** — `POST /api/admin/niche-mode` + public `GET /api/niche-mode`. Default = `["anti-aging"]`. When active_niches != all 3, `/api/products` and `/api/niches` hide skincare/cosmetics from the public API entirely (~8,000 SKUs off the wire). Admin/employee token bypasses filter. Cache 30s + 60s SWR.

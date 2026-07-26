@@ -4,6 +4,7 @@ import axios from 'axios';
 import {
   ChevronLeft, Loader2, Check, Upload, X, Search, Tag as TagIcon,
   ShieldCheck, Sparkles, Image as ImageIcon, Users as UsersIcon, Trash2,
+  Layout as LayoutIcon, Plus,
 } from 'lucide-react';
 import { useAdminAuth } from '../../utils/adminAuth';
 
@@ -84,13 +85,16 @@ export default function AdminMediaTools() {
         </div>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 flex gap-1">
           <TabButton active={tab === 'reports'} onClick={() => setTab('reports')} testId="tab-reports">
-            <ShieldCheck size={14} /> Test Reports
+            <ShieldCheck size={14} /> Certificates
           </TabButton>
           <TabButton active={tab === 'seo'} onClick={() => setTab('seo')} testId="tab-seo">
             <TagIcon size={14} /> SEO Keywords
           </TabButton>
           <TabButton active={tab === 'broadcast'} onClick={() => setTab('broadcast')} testId="tab-broadcast">
             <Sparkles size={14} /> Global Broadcast
+          </TabButton>
+          <TabButton active={tab === 'top-banner'} onClick={() => setTab('top-banner')} testId="tab-top-banner">
+            <LayoutIcon size={14} /> Top Banner
           </TabButton>
           <TabButton active={tab === 'before-after'} onClick={() => setTab('before-after')} testId="tab-before-after">
             <UsersIcon size={14} /> Before / After
@@ -151,9 +155,12 @@ export default function AdminMediaTools() {
         )}
 
         {/* Right: editor pane */}
-        <div className={tab === 'before-after' || tab === 'niche-mode' ? 'lg:col-span-12' : 'lg:col-span-8'}>
+        <div className={tab === 'top-banner' || tab === 'before-after' || tab === 'niche-mode' ? 'lg:col-span-12' : 'lg:col-span-8'}>
           {tab === 'broadcast' && (
             <GlobalKeywordBroadcast auth={auth} />
+          )}
+          {tab === 'top-banner' && (
+            <TopBannerManager auth={auth} />
           )}
           {tab === 'before-after' && (
             <BeforeAfterManager auth={auth} products={products} />
@@ -161,16 +168,16 @@ export default function AdminMediaTools() {
           {tab === 'niche-mode' && (
             <NicheModeManager auth={auth} />
           )}
-          {tab !== 'broadcast' && tab !== 'before-after' && tab !== 'niche-mode' && !selected && (
+          {tab !== 'broadcast' && tab !== 'top-banner' && tab !== 'before-after' && tab !== 'niche-mode' && !selected && (
             <div className="bg-white rounded-2xl ring-1 ring-stone-200 p-10 text-center">
               <ImageIcon size={28} className="mx-auto text-stone-300 mb-3" />
-              <p className="text-sm text-stone-500">Select a product on the left to edit its {tab === 'reports' ? 'test report' : 'SEO metadata'}.</p>
+              <p className="text-sm text-stone-500">Select a product on the left to edit its {tab === 'reports' ? 'certificate / lab report' : 'SEO metadata'}.</p>
             </div>
           )}
-          {tab !== 'broadcast' && tab !== 'before-after' && tab !== 'niche-mode' && selected && tab === 'reports' && (
+          {tab !== 'broadcast' && tab !== 'top-banner' && tab !== 'before-after' && tab !== 'niche-mode' && selected && tab === 'reports' && (
             <TestReportEditor product={selected} onSave={saveProduct} auth={auth} />
           )}
-          {tab !== 'broadcast' && tab !== 'before-after' && tab !== 'niche-mode' && selected && tab === 'seo' && (
+          {tab !== 'broadcast' && tab !== 'top-banner' && tab !== 'before-after' && tab !== 'niche-mode' && selected && tab === 'seo' && (
             <SeoEditor product={selected} onSave={saveProduct} />
           )}
         </div>
@@ -778,8 +785,156 @@ function BeforeAfterManager({ auth, products }) {
   );
 }
 
-function BaFileField({ label, value, onFile, onClear, testId }) {
+// ─────────────────────────────────────────────────────────────────────────
+// Tab F — Top Banner Manager (independent from niche hero)
+// ─────────────────────────────────────────────────────────────────────────
+
+function TopBannerManager({ auth }) {
+  const [cfg, setCfg] = useState(null);
+  const [uploading, setUploading] = useState(null); // 'desktop' | 'mobile' | null
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    axios.get(`${API}/api/admin/top-banner`, auth)
+      .then(r => setCfg(r.data))
+      .catch(() => setCfg({ image_desktop: '', image_mobile: '', link_url: '/shop?niche=anti-aging', is_active: true }));
+  }, [auth]);
+
+  const uploadFile = async (field, file) => {
+    if (!file) return;
+    setUploading(field);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('folder', 'top-banner');
+      const r = await axios.post(`${API}/api/admin/upload-image`, fd, auth);
+      setCfg(prev => ({ ...prev, [field === 'desktop' ? 'image_desktop' : 'image_mobile']: r.data.url || r.data.secure_url || '' }));
+    } catch (e) {
+      alert('Upload failed: ' + (e.response?.data?.detail || e.message));
+    } finally { setUploading(null); }
+  };
+
+  const save = async () => {
+    if (!cfg) return;
+    setBusy(true);
+    try {
+      const r = await axios.put(`${API}/api/admin/top-banner`, cfg, auth);
+      setCfg(r.data);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (e) {
+      alert('Failed: ' + (e.response?.data?.detail || e.message));
+    } finally { setBusy(false); }
+  };
+
+  if (!cfg) return <div className="p-10 text-center"><Loader2 className="mx-auto animate-spin text-emerald-500" /></div>;
+
   return (
+    <div className="bg-white rounded-2xl ring-1 ring-stone-200 p-5 sm:p-6" data-testid="top-banner-manager">
+      <div className="flex items-center gap-2 mb-3">
+        <LayoutIcon size={16} className="text-emerald-600" />
+        <h2 className="text-base font-black text-stone-900">Homepage Top Banner</h2>
+      </div>
+      <p className="text-xs text-stone-500 mb-5">
+        The wide landscape image that renders at the very top of the homepage — right below the delivery
+        location strip. Independent from the niche hero card. Upload separate desktop &amp; mobile artwork
+        for the sharpest fit. Turn off to hide it entirely.
+      </p>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+        <TbFileField
+          label="Desktop image"
+          value={cfg.image_desktop}
+          uploading={uploading === 'desktop'}
+          onFile={(f) => uploadFile('desktop', f)}
+          onClear={() => setCfg(p => ({ ...p, image_desktop: '' }))}
+          testId="topbanner-desktop"
+          hint="Wide landscape (e.g. 2400×900)"
+        />
+        <TbFileField
+          label="Mobile image (optional)"
+          value={cfg.image_mobile}
+          uploading={uploading === 'mobile'}
+          onFile={(f) => uploadFile('mobile', f)}
+          onClear={() => setCfg(p => ({ ...p, image_mobile: '' }))}
+          testId="topbanner-mobile"
+          hint="Portrait-friendly (e.g. 1080×1440)"
+        />
+      </div>
+
+      <label className="block mb-4">
+        <span className="text-xs font-bold text-stone-700 uppercase tracking-wide">Click destination</span>
+        <input
+          value={cfg.link_url || ''}
+          onChange={(e) => setCfg(p => ({ ...p, link_url: e.target.value }))}
+          placeholder="/shop?niche=anti-aging"
+          className="mt-1.5 w-full px-3 py-2 text-sm rounded-lg border border-stone-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+          data-testid="topbanner-link"
+        />
+        <p className="mt-1 text-[10px] text-stone-400">Where the banner sends tappers. Use a full https:// URL for external sites.</p>
+      </label>
+
+      <label className="inline-flex items-center gap-2 mb-6 cursor-pointer" data-testid="topbanner-active-label">
+        <input
+          type="checkbox"
+          checked={!!cfg.is_active}
+          onChange={(e) => setCfg(p => ({ ...p, is_active: e.target.checked }))}
+          className="w-4 h-4 accent-emerald-600"
+          data-testid="topbanner-active"
+        />
+        <span className="text-sm font-bold text-stone-800">Show banner on homepage</span>
+      </label>
+
+      <div>
+        <button
+          onClick={save}
+          disabled={busy}
+          className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm px-5 py-2.5 rounded-full disabled:opacity-50"
+          data-testid="topbanner-save"
+        >
+          {busy ? <Loader2 size={14} className="animate-spin" /> : (saved ? <Check size={14} /> : <LayoutIcon size={14} />)}
+          {saved ? 'Saved!' : (busy ? 'Saving…' : 'Save Banner')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function TbFileField({ label, value, uploading, onFile, onClear, testId, hint }) {
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-xs font-bold text-stone-700 uppercase tracking-wide">{label}</span>
+        {hint && <span className="text-[10px] text-stone-400">{hint}</span>}
+      </div>
+      <label className="flex flex-col items-center justify-center gap-1 py-4 px-4 border-2 border-dashed border-stone-300 rounded-xl cursor-pointer hover:border-emerald-500 hover:bg-emerald-50/30 transition-colors min-h-[140px]">
+        {uploading ? (
+          <>
+            <Loader2 size={16} className="animate-spin text-emerald-600" />
+            <span className="text-xs">Uploading…</span>
+          </>
+        ) : value ? (
+          <img src={value} alt="" className="max-h-32 object-contain" />
+        ) : (
+          <>
+            <Upload size={16} />
+            <span className="text-xs">Choose image</span>
+          </>
+        )}
+        <input type="file" accept="image/*" onChange={(e) => onFile(e.target.files?.[0])} className="hidden" data-testid={`${testId}-input`} />
+      </label>
+      {value && !uploading && (
+        <button onClick={onClear} className="mt-1 text-[10px] text-red-600 flex items-center gap-1 hover:underline" data-testid={`${testId}-clear`}>
+          <X size={10} /> Remove
+        </button>
+      )}
+    </div>
+  );
+}
+
+
+function BaFileField({ label, value, onFile, onClear, testId }) {  return (
     <div>
       <span className="text-xs font-bold text-stone-700 uppercase tracking-wide">{label}</span>
       <label className="mt-1.5 flex flex-col items-center justify-center gap-1 py-3 px-4 border-2 border-dashed border-stone-300 rounded-xl cursor-pointer hover:border-fuchsia-500 hover:bg-fuchsia-50/30 transition-colors min-h-[100px]">
@@ -816,7 +971,7 @@ function NicheModeManager({ auth }) {
 
   useEffect(() => {
     axios.get(`${API}/api/niche-mode`).then(r => setActive(r.data.active_niches || ['anti-aging'])).catch(() => setActive(['anti-aging']));
-    axios.get(`${API}/api/admin/combo-bonus`, auth).then(r => setCombo(r.data)).catch(() => setCombo({ amount: 99, min_items: 2, min_subtotal: 500 }));
+    axios.get(`${API}/api/admin/combo-bonus`, auth).then(r => setCombo(r.data)).catch(() => setCombo({ tiers: [{items:2,amount:99},{items:3,amount:150},{items:4,amount:200}], min_subtotal: 500 }));
   }, [auth]);
 
   const save = async (list) => {
@@ -834,8 +989,7 @@ function NicheModeManager({ auth }) {
     setComboBusy(true);
     try {
       const r = await axios.put(`${API}/api/admin/combo-bonus`, {
-        amount: parseInt(combo.amount) || 0,
-        min_items: parseInt(combo.min_items) || 2,
+        tiers: (combo.tiers || []).map(t => ({ items: parseInt(t.items) || 2, amount: parseInt(t.amount) || 0 })).filter(t => t.items >= 2 && t.amount > 0),
         min_subtotal: parseInt(combo.min_subtotal) || 0,
       }, auth);
       setCombo(r.data);
@@ -899,61 +1053,93 @@ function NicheModeManager({ auth }) {
         </p>
       </div>
 
-      {/* ─── Combo Bonus Config ─── */}
+      {/* ─── Combo Bonus Config (tiered) ─── */}
       <div className="bg-white rounded-2xl ring-1 ring-stone-200 p-5 sm:p-6" data-testid="combo-bonus-manager">
         <div className="flex items-center gap-2 mb-3">
           <Sparkles size={16} className="text-fuchsia-600" />
-          <h2 className="text-base font-black text-stone-900">Combo Bonus Discount</h2>
+          <h2 className="text-base font-black text-stone-900">Combo Bonus — Tiered Discounts</h2>
         </div>
         <p className="text-xs text-stone-500 mb-5">
-          Auto-applied on the cart whenever the customer has <b>{combo?.min_items ?? 2}+ anti-aging products</b> and the subtotal
-          is at least <b>₹{combo?.min_subtotal ?? 500}</b>. No coupon code needed — pure "add another product, save more" magic.
+          Auto-applied when the customer&apos;s cart has that many anti-aging products <b>and</b> the subtotal
+          is at least <b>₹{combo?.min_subtotal ?? 500}</b>. The customer sees a live progress bar on the Cart
+          page showing the next tier they can unlock.
         </p>
 
         {!combo ? (
           <div className="p-6 text-center"><Loader2 className="mx-auto animate-spin text-fuchsia-500" /></div>
         ) : (
           <>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-              <label className="block">
-                <span className="text-xs font-bold text-stone-700 uppercase tracking-wide">Discount amount (₹)</span>
-                <input
-                  type="number"
-                  min="0"
-                  max="5000"
-                  value={combo.amount}
-                  onChange={(e) => setCombo(prev => ({ ...prev, amount: e.target.value }))}
-                  className="mt-1.5 w-full px-3 py-2 text-sm rounded-lg border border-stone-200 focus:outline-none focus:ring-2 focus:ring-fuchsia-500/30"
-                  data-testid="combo-bonus-amount"
-                />
-                <p className="mt-1 text-[10px] text-stone-400">Currently: ₹{combo.amount} OFF</p>
-              </label>
-              <label className="block">
-                <span className="text-xs font-bold text-stone-700 uppercase tracking-wide">Min anti-aging items</span>
-                <input
-                  type="number"
-                  min="2"
-                  max="10"
-                  value={combo.min_items}
-                  onChange={(e) => setCombo(prev => ({ ...prev, min_items: e.target.value }))}
-                  className="mt-1.5 w-full px-3 py-2 text-sm rounded-lg border border-stone-200 focus:outline-none focus:ring-2 focus:ring-fuchsia-500/30"
-                  data-testid="combo-bonus-min-items"
-                />
-                <p className="mt-1 text-[10px] text-stone-400">Trigger threshold</p>
-              </label>
-              <label className="block">
-                <span className="text-xs font-bold text-stone-700 uppercase tracking-wide">Min subtotal (₹)</span>
-                <input
-                  type="number"
-                  min="0"
-                  value={combo.min_subtotal}
-                  onChange={(e) => setCombo(prev => ({ ...prev, min_subtotal: e.target.value }))}
-                  className="mt-1.5 w-full px-3 py-2 text-sm rounded-lg border border-stone-200 focus:outline-none focus:ring-2 focus:ring-fuchsia-500/30"
-                  data-testid="combo-bonus-min-subtotal"
-                />
-                <p className="mt-1 text-[10px] text-stone-400">Protects from tiny carts</p>
-              </label>
+            <div className="space-y-2 mb-4">
+              {(combo.tiers || []).map((t, idx) => (
+                <div key={idx} className="flex items-center gap-3 p-3 rounded-xl ring-1 ring-stone-200 bg-stone-50" data-testid={`combo-tier-row-${idx}`}>
+                  <div className="w-8 h-8 rounded-full bg-fuchsia-100 text-fuchsia-700 flex items-center justify-center font-black text-xs shrink-0">
+                    T{idx + 1}
+                  </div>
+                  <label className="flex-1">
+                    <span className="text-[10px] font-bold text-stone-500 uppercase tracking-wide">Min items</span>
+                    <input
+                      type="number"
+                      min="2"
+                      max="10"
+                      value={t.items}
+                      onChange={(e) => {
+                        const v = parseInt(e.target.value) || 2;
+                        setCombo(prev => ({ ...prev, tiers: prev.tiers.map((x, i) => i === idx ? { ...x, items: v } : x) }));
+                      }}
+                      className="w-full mt-0.5 px-3 py-1.5 text-sm rounded-lg border border-stone-200 focus:outline-none focus:ring-2 focus:ring-fuchsia-500/30"
+                      data-testid={`combo-tier-items-${idx}`}
+                    />
+                  </label>
+                  <label className="flex-1">
+                    <span className="text-[10px] font-bold text-stone-500 uppercase tracking-wide">Amount (₹)</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="5000"
+                      value={t.amount}
+                      onChange={(e) => {
+                        const v = parseInt(e.target.value) || 0;
+                        setCombo(prev => ({ ...prev, tiers: prev.tiers.map((x, i) => i === idx ? { ...x, amount: v } : x) }));
+                      }}
+                      className="w-full mt-0.5 px-3 py-1.5 text-sm rounded-lg border border-stone-200 focus:outline-none focus:ring-2 focus:ring-fuchsia-500/30"
+                      data-testid={`combo-tier-amount-${idx}`}
+                    />
+                  </label>
+                  <button
+                    onClick={() => setCombo(prev => ({ ...prev, tiers: prev.tiers.filter((_, i) => i !== idx) }))}
+                    className="w-8 h-8 rounded-lg text-red-500 hover:bg-red-50 flex items-center justify-center shrink-0"
+                    aria-label="Remove tier"
+                    data-testid={`combo-tier-delete-${idx}`}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+              <button
+                onClick={() => {
+                  const last = (combo.tiers || []).slice(-1)[0];
+                  const next = last ? { items: last.items + 1, amount: last.amount + 50 } : { items: 2, amount: 99 };
+                  setCombo(prev => ({ ...prev, tiers: [...(prev.tiers || []), next] }));
+                }}
+                className="w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-xl border border-dashed border-fuchsia-300 text-fuchsia-700 text-xs font-bold hover:bg-fuchsia-50"
+                data-testid="combo-tier-add"
+              >
+                <Plus size={13} /> Add another tier
+              </button>
             </div>
+
+            <label className="block mb-4">
+              <span className="text-xs font-bold text-stone-700 uppercase tracking-wide">Min subtotal (₹)</span>
+              <input
+                type="number"
+                min="0"
+                value={combo.min_subtotal}
+                onChange={(e) => setCombo(prev => ({ ...prev, min_subtotal: e.target.value }))}
+                className="mt-1.5 w-full px-3 py-2 text-sm rounded-lg border border-stone-200 focus:outline-none focus:ring-2 focus:ring-fuchsia-500/30"
+                data-testid="combo-bonus-min-subtotal"
+              />
+              <p className="mt-1 text-[10px] text-stone-400">Blocks the discount on tiny carts</p>
+            </label>
 
             <button
               onClick={saveCombo}
@@ -962,7 +1148,7 @@ function NicheModeManager({ auth }) {
               data-testid="combo-bonus-save"
             >
               {comboBusy ? <Loader2 size={14} className="animate-spin" /> : (comboSaved ? <Check size={14} /> : <Sparkles size={14} />)}
-              {comboSaved ? 'Saved!' : (comboBusy ? 'Saving…' : 'Save Combo Bonus')}
+              {comboSaved ? 'Saved!' : (comboBusy ? 'Saving…' : 'Save Combo Tiers')}
             </button>
           </>
         )}
