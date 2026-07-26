@@ -168,14 +168,22 @@ export default function AdminMediaTools() {
           {tab === 'niche-mode' && (
             <NicheModeManager auth={auth} />
           )}
-          {tab !== 'broadcast' && tab !== 'top-banner' && tab !== 'before-after' && tab !== 'niche-mode' && !selected && (
+          {tab !== 'broadcast' && tab !== 'top-banner' && tab !== 'before-after' && tab !== 'niche-mode' && !selected && tab === 'reports' && (
+            <ExistingCertificatesGrid auth={auth} onPick={(slug) => setSelectedSlug(slug)} />
+          )}
+          {tab !== 'broadcast' && tab !== 'top-banner' && tab !== 'before-after' && tab !== 'niche-mode' && !selected && tab !== 'reports' && (
             <div className="bg-white rounded-2xl ring-1 ring-stone-200 p-10 text-center">
               <ImageIcon size={28} className="mx-auto text-stone-300 mb-3" />
               <p className="text-sm text-stone-500">Select a product on the left to edit its {tab === 'reports' ? 'certificate / lab report' : 'SEO metadata'}.</p>
             </div>
           )}
           {tab !== 'broadcast' && tab !== 'top-banner' && tab !== 'before-after' && tab !== 'niche-mode' && selected && tab === 'reports' && (
-            <TestReportEditor product={selected} onSave={saveProduct} auth={auth} />
+            <>
+              <TestReportEditor product={selected} onSave={saveProduct} auth={auth} />
+              <div className="mt-5">
+                <ExistingCertificatesGrid auth={auth} onPick={(slug) => setSelectedSlug(slug)} activeSlug={selectedSlug} />
+              </div>
+            </>
           )}
           {tab !== 'broadcast' && tab !== 'top-banner' && tab !== 'before-after' && tab !== 'niche-mode' && selected && tab === 'seo' && (
             <SeoEditor product={selected} onSave={saveProduct} />
@@ -784,6 +792,77 @@ function BeforeAfterManager({ auth, products }) {
     </div>
   );
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Existing Certificates grid — shows all products already carrying a lab
+// report so admin can instantly see coverage + jump into any one to update.
+// ─────────────────────────────────────────────────────────────────────────
+
+function ExistingCertificatesGrid({ auth, onPick, activeSlug }) {
+  const [rows, setRows] = useState(null);
+
+  const load = async () => {
+    try {
+      const r = await axios.get(`${API}/api/admin/certificates`, auth);
+      setRows(Array.isArray(r.data) ? r.data : []);
+    } catch (e) {
+      setRows([]);
+    }
+  };
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+
+  if (rows === null) return null;
+
+  return (
+    <div className="bg-white rounded-2xl ring-1 ring-stone-200 p-5 sm:p-6" data-testid="existing-certificates-grid">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <ShieldCheck size={16} className="text-emerald-600" />
+            <h3 className="text-sm sm:text-base font-black text-stone-900">Existing certificates</h3>
+            <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
+              {rows.length}
+            </span>
+          </div>
+          <p className="text-[11px] text-stone-500 mt-1">Tap any card to update its lab report.</p>
+        </div>
+      </div>
+
+      {rows.length === 0 ? (
+        <p className="text-xs text-stone-500 py-4">No products have a certificate uploaded yet. Pick a product from the left list to add one.</p>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          {rows.map((p) => (
+            <button
+              key={p.slug}
+              type="button"
+              onClick={() => onPick && onPick(p.slug)}
+              className={`text-left group rounded-xl ring-1 overflow-hidden hover:-translate-y-0.5 hover:shadow-md transition-all bg-stone-50 ${activeSlug === p.slug ? 'ring-emerald-500 ring-2' : 'ring-stone-200'}`}
+              data-testid={`existing-cert-${p.slug}`}
+            >
+              <div className="aspect-[4/5] bg-white flex items-center justify-center overflow-hidden">
+                <img
+                  src={p.test_report_image}
+                  alt={`Certificate for ${p.short_name || p.name}`}
+                  loading="lazy"
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                />
+              </div>
+              <div className="p-2.5">
+                <p className="text-[11px] font-black text-stone-900 leading-snug line-clamp-2">{p.short_name || p.name}</p>
+                {p.test_report_lab && <p className="text-[10px] text-stone-500 truncate mt-0.5">{p.test_report_lab}</p>}
+                <p className="text-[10px] font-bold text-emerald-700 mt-1 inline-flex items-center gap-1">
+                  <Check size={10} /> Uploaded
+                </p>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 // ─────────────────────────────────────────────────────────────────────────
 // Tab F — Top Banner Manager (independent from niche hero)

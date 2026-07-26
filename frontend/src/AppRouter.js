@@ -17,6 +17,7 @@ const ShopPage = lazy(() => import('./pages/ShopPage'));
 const CartPage = lazy(() => import('./pages/CartPage'));
 const CheckoutPage = lazy(() => import('./pages/CheckoutPage'));
 const ConcernCategoryPage = lazy(() => import('./pages/ConcernCategoryPage'));
+const CertificatesPage = lazy(() => import('./pages/CertificatesPage'));
 const SkincareHome = lazy(() => import('./pages/SkincareHome'));
 const CosmeticsHome = lazy(() => import('./pages/CosmeticsHome'));
 const CategoriesPage = lazy(() => import('./pages/CategoriesPage'));
@@ -351,6 +352,9 @@ function App() {
               {/* /concern and /category routes removed (Feb-2026 pivot) — redirect to /shop */}
               <Route path="/concern/:slug" element={<Navigate to="/shop" replace />} />
               <Route path="/category/:slug" element={<Navigate to="/shop" replace />} />
+              <Route path="/certificates" element={
+                <PublicLayout><Suspense fallback={<PageLoader />}><CertificatesPage /></Suspense></PublicLayout>
+              } />
               <Route path="/brands" element={
                 <PublicLayout><Suspense fallback={<PageLoader />}><BrandsListingPage /></Suspense></PublicLayout>
               } />

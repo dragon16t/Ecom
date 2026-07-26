@@ -10,6 +10,7 @@ import HomepageSaleStrip from '../components/HomepageSaleStrip';
 import NicheHero from '../components/NicheHero';
 import InfluencerReelsSection from '../components/InfluencerReelsSection';
 import BeforeAfterCarousel from '../components/BeforeAfterCarousel';
+import CertificatesStrip from '../components/CertificatesStrip';
 import TopBanner from '../components/TopBanner';
 import NicheOffersGrid from '../components/NicheOffersGrid';
 import HeroCarousel from '../components/HeroCarousel'; // eslint-disable-line no-unused-vars
@@ -552,6 +553,10 @@ function Homepage() {
           homepage; product-specific rows show on that PDP. Silent no-op when
           no images are on file. */}
       <BeforeAfterCarousel onlyGlobal={true} title="Real Before & After" eyebrow="Real customers · Real results" />
+
+      {/* Independent lab reports — horizontal grid of every product's
+          certificate. Tap any card to zoom. Full list lives at /certificates. */}
+      <CertificatesStrip />
 
       {/* Customer reviews — auto-scrolling carousel pulled from /admin/reviews */}
       {niche.show_reviews !== false && (

@@ -755,6 +755,42 @@ async def get_products_batch(data: Dict[str, Any]):
     return items
 
 
+@router.get("/certificates")
+async def public_certificates(response: Response):
+    """Public: list every product that has a lab-report / certificate image.
+    Powers the homepage trust strip and the standalone `/certificates` page.
+    Only returns products in the currently active niches."""
+    active_niches = await _get_active_niches()
+    query: Dict[str, Any] = {
+        "test_report_image": {"$exists": True, "$nin": [None, ""]},
+        "is_active": True,
+    }
+    if active_niches and len(active_niches) < 3:
+        query["niche"] = {"$in": active_niches}
+    docs = await db.products.find(
+        query,
+        {"_id": 0, "slug": 1, "name": 1, "short_name": 1, "image": 1,
+         "test_report_image": 1, "test_report_lab": 1, "test_report_date": 1,
+         "niche": 1},
+    ).sort("sort_order", 1).limit(60).to_list(60)
+    response.headers["Cache-Control"] = "public, max-age=60, stale-while-revalidate=120"
+    return docs
+
+
+@router.get("/admin/certificates")
+async def admin_certificates(x_admin_token: str = Header(None, alias="X-Admin-Token")):
+    """Admin: list every product with a test_report_image so the media-tools
+    Certificates tab can render a grid instead of just an empty picker."""
+    verify_auth(x_admin_token=x_admin_token)
+    docs = await db.products.find(
+        {"test_report_image": {"$exists": True, "$nin": [None, ""]}},
+        {"_id": 0, "slug": 1, "name": 1, "short_name": 1, "image": 1,
+         "test_report_image": 1, "test_report_lab": 1, "test_report_date": 1,
+         "niche": 1},
+    ).sort("name", 1).to_list(200)
+    return docs
+
+
 @router.get("/products/{slug}")
 async def get_product(slug: str):
     """Public: Get single product by slug (with TBL auto-flip + countdown)"""
