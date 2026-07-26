@@ -36,7 +36,9 @@ export default function AdminMediaTools() {
 
   useEffect(() => {
     if (!adminToken) return;
-    axios.get(`${API}/api/admin/products?page=1&limit=200`, auth)
+    // Show ONLY Celesta Glow's own anti-aging SKUs (the flagship 6) — the
+    // ~8k third-party products are irrelevant for certificate / SEO admin.
+    axios.get(`${API}/api/products?niche=anti-aging&limit=50`, auth)
       .then((r) => {
         const items = Array.isArray(r.data) ? r.data : (r.data.items || r.data.products || []);
         setProducts(items);

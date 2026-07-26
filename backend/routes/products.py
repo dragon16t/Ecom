@@ -1802,8 +1802,9 @@ async def validate_cart(data: CartValidateRequest):
     combo_bonus_next_tier = None  # {items_needed, amount} — what's next
     product_lines_only = [it for it in validated_items if it.get("type") == "product"]
     has_explicit_combo = any(it.get("type") == "combo" for it in validated_items)
-    aa_item_count = sum(1 for it in product_lines_only if str((it.get("niche") or "")).lower() == "anti-aging")
-    all_aa = aa_item_count == len(product_lines_only) and aa_item_count > 0
+    aa_item_count = sum(int(it.get("quantity") or 0) for it in product_lines_only if str((it.get("niche") or "")).lower() == "anti-aging")
+    total_qty = sum(int(it.get("quantity") or 0) for it in product_lines_only)
+    all_aa = aa_item_count == total_qty and aa_item_count > 0
     if not has_explicit_combo and combo_tiers and all_aa:
         # Pick the highest tier the customer already qualifies for
         active_tier = None
