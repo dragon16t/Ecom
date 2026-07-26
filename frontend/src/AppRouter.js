@@ -1,5 +1,5 @@
 import React, { useEffect, lazy, Suspense, useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { loadNicheBrands } from './utils/brand';
 import ScrollToTop from './components/ScrollToTop';
 import { TrackingProvider } from './providers/TrackingProvider';
@@ -348,12 +348,9 @@ function App() {
               <Route path="/account" element={
                 <PublicLayout><Suspense fallback={<PageLoader />}><AccountPage /></Suspense></PublicLayout>
               } />
-              <Route path="/concern/:slug" element={
-                <PublicLayout><Suspense fallback={<PageLoader />}><ConcernCategoryPage mode="concern" /></Suspense></PublicLayout>
-              } />
-              <Route path="/category/:slug" element={
-                <PublicLayout><Suspense fallback={<PageLoader />}><ConcernCategoryPage mode="category" /></Suspense></PublicLayout>
-              } />
+              {/* /concern and /category routes removed (Feb-2026 pivot) — redirect to /shop */}
+              <Route path="/concern/:slug" element={<Navigate to="/shop" replace />} />
+              <Route path="/category/:slug" element={<Navigate to="/shop" replace />} />
               <Route path="/brands" element={
                 <PublicLayout><Suspense fallback={<PageLoader />}><BrandsListingPage /></Suspense></PublicLayout>
               } />

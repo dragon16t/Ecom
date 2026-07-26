@@ -72,6 +72,7 @@ function pickCardImages(slug, settingsForNiche) {
 export default function NicheCardSwitcher({ nicheSettings = {} } = {}) {
   const [niches, setNiches] = useState(() => NICHES_CACHE || DEFAULT_NICHES);
   const [siteSettings, setSiteSettings] = useState(nicheSettings);
+  const [activeNichesFilter, setActiveNichesFilter] = useState(null); // null = not fetched yet, array = fetched
   const location = useLocation();
 
   useEffect(() => {
@@ -79,6 +80,11 @@ export default function NicheCardSwitcher({ nicheSettings = {} } = {}) {
     fetchNichesOnce().then((data) => {
       if (mounted && data && data.length) setNiches(data);
     });
+    // Fetch the admin niche-mode toggle so we hide cards for disabled niches
+    // when the site is running in "Anti-Aging Only" mode.
+    cachedGet(`${API}/api/niche-mode`).then(r => {
+      if (mounted && Array.isArray(r?.data?.active_niches)) setActiveNichesFilter(r.data.active_niches);
+    }).catch(() => { if (mounted) setActiveNichesFilter(['anti-aging', 'skincare', 'cosmetics']); });
     // If the parent didn't pass nicheSettings, fetch site-settings here so the
     // cards still respect the admin's per-device uploads.
     if (!Object.keys(nicheSettings).length) {
@@ -103,6 +109,13 @@ export default function NicheCardSwitcher({ nicheSettings = {} } = {}) {
 
   if (!niches.length) return null;
 
+  // Apply admin niche-mode filter. When only anti-aging is active we hide
+  // the whole strip entirely — there's nothing to switch between.
+  const filteredNiches = activeNichesFilter
+    ? niches.filter(n => activeNichesFilter.includes(n.slug))
+    : niches;
+  if (filteredNiches.length <= 1) return null;
+
   const isActive = (route) => {
     if (route === '/') return location.pathname === '/' || location.pathname === '/anti-aging';
     return location.pathname === route || location.pathname.startsWith(`${route}/`);
@@ -112,7 +125,7 @@ export default function NicheCardSwitcher({ nicheSettings = {} } = {}) {
     <section className="bg-white py-2 sm:py-4" data-testid="niche-card-switcher">
       <div className="max-w-7xl mx-auto px-3 sm:px-6">
         <div className="grid grid-cols-3 gap-2 sm:gap-4 lg:gap-6">
-          {niches.map((n) => {
+          {filteredNiches.map((n) => {
             const ring = ACTIVE_RING[n.slug] || '#22c55e';
             const active = isActive(n.route);
             const imgs = pickCardImages(n.slug, siteSettings?.[n.slug]);
@@ -144,7 +157,7 @@ export default function NicheCardSwitcher({ nicheSettings = {} } = {}) {
                     src={imgs.mobile}
                     alt={n.name}
                     loading="eager"
-                    fetchpriority="high"
+                    fetchPriority="high"
                     decoding="async"
                     onLoad={(e) => e.currentTarget.classList.remove('opacity-0')}
                     className="absolute inset-0 w-full h-full object-cover sm:object-contain opacity-0 transition-opacity duration-300 group-hover:scale-[1.03]"

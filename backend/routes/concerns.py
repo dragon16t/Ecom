@@ -114,11 +114,20 @@ async def list_concerns(response: Response):
 async def list_niches(response: Response):
     """Public: List all active niches (top-level 3-pill: anti-aging / skincare / cosmetics).
 
+    Filtered by admin `active_niches` setting (Feb-2026): when the site is
+    running in "Anti-Aging Only" mode we hide skincare/cosmetics from public
+    completely.
+
     Image URLs include `?_v=<hash(updated_at)>` so re-uploads bust CDN cache
     instantly. We deliberately use a *short* max-age + must-revalidate so any
     admin change shows up on the very next page load without "old banner
     flashes for a second then swaps to new"."""
-    items = await db.niches.find({"is_active": True}, {"_id": 0}).sort("sort_order", 1).to_list(20)
+    from routes.products import _get_active_niches
+    active = await _get_active_niches()
+    query = {"is_active": True}
+    if active and len(active) < 3:
+        query["slug"] = {"$in": active}
+    items = await db.niches.find(query, {"_id": 0}).sort("sort_order", 1).to_list(20)
     for it in items:
         _optimize_taxonomy_image(it, width=800)
         # niches also have hero/banner/secondary images — version them too

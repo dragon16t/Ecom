@@ -6,6 +6,7 @@ import { addToCart, addComboToCart, getCart, saveCart } from './Homepage';
 import { useTracking } from '../providers/TrackingProvider';
 import ReviewsCarousel from '../components/ReviewsCarousel';
 import InfluencerReelsSection from '../components/InfluencerReelsSection';
+import BeforeAfterCarousel from '../components/BeforeAfterCarousel';
 import { cachedGet, peek } from '../utils/apiCache';
 import { getSocialProof } from '../utils/socialProof';
 import SEOHead, { productJsonLd, breadcrumbJsonLd, faqJsonLd, SITE } from '../components/SEOHead';
@@ -605,6 +606,10 @@ function ProductDetailPage() {
             static dermatologist card grid. Reels are managed from
             /admin/reels; falls back to global reels when none are assigned. */}
         <InfluencerReelsSection productSlug={slug} />
+
+        {/* Before & After — auto-swiping strip pulled from /api/before-after/:slug
+            (product-scoped + globals). Silent no-op when the shop has no rows. */}
+        <BeforeAfterCarousel productSlug={slug} />
 
         {/* Dermatologist Test Report — surfaces the certificate the admin
             uploaded from /admin/media-tools (Test Reports tab). Renders only

@@ -443,6 +443,39 @@ function CartPage() {
               </div>
             )}
 
+            {/* Combo Bonus banner — surfaces the auto-applied combo discount, or
+                nudges the customer to add one more anti-aging product to unlock it. */}
+            {cartData.combo_bonus_applied > 0 ? (
+              <div className="bg-gradient-to-r from-purple-50 to-fuchsia-50 border border-purple-200 rounded-2xl p-4 flex items-center gap-3" data-testid="cart-combo-bonus-banner">
+                <div className="w-10 h-10 rounded-full bg-purple-600 text-white flex items-center justify-center shadow-md shrink-0">
+                  <Award size={18} strokeWidth={2.5} />
+                </div>
+                <div>
+                  <p className="text-sm font-black text-purple-900">Combo Bonus ₹{cartData.combo_bonus_applied} OFF unlocked</p>
+                  <p className="text-[11px] text-purple-700 mt-0.5">
+                    {cartData.combo_bonus_message || 'Applied automatically — no code needed.'}
+                  </p>
+                </div>
+              </div>
+            ) : (() => {
+              // Nudge only when the cart is 1 product away from unlocking
+              const aaCount = (cartData.items || []).filter(it => it.type === 'product' && String(it.niche || '').toLowerCase() === 'anti-aging').length;
+              const hasCombo = (cartData.items || []).some(it => it.type === 'combo');
+              if (hasCombo || aaCount === 0 || aaCount >= 2) return null;
+              return (
+                <div className="bg-white border border-dashed border-purple-300 rounded-2xl p-4 flex items-center gap-3" data-testid="cart-combo-bonus-nudge">
+                  <div className="w-10 h-10 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
+                    <Award size={18} strokeWidth={2.5} />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-black text-purple-900">Add 1 more anti-aging product</p>
+                    <p className="text-[11px] text-purple-700 mt-0.5">Unlock an automatic <b>₹{cartData.combo_bonus_amount || 99} OFF</b> combo bonus at checkout.</p>
+                  </div>
+                  <Link to="/shop?niche=anti-aging" className="bg-purple-600 hover:bg-purple-700 text-white text-[11px] font-black px-3 py-1.5 rounded-lg" data-testid="cart-combo-bonus-nudge-cta">Add</Link>
+                </div>
+              );
+            })()}
+
             {/* Recently viewed — tracked from ProductDetailPage views */}
             {recentlyViewedProducts.length > 0 && (
               <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm" data-testid="cart-recently-viewed">
@@ -616,6 +649,14 @@ function CartPage() {
                 <div className="flex justify-between text-gray-400"><span>MRP</span><span className="line-through">₹{cartData.mrp_total?.toLocaleString()}</span></div>
                 <div className="flex justify-between text-gray-700"><span>Subtotal</span><span className="font-medium">₹{cartData.subtotal?.toLocaleString()}</span></div>
                 {cartData.discount > 0 && <div className="flex justify-between text-green-600"><span>Coupon Discount</span><span>-₹{cartData.discount}</span></div>}
+                {cartData.combo_bonus_applied > 0 && (
+                  <div className="flex justify-between text-purple-700 font-semibold" data-testid="cart-combo-bonus-row">
+                    <span className="flex items-center gap-1.5">
+                      <Award size={13} strokeWidth={2.5} /> Combo Bonus ₹{cartData.combo_bonus_applied} OFF
+                    </span>
+                    <span>-₹{cartData.combo_bonus_applied}</span>
+                  </div>
+                )}
                 {cartData.gift_card_discount > 0 && (
                   <div className="flex justify-between text-rose-600 font-medium" data-testid="gift-card-discount-row">
                     <span>🎁 Gift Card ({cartData.gift_card?.code})</span>

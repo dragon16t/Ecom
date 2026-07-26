@@ -810,8 +810,48 @@ function CheckoutPage() {
                     <span>-₹{cartData.prepaid_bonus_applied}</span>
                   </div>
                 )}
+                {cartData.checkout_bonus_applied > 0 && (
+                  <div className="flex justify-between text-amber-700 font-semibold" data-testid="checkout-flash-bonus-row">
+                    <span className="flex items-center gap-1.5">
+                      <Clock size={13} strokeWidth={2.6} /> Flash ₹50 OFF
+                    </span>
+                    <span>-₹{cartData.checkout_bonus_applied}</span>
+                  </div>
+                )}
+                {cartData.combo_bonus_applied > 0 && (
+                  <div className="flex justify-between text-purple-700 font-semibold" data-testid="checkout-combo-bonus-row">
+                    <span className="flex items-center gap-1.5">
+                      <Award size={13} strokeWidth={2.6} /> Combo Bonus ₹{cartData.combo_bonus_applied} OFF
+                    </span>
+                    <span>-₹{cartData.combo_bonus_applied}</span>
+                  </div>
+                )}
                 <div className="border-t border-gray-100 pt-2 flex justify-between font-bold text-gray-900 text-lg"><span>Total</span><span>₹{cartData.total?.toLocaleString()}</span></div>
               </div>
+
+              {/* Inline ₹50 flash-discount nudge — replaces the old discount pop-up.
+                  Shows when cart >= ₹1000 + prepaid + timer running BUT the bonus
+                  hasn't actually applied (edge case: coupon already zero'd total). */}
+              {promoActive && paymentMethod === 'prepaid' && (cartData.subtotal || 0) > 1000 && cartData.checkout_bonus_applied > 0 && (
+                <div className="mt-3 bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50 border border-amber-200 rounded-xl px-3.5 py-2.5 flex items-center gap-2.5" data-testid="checkout-flash-bonus-msg">
+                  <div className="w-8 h-8 rounded-full bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm">
+                    <Gift size={16} />
+                  </div>
+                  <div className="text-[12px] leading-snug text-amber-900">
+                    <span className="font-black">Extra ₹50 OFF applied</span> — cart is above ₹1000 and the flash timer is running. Congrats!
+                  </div>
+                </div>
+              )}
+              {promoActive && paymentMethod === 'prepaid' && (cartData.subtotal || 0) <= 1000 && (cartData.subtotal || 0) > 800 && (
+                <div className="mt-3 bg-white border border-dashed border-amber-300 rounded-xl px-3.5 py-2.5 flex items-center gap-2.5" data-testid="checkout-flash-bonus-nudge">
+                  <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                    <Gift size={16} />
+                  </div>
+                  <div className="text-[12px] leading-snug text-amber-900">
+                    Add <b>₹{Math.max(1, 1001 - (cartData.subtotal || 0))}</b> more &amp; keep paying prepaid to unlock an <b>extra ₹50 OFF</b> before the timer runs out.
+                  </div>
+                </div>
+              )}
 
               {cartData.gift_card?.code && cartData.gift_card_discount > 0 && (
                 <div className="mt-3 bg-rose-50 border border-rose-200 rounded-xl p-2.5 text-center" data-testid="checkout-giftcard-note">

@@ -9,6 +9,7 @@ import SaleBadge from '../components/SaleBadge';
 import HomepageSaleStrip from '../components/HomepageSaleStrip';
 import NicheHero from '../components/NicheHero';
 import InfluencerReelsSection from '../components/InfluencerReelsSection';
+import BeforeAfterCarousel from '../components/BeforeAfterCarousel';
 import NicheOffersGrid from '../components/NicheOffersGrid';
 import HeroCarousel from '../components/HeroCarousel'; // eslint-disable-line no-unused-vars
 import { ProductCard } from './ConcernCategoryPage';
@@ -540,6 +541,12 @@ function Homepage() {
       )}
 
       {/* Bestsellers section moved above the Complete Kit (Feb-2026). */}
+
+      {/* Customer transformations — auto-swiping strip of before/after
+          photos uploaded via /admin/media-tools. Global rows show on the
+          homepage; product-specific rows show on that PDP. Silent no-op when
+          no images are on file. */}
+      <BeforeAfterCarousel onlyGlobal={true} title="Real Before & After" eyebrow="Real customers · Real results" />
 
       {/* Customer reviews — auto-scrolling carousel pulled from /admin/reviews */}
       {niche.show_reviews !== false && (

@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import {
   ChevronLeft, Loader2, Check, Upload, X, Search, Tag as TagIcon,
-  ShieldCheck, Sparkles, Image as ImageIcon,
+  ShieldCheck, Sparkles, Image as ImageIcon, Users as UsersIcon, Trash2,
 } from 'lucide-react';
 import { useAdminAuth } from '../../utils/adminAuth';
 
@@ -92,11 +92,18 @@ export default function AdminMediaTools() {
           <TabButton active={tab === 'broadcast'} onClick={() => setTab('broadcast')} testId="tab-broadcast">
             <Sparkles size={14} /> Global Broadcast
           </TabButton>
+          <TabButton active={tab === 'before-after'} onClick={() => setTab('before-after')} testId="tab-before-after">
+            <UsersIcon size={14} /> Before / After
+          </TabButton>
+          <TabButton active={tab === 'niche-mode'} onClick={() => setTab('niche-mode')} testId="tab-niche-mode">
+            <ShieldCheck size={14} /> Niche &amp; Combo
+          </TabButton>
         </div>
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 grid grid-cols-1 lg:grid-cols-12 gap-5">
-        {/* Left: product list */}
+        {/* Left: product list — hidden on before-after + niche-mode tabs (full-width editor) */}
+        {tab !== 'before-after' && tab !== 'niche-mode' && (
         <div className="lg:col-span-4 bg-white rounded-2xl ring-1 ring-stone-200 overflow-hidden">
           <div className="p-3 border-b border-stone-100">
             <div className="relative">
@@ -141,22 +148,29 @@ export default function AdminMediaTools() {
             )}
           </div>
         </div>
+        )}
 
         {/* Right: editor pane */}
-        <div className="lg:col-span-8">
+        <div className={tab === 'before-after' || tab === 'niche-mode' ? 'lg:col-span-12' : 'lg:col-span-8'}>
           {tab === 'broadcast' && (
             <GlobalKeywordBroadcast auth={auth} />
           )}
-          {tab !== 'broadcast' && !selected && (
+          {tab === 'before-after' && (
+            <BeforeAfterManager auth={auth} products={products} />
+          )}
+          {tab === 'niche-mode' && (
+            <NicheModeManager auth={auth} />
+          )}
+          {tab !== 'broadcast' && tab !== 'before-after' && tab !== 'niche-mode' && !selected && (
             <div className="bg-white rounded-2xl ring-1 ring-stone-200 p-10 text-center">
               <ImageIcon size={28} className="mx-auto text-stone-300 mb-3" />
               <p className="text-sm text-stone-500">Select a product on the left to edit its {tab === 'reports' ? 'test report' : 'SEO metadata'}.</p>
             </div>
           )}
-          {tab !== 'broadcast' && selected && tab === 'reports' && (
+          {tab !== 'broadcast' && tab !== 'before-after' && tab !== 'niche-mode' && selected && tab === 'reports' && (
             <TestReportEditor product={selected} onSave={saveProduct} auth={auth} />
           )}
-          {tab !== 'broadcast' && selected && tab === 'seo' && (
+          {tab !== 'broadcast' && tab !== 'before-after' && tab !== 'niche-mode' && selected && tab === 'seo' && (
             <SeoEditor product={selected} onSave={saveProduct} />
           )}
         </div>
@@ -575,3 +589,385 @@ function TabButton({ active, onClick, children, testId }) {
     </button>
   );
 }
+
+
+// ─────────────────────────────────────────────────────────────────────────
+// Tab D — Before / After Manager (global + per-product transformation strip)
+// ─────────────────────────────────────────────────────────────────────────
+
+function BeforeAfterManager({ auth, products }) {
+  const [rows, setRows] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [form, setForm] = useState({
+    is_global: true,
+    product_slug: '',
+    customer_name: '',
+    image: '',
+    before_image: '',
+    after_image: '',
+    duration: '',
+    description: '',
+    sort_order: 0,
+  });
+
+  const load = async () => {
+    try {
+      const r = await axios.get(`${API}/api/admin/before-after`, auth);
+      setRows(Array.isArray(r.data) ? r.data : []);
+    } catch (e) {
+      setRows([]);
+    }
+  };
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+
+  const uploadFile = async (field, file) => {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('folder', 'before-after');
+      const r = await axios.post(`${API}/api/admin/upload-image`, fd, auth);
+      setForm((prev) => ({ ...prev, [field]: r.data.url || r.data.secure_url || '' }));
+    } catch (e) {
+      alert('Upload failed: ' + (e.response?.data?.detail || e.message));
+    } finally { setUploading(false); }
+  };
+
+  const submit = async () => {
+    if (!form.image && !(form.before_image && form.after_image)) {
+      alert('Upload either a single stitched B/A image OR both a before + after image.');
+      return;
+    }
+    setBusy(true);
+    try {
+      await axios.post(`${API}/api/admin/before-after`, {
+        ...form,
+        product_slug: form.is_global ? null : (form.product_slug || null),
+      }, auth);
+      setForm({ is_global: true, product_slug: '', customer_name: '', image: '', before_image: '', after_image: '', duration: '', description: '', sort_order: 0 });
+      await load();
+    } catch (e) {
+      alert('Save failed: ' + (e.response?.data?.detail || e.message));
+    } finally { setBusy(false); }
+  };
+
+  const remove = async (ba_id) => {
+    if (!window.confirm('Delete this before/after entry?')) return;
+    await axios.delete(`${API}/api/admin/before-after/${ba_id}`, auth);
+    await load();
+  };
+
+  return (
+    <div className="space-y-5" data-testid="before-after-manager">
+      <div className="bg-white rounded-2xl ring-1 ring-stone-200 p-5 sm:p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <UsersIcon size={16} className="text-fuchsia-600" />
+          <h2 className="text-base font-black text-stone-900">Add Before / After Transformation</h2>
+        </div>
+        <p className="text-xs text-stone-500 mb-5">
+          Upload one stitched image (Before | After side-by-side) — that&apos;s the format Celesta Glow uses on the homepage strip. Or upload separate before + after images.
+        </p>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <label className="block">
+            <span className="text-xs font-bold text-stone-700 uppercase tracking-wide">Placement</span>
+            <select
+              value={form.is_global ? 'global' : 'product'}
+              onChange={(e) => setForm(p => ({ ...p, is_global: e.target.value === 'global' }))}
+              className="mt-1.5 w-full px-3 py-2 text-sm rounded-lg border border-stone-200 bg-white"
+              data-testid="ba-placement"
+            >
+              <option value="global">Global (homepage strip)</option>
+              <option value="product">Per-product (PDP strip)</option>
+            </select>
+          </label>
+          {!form.is_global && (
+            <label className="block">
+              <span className="text-xs font-bold text-stone-700 uppercase tracking-wide">Product</span>
+              <select
+                value={form.product_slug}
+                onChange={(e) => setForm(p => ({ ...p, product_slug: e.target.value }))}
+                className="mt-1.5 w-full px-3 py-2 text-sm rounded-lg border border-stone-200 bg-white"
+                data-testid="ba-product-select"
+              >
+                <option value="">— pick a product —</option>
+                {products.filter(p => (p.niche || '') === 'anti-aging').map(p => (
+                  <option key={p.slug} value={p.slug}>{p.short_name || p.name}</option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <BaFileField label="Stitched B/A Image (recommended)" value={form.image} onFile={(f) => uploadFile('image', f)} onClear={() => setForm(p => ({ ...p, image: '' }))} testId="ba-image" />
+          <BaFileField label="Before Image (separate)" value={form.before_image} onFile={(f) => uploadFile('before_image', f)} onClear={() => setForm(p => ({ ...p, before_image: '' }))} testId="ba-before" />
+          <BaFileField label="After Image (separate)" value={form.after_image} onFile={(f) => uploadFile('after_image', f)} onClear={() => setForm(p => ({ ...p, after_image: '' }))} testId="ba-after" />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <label className="block">
+            <span className="text-xs font-bold text-stone-700 uppercase tracking-wide">Customer name</span>
+            <input value={form.customer_name} onChange={(e) => setForm(p => ({ ...p, customer_name: e.target.value }))} placeholder="e.g. Aisha, Kochi" className="mt-1.5 w-full px-3 py-2 text-sm rounded-lg border border-stone-200" data-testid="ba-customer" />
+          </label>
+          <label className="block">
+            <span className="text-xs font-bold text-stone-700 uppercase tracking-wide">Duration</span>
+            <input value={form.duration} onChange={(e) => setForm(p => ({ ...p, duration: e.target.value }))} placeholder="e.g. 6 weeks" className="mt-1.5 w-full px-3 py-2 text-sm rounded-lg border border-stone-200" data-testid="ba-duration" />
+          </label>
+          <label className="block">
+            <span className="text-xs font-bold text-stone-700 uppercase tracking-wide">Sort order</span>
+            <input type="number" value={form.sort_order} onChange={(e) => setForm(p => ({ ...p, sort_order: parseInt(e.target.value) || 0 }))} className="mt-1.5 w-full px-3 py-2 text-sm rounded-lg border border-stone-200" data-testid="ba-sort" />
+          </label>
+        </div>
+
+        <label className="block mb-4">
+          <span className="text-xs font-bold text-stone-700 uppercase tracking-wide">Description</span>
+          <input value={form.description} onChange={(e) => setForm(p => ({ ...p, description: e.target.value }))} placeholder="e.g. Cleared pigmentation and dark spots" className="mt-1.5 w-full px-3 py-2 text-sm rounded-lg border border-stone-200" data-testid="ba-description" />
+        </label>
+
+        <button
+          onClick={submit}
+          disabled={busy || uploading}
+          className="inline-flex items-center gap-2 bg-fuchsia-600 hover:bg-fuchsia-700 text-white font-bold text-sm px-5 py-2.5 rounded-full disabled:opacity-50"
+          data-testid="ba-submit"
+        >
+          {busy || uploading ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+          {uploading ? 'Uploading…' : busy ? 'Saving…' : 'Save Transformation'}
+        </button>
+      </div>
+
+      {/* Existing list */}
+      <div className="bg-white rounded-2xl ring-1 ring-stone-200 p-5 sm:p-6">
+        <h3 className="text-sm font-black text-stone-900 mb-3">Uploaded transformations ({rows.length})</h3>
+        {rows.length === 0 ? (
+          <p className="text-xs text-stone-500">No before/after images yet. Add your first one above.</p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {rows.map((r) => (
+              <div key={r.ba_id} className="ring-1 ring-stone-200 rounded-xl overflow-hidden bg-stone-50" data-testid={`ba-row-${r.ba_id}`}>
+                <div className="aspect-video bg-white flex items-center justify-center">
+                  {r.image ? (
+                    <img src={r.image} alt="" className="w-full h-full object-contain" />
+                  ) : (
+                    <div className="grid grid-cols-2 gap-0.5 w-full h-full">
+                      <img src={r.before_image} alt="Before" className="w-full h-full object-cover" />
+                      <img src={r.after_image} alt="After" className="w-full h-full object-cover" />
+                    </div>
+                  )}
+                </div>
+                <div className="p-3 flex items-center justify-between text-xs">
+                  <div>
+                    <p className="font-bold text-stone-900">{r.customer_name || 'Anonymous'}</p>
+                    <p className="text-stone-500">
+                      {r.is_global ? 'Global' : (r.product_slug || 'Product')}
+                      {r.duration ? ` · ${r.duration}` : ''}
+                    </p>
+                  </div>
+                  <button onClick={() => remove(r.ba_id)} className="text-red-500 hover:text-red-700 p-1" data-testid={`ba-delete-${r.ba_id}`}>
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BaFileField({ label, value, onFile, onClear, testId }) {
+  return (
+    <div>
+      <span className="text-xs font-bold text-stone-700 uppercase tracking-wide">{label}</span>
+      <label className="mt-1.5 flex flex-col items-center justify-center gap-1 py-3 px-4 border-2 border-dashed border-stone-300 rounded-xl cursor-pointer hover:border-fuchsia-500 hover:bg-fuchsia-50/30 transition-colors min-h-[100px]">
+        {value ? (
+          <img src={value} alt="" className="max-h-24 object-contain" />
+        ) : (
+          <>
+            <Upload size={16} />
+            <span className="text-xs">Choose file</span>
+          </>
+        )}
+        <input type="file" accept="image/*" onChange={(e) => onFile(e.target.files?.[0])} className="hidden" data-testid={`${testId}-input`} />
+      </label>
+      {value && (
+        <button onClick={onClear} className="mt-1 text-[10px] text-red-600 flex items-center gap-1 hover:underline" data-testid={`${testId}-clear`}>
+          <X size={10} /> Remove
+        </button>
+      )}
+    </div>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────
+// Tab E — Niche Mode Manager (Anti-Aging Only vs Three-Niche)
+// ─────────────────────────────────────────────────────────────────────────
+
+function NicheModeManager({ auth }) {
+  const [active, setActive] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [combo, setCombo] = useState(null);
+  const [comboBusy, setComboBusy] = useState(false);
+  const [comboSaved, setComboSaved] = useState(false);
+
+  useEffect(() => {
+    axios.get(`${API}/api/niche-mode`).then(r => setActive(r.data.active_niches || ['anti-aging'])).catch(() => setActive(['anti-aging']));
+    axios.get(`${API}/api/admin/combo-bonus`, auth).then(r => setCombo(r.data)).catch(() => setCombo({ amount: 99, min_items: 2, min_subtotal: 500 }));
+  }, [auth]);
+
+  const save = async (list) => {
+    setBusy(true);
+    try {
+      const r = await axios.put(`${API}/api/admin/niche-mode`, { active_niches: list }, auth);
+      setActive(r.data.active_niches);
+    } catch (e) {
+      alert('Failed: ' + (e.response?.data?.detail || e.message));
+    } finally { setBusy(false); }
+  };
+
+  const saveCombo = async () => {
+    if (!combo) return;
+    setComboBusy(true);
+    try {
+      const r = await axios.put(`${API}/api/admin/combo-bonus`, {
+        amount: parseInt(combo.amount) || 0,
+        min_items: parseInt(combo.min_items) || 2,
+        min_subtotal: parseInt(combo.min_subtotal) || 0,
+      }, auth);
+      setCombo(r.data);
+      setComboSaved(true);
+      setTimeout(() => setComboSaved(false), 2500);
+    } catch (e) {
+      alert('Failed: ' + (e.response?.data?.detail || e.message));
+    } finally { setComboBusy(false); }
+  };
+
+  if (!active) return <div className="p-10 text-center"><Loader2 className="mx-auto animate-spin text-emerald-500" /></div>;
+
+  const isAntiOnly = active.length === 1 && active[0] === 'anti-aging';
+  const isThree = active.length >= 3;
+
+  return (
+    <div className="space-y-5" data-testid="niche-mode-manager">
+      {/* ─── Niche Mode ─── */}
+      <div className="bg-white rounded-2xl ring-1 ring-stone-200 p-5 sm:p-6">
+        <div className="flex items-center gap-2 mb-3">
+          <ShieldCheck size={16} className="text-emerald-600" />
+          <h2 className="text-base font-black text-stone-900">Niche Mode</h2>
+        </div>
+        <p className="text-xs text-stone-500 mb-6">
+          Controls which niches the public storefront can see. In <b>Anti-Aging Only</b> mode ~8,000 third-party
+          skincare &amp; cosmetics products are hidden from the API entirely — dramatically speeding up mobile
+          load. Admin sees the full catalog either way.
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <button
+            onClick={() => save(['anti-aging'])}
+            disabled={busy || isAntiOnly}
+            className={`text-left p-4 rounded-2xl border-2 transition-all ${isAntiOnly ? 'border-emerald-600 bg-emerald-50 shadow-inner' : 'border-stone-200 hover:border-emerald-300 hover:bg-emerald-50/30'}`}
+            data-testid="niche-mode-anti-aging-only"
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-lg">🎯</span>
+              <span className="font-black text-stone-900 text-sm">Anti-Aging Only</span>
+              {isAntiOnly && <Check size={16} className="text-emerald-600 ml-auto" />}
+            </div>
+            <p className="text-xs text-stone-600 leading-relaxed">Show only Celesta Glow&apos;s own 6 flagship anti-aging SKUs. Fastest experience. Recommended for pure-play brand focus.</p>
+          </button>
+          <button
+            onClick={() => save(['anti-aging', 'skincare', 'cosmetics'])}
+            disabled={busy || isThree}
+            className={`text-left p-4 rounded-2xl border-2 transition-all ${isThree ? 'border-emerald-600 bg-emerald-50 shadow-inner' : 'border-stone-200 hover:border-emerald-300 hover:bg-emerald-50/30'}`}
+            data-testid="niche-mode-three-niche"
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-lg">🛍️</span>
+              <span className="font-black text-stone-900 text-sm">Three Niche</span>
+              {isThree && <Check size={16} className="text-emerald-600 ml-auto" />}
+            </div>
+            <p className="text-xs text-stone-600 leading-relaxed">Enable Anti-Aging + Skincare + Cosmetics. Full catalog (~8k products) visible on storefront.</p>
+          </button>
+        </div>
+
+        <p className="mt-4 text-[11px] text-stone-500">
+          Currently active: <b className="text-emerald-700">{active.join(', ')}</b>
+        </p>
+      </div>
+
+      {/* ─── Combo Bonus Config ─── */}
+      <div className="bg-white rounded-2xl ring-1 ring-stone-200 p-5 sm:p-6" data-testid="combo-bonus-manager">
+        <div className="flex items-center gap-2 mb-3">
+          <Sparkles size={16} className="text-fuchsia-600" />
+          <h2 className="text-base font-black text-stone-900">Combo Bonus Discount</h2>
+        </div>
+        <p className="text-xs text-stone-500 mb-5">
+          Auto-applied on the cart whenever the customer has <b>{combo?.min_items ?? 2}+ anti-aging products</b> and the subtotal
+          is at least <b>₹{combo?.min_subtotal ?? 500}</b>. No coupon code needed — pure "add another product, save more" magic.
+        </p>
+
+        {!combo ? (
+          <div className="p-6 text-center"><Loader2 className="mx-auto animate-spin text-fuchsia-500" /></div>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+              <label className="block">
+                <span className="text-xs font-bold text-stone-700 uppercase tracking-wide">Discount amount (₹)</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="5000"
+                  value={combo.amount}
+                  onChange={(e) => setCombo(prev => ({ ...prev, amount: e.target.value }))}
+                  className="mt-1.5 w-full px-3 py-2 text-sm rounded-lg border border-stone-200 focus:outline-none focus:ring-2 focus:ring-fuchsia-500/30"
+                  data-testid="combo-bonus-amount"
+                />
+                <p className="mt-1 text-[10px] text-stone-400">Currently: ₹{combo.amount} OFF</p>
+              </label>
+              <label className="block">
+                <span className="text-xs font-bold text-stone-700 uppercase tracking-wide">Min anti-aging items</span>
+                <input
+                  type="number"
+                  min="2"
+                  max="10"
+                  value={combo.min_items}
+                  onChange={(e) => setCombo(prev => ({ ...prev, min_items: e.target.value }))}
+                  className="mt-1.5 w-full px-3 py-2 text-sm rounded-lg border border-stone-200 focus:outline-none focus:ring-2 focus:ring-fuchsia-500/30"
+                  data-testid="combo-bonus-min-items"
+                />
+                <p className="mt-1 text-[10px] text-stone-400">Trigger threshold</p>
+              </label>
+              <label className="block">
+                <span className="text-xs font-bold text-stone-700 uppercase tracking-wide">Min subtotal (₹)</span>
+                <input
+                  type="number"
+                  min="0"
+                  value={combo.min_subtotal}
+                  onChange={(e) => setCombo(prev => ({ ...prev, min_subtotal: e.target.value }))}
+                  className="mt-1.5 w-full px-3 py-2 text-sm rounded-lg border border-stone-200 focus:outline-none focus:ring-2 focus:ring-fuchsia-500/30"
+                  data-testid="combo-bonus-min-subtotal"
+                />
+                <p className="mt-1 text-[10px] text-stone-400">Protects from tiny carts</p>
+              </label>
+            </div>
+
+            <button
+              onClick={saveCombo}
+              disabled={comboBusy}
+              className="inline-flex items-center gap-2 bg-fuchsia-600 hover:bg-fuchsia-700 text-white font-bold text-sm px-5 py-2.5 rounded-full disabled:opacity-50"
+              data-testid="combo-bonus-save"
+            >
+              {comboBusy ? <Loader2 size={14} className="animate-spin" /> : (comboSaved ? <Check size={14} /> : <Sparkles size={14} />)}
+              {comboSaved ? 'Saved!' : (comboBusy ? 'Saving…' : 'Save Combo Bonus')}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+

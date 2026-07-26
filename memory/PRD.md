@@ -4,7 +4,44 @@
 Clone the "Celesta Glow" website with pixel-perfect React frontend + FastAPI/MongoDB backend. Has grown into a full DTC skincare e-commerce platform.
 
 ## Current state (Feb 2026 preview)
-Feature-rich shop app with Master Brain auto-categorisation, multi-warehouse instant delivery, ₹100 OFF prepaid promo, 10-min flash offer timer, anti-aging niche perks, Meta Pixel + CAPI, MS Clarity analytics, admin CRUD across 20+ areas, referral engine, influencer reels.
+Pivot to **Anti-Aging Only** brand focus. Homepage, PDP, cart, checkout all wired to the brand's 6 flagship SKUs. Multi-warehouse instant delivery, ₹100 OFF prepaid promo, ₹99 combo bonus (admin-configurable), 10-min flash timer with a suppressed ₹50 checkout discount, Meta Pixel + CAPI, MS Clarity, admin CRUD across 20+ areas, referral engine, influencer reels, dermatologist test reports, before/after transformation strip.
+
+## Recently delivered (Feb 2026)
+- **Global Niche Toggle** — `POST /api/admin/niche-mode` + public `GET /api/niche-mode`. Default = `["anti-aging"]`. When active_niches != all 3, `/api/products` and `/api/niches` hide skincare/cosmetics from the public API entirely (~8,000 SKUs off the wire). Admin/employee token bypasses filter. Cache 30s + 60s SWR.
+- **NicheCardSwitcher hides itself** when only anti-aging is active (no more empty single-card row).
+- **Concern & Category routes removed** — `/concern/:slug` + `/category/:slug` redirect to `/shop`.
+- **DiscountPopup removed** — replaced by an inline ₹50 flash-timer discount message on the Checkout page.
+- **Before / After feature** — extended `BeforeAfterImage` schema to support `is_global` + single stitched `image` field (client's format). New `BeforeAfterCarousel.js` component with auto-swipe + fade + dots. Rendered on Homepage (globals only) and on every PDP (product + globals). Full admin CRUD via a new "Before / After" tab under `/admin/media-tools`. Seeded with 5 customer transformation images uploaded by the client.
+- **Cart Combo Bonus ₹99 OFF** — auto-applied when cart has ≥ 2 anti-aging products + subtotal ≥ ₹500. Admin-configurable via `GET|PUT /api/admin/combo-bonus`. Cart page shows a banner + nudge; total row shows dynamic amount.
+- **Checkout Flash ₹50 OFF** — auto-applied on `/cart/validate` when prepaid + timer running + subtotal > ₹1000. Inline banner + dashed "add ₹X more to unlock" nudge shown on the Checkout page.
+- **Admin Media Tools** now hosts 5 tabs: Test Reports, SEO Keywords, Global Broadcast, Before / After, Niche & Combo (niche toggle + combo bonus config).
+
+## Pending / backlog (P1)
+- Homepage niche banner refresh with new anti-aging-only artwork (user provided 5 B/A images for now; separate banner set is pending)
+- Homepage speed audit after niche filter (Cloudinary widths, LCP preload, preconnect)
+- IST fix for `today_blogs` / `today_views` counters in server.py
+- Domain verification meta tag for celestaglow.com in Meta Business
+- Aggregated Event Measurement priority setup in Meta
+
+## Pending (P2 — future)
+- Razorpay Payouts for automated referral withdrawal (blocked on user API key)
+- Multi-warehouse inventory separation
+- `server.py` modularisation (>3900 lines)
+
+## Environment
+- Preview: weather-preview-6.preview.emergentagent.com
+- Production: celestaglow.com (needs manual redeploy per feature batch)
+- Meta Pixel: 690863659974240
+
+## Key API endpoints (Feb-2026 additions)
+- `GET /api/niche-mode` — public read of active niches
+- `PUT /api/admin/niche-mode` — admin flip Anti-Aging Only ⇄ Three Niche
+- `GET /api/admin/combo-bonus` / `PUT /api/admin/combo-bonus` — admin combo discount config
+- `GET|POST|PUT|DELETE /api/admin/before-after` — B/A CRUD (supports global + product-scoped)
+- `GET /api/before-after?only_global=true` — homepage strip data
+- `GET /api/before-after/:product_slug` — PDP strip (product + globals)
+- `POST /api/cart/validate` now returns `combo_bonus_applied`, `checkout_bonus_applied`, `combo_bonus_amount`, `combo_bonus_message`
+
 
 ## Recently delivered (this session)
 - **COD anti-aging fix** — `/api/cart/validate` now returns `niche`, checkout enables COD everywhere for anti-aging carts

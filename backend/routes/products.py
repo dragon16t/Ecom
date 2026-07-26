@@ -31,6 +31,110 @@ async def _get_sale_cfg():
     _SALE_CACHE["ts"] = time.time()
     return doc
 
+
+# ---------------------------------------------------------------------------
+# Niche-mode config (Feb-2026 business pivot)
+# ---------------------------------------------------------------------------
+# Admin can toggle the site between "Anti-Aging Only" (public only sees the
+# 6 flagship anti-aging SKUs) and "Three Niche" (legacy: anti-aging + skincare
+# + cosmetics). Stored as `active_niches: [str]` under
+# `admin_settings.{type: 'niche_mode'}`. Public defaults to anti-aging only
+# so ~8,000 third-party skincare/cosmetics products stop hitting the wire.
+_NICHE_MODE_CACHE = {"cfg": None, "ts": 0}
+DEFAULT_ACTIVE_NICHES = ["anti-aging"]  # production default
+
+
+async def _get_active_niches() -> List[str]:
+    import time
+    if _NICHE_MODE_CACHE["cfg"] and time.time() - _NICHE_MODE_CACHE["ts"] < 30:
+        return list(_NICHE_MODE_CACHE["cfg"])
+    doc = await db.admin_settings.find_one({"type": "niche_mode"}, {"_id": 0}) or {}
+    niches = doc.get("active_niches")
+    if not niches or not isinstance(niches, list):
+        niches = list(DEFAULT_ACTIVE_NICHES)
+    _NICHE_MODE_CACHE["cfg"] = list(niches)
+    _NICHE_MODE_CACHE["ts"] = time.time()
+    return list(niches)
+
+
+def _invalidate_niche_cache():
+    _NICHE_MODE_CACHE["cfg"] = None
+    _NICHE_MODE_CACHE["ts"] = 0
+
+
+class NicheModePatch(BaseModel):
+    active_niches: List[str]
+
+
+@router.get("/niche-mode")
+async def public_get_niche_mode(response: Response):
+    """Public: return the currently active niches so the frontend can hide
+    the skincare/cosmetics niche cards + routes when the site is running in
+    Anti-Aging Only mode."""
+    response.headers["Cache-Control"] = "public, max-age=30, stale-while-revalidate=60"
+    return {"active_niches": await _get_active_niches()}
+
+
+@router.put("/admin/niche-mode")
+async def admin_set_niche_mode(payload: NicheModePatch, x_admin_token: str = Header(None, alias="X-Admin-Token")):
+    verify_auth(x_admin_token=x_admin_token)
+    allowed = {"anti-aging", "skincare", "cosmetics"}
+    active = [n for n in payload.active_niches if n in allowed]
+    if not active:
+        raise HTTPException(400, "At least one niche must be active")
+    await db.admin_settings.update_one(
+        {"type": "niche_mode"},
+        {"$set": {"type": "niche_mode", "active_niches": active,
+                  "updated_at": datetime.now(timezone.utc).isoformat()}},
+        upsert=True,
+    )
+    _invalidate_niche_cache()
+    return {"active_niches": active}
+
+
+# ---------------------------------------------------------------------------
+# Combo bonus config (Feb-2026)
+# ---------------------------------------------------------------------------
+# Admin sets the ₹X OFF combo bonus amount that auto-applies when the cart
+# holds ≥ N anti-aging products. Falls back to sensible defaults.
+
+class ComboBonusPatch(BaseModel):
+    amount: Optional[int] = None
+    min_items: Optional[int] = None
+    min_subtotal: Optional[int] = None
+
+
+@router.get("/admin/combo-bonus")
+async def admin_get_combo_bonus(x_admin_token: str = Header(None, alias="X-Admin-Token")):
+    verify_auth(x_admin_token=x_admin_token)
+    doc = await db.admin_settings.find_one({"type": "combo_bonus"}, {"_id": 0}) or {}
+    return {
+        "amount": int(doc.get("amount") or 99),
+        "min_items": int(doc.get("min_items") or 2),
+        "min_subtotal": int(doc.get("min_subtotal") or 500),
+    }
+
+
+@router.put("/admin/combo-bonus")
+async def admin_update_combo_bonus(
+    payload: ComboBonusPatch, x_admin_token: str = Header(None, alias="X-Admin-Token")
+):
+    verify_auth(x_admin_token=x_admin_token)
+    upd = {k: int(v) for k, v in payload.dict().items() if v is not None}
+    if not upd:
+        raise HTTPException(400, "Nothing to update")
+    if "amount" in upd and (upd["amount"] < 0 or upd["amount"] > 5000):
+        raise HTTPException(400, "amount must be between 0 and 5000")
+    upd["type"] = "combo_bonus"
+    upd["updated_at"] = datetime.now(timezone.utc).isoformat()
+    await db.admin_settings.update_one({"type": "combo_bonus"}, {"$set": upd}, upsert=True)
+    doc = await db.admin_settings.find_one({"type": "combo_bonus"}, {"_id": 0}) or {}
+    return {
+        "amount": int(doc.get("amount") or 99),
+        "min_items": int(doc.get("min_items") or 2),
+        "min_subtotal": int(doc.get("min_subtotal") or 500),
+    }
+
 def _apply_sale_one(p: dict, cfg: dict):
     """Mutate a product/combo dict in-place: add sale_active + discounted
     prepaid_price + discount_percent. Leaves mrp untouched (customers see MRP
@@ -296,6 +400,21 @@ async def get_all_products(
         ]
     if niche:
         query["niche"] = niche
+    else:
+        # Global "Anti-Aging Only" mode (Feb-2026): when admin has narrowed
+        # active_niches, hide products from disabled niches on the public
+        # catalog entirely. Admin/employee token bypasses this filter so the
+        # admin panel still sees the full catalog.
+        is_admin_or_emp = False
+        try:
+            verify_auth(x_admin_token=x_admin_token, x_employee_token=x_employee_token, permission="products")
+            is_admin_or_emp = True
+        except HTTPException:
+            is_admin_or_emp = False
+        if not is_admin_or_emp:
+            active_niches = await _get_active_niches()
+            if active_niches and len(active_niches) < 3:
+                query["niche"] = {"$in": active_niches}
     if category:
         # Match the parent category OR a child subcategory with this slug.
         # This lets the Cosmetics hub fetch counts via ?category=foundation
@@ -1517,6 +1636,49 @@ async def validate_cart(data: CartValidateRequest):
         prepaid_bonus_applied = PREPAID_BONUS_AMOUNT
         final_total = max(0, final_total - PREPAID_BONUS_AMOUNT)
 
+    # ---- Checkout Flash Bonus ₹50 OFF ----
+    # Auto-applied on the checkout page (server-authoritative) when ALL of:
+    #   • Flash offer timer still running (promo_active=True)
+    #   • Payment method = prepaid
+    #   • Pre-shipping subtotal > ₹1000
+    # Replaces the discarded discount popup — a suppressed cart-side promotion.
+    CHECKOUT_BONUS_AMOUNT = 50
+    CHECKOUT_BONUS_MIN_SUBTOTAL = 1000
+    checkout_bonus_applied = 0
+    checkout_bonus_eligible = (
+        data.promo_active
+        and data.payment_method == "prepaid"
+        and subtotal > CHECKOUT_BONUS_MIN_SUBTOTAL
+    )
+    if checkout_bonus_eligible and final_total > CHECKOUT_BONUS_AMOUNT:
+        checkout_bonus_applied = CHECKOUT_BONUS_AMOUNT
+        final_total = max(0, final_total - CHECKOUT_BONUS_AMOUNT)
+
+    # ---- Cart Combo Bonus (admin-configurable, default ₹99) OFF ----
+    # When the cart contains ≥ 2 distinct anti-aging products, we treat it as a
+    # "customer-built combo" and knock the admin-set amount off automatically.
+    # Not stackable with combo line items — if any explicit combo is already in
+    # the cart, we skip this so we don't double-discount.
+    combo_bonus_cfg = await db.admin_settings.find_one({"type": "combo_bonus"}, {"_id": 0}) or {}
+    COMBO_BONUS_AMOUNT = int(combo_bonus_cfg.get("amount") or 99)
+    COMBO_BONUS_MIN_ITEMS = int(combo_bonus_cfg.get("min_items") or 2)
+    COMBO_BONUS_MIN_SUBTOTAL = int(combo_bonus_cfg.get("min_subtotal") or 500)
+    combo_bonus_applied = 0
+    combo_bonus_eligible = False
+    combo_bonus_message = None
+    product_lines_only = [it for it in validated_items if it.get("type") == "product"]
+    has_explicit_combo = any(it.get("type") == "combo" for it in validated_items)
+    if not has_explicit_combo and len(product_lines_only) >= COMBO_BONUS_MIN_ITEMS:
+        # All product lines must be anti-aging for the combo bonus to trigger
+        aa_niches = {"anti-aging"}
+        item_niches = {str((it.get("niche") or "")).lower() for it in product_lines_only}
+        if item_niches and item_niches.issubset(aa_niches):
+            combo_bonus_eligible = True
+            if final_total > COMBO_BONUS_AMOUNT and subtotal >= COMBO_BONUS_MIN_SUBTOTAL:
+                combo_bonus_applied = COMBO_BONUS_AMOUNT
+                final_total = max(0, final_total - COMBO_BONUS_AMOUNT)
+                combo_bonus_message = f"Combo bonus ₹{COMBO_BONUS_AMOUNT} OFF applied — {len(product_lines_only)} anti-aging products"
+
     return {
         "items": validated_items,
         "mrp_total": int(round(mrp_total)),
@@ -1547,8 +1709,16 @@ async def validate_cart(data: CartValidateRequest):
         "prepaid_bonus_amount": PREPAID_BONUS_AMOUNT,
         "prepaid_bonus_min_subtotal": PREPAID_BONUS_MIN_SUBTOTAL,
         "prepaid_bonus_eligible": subtotal >= PREPAID_BONUS_MIN_SUBTOTAL,
+        "checkout_bonus_applied": checkout_bonus_applied,
+        "checkout_bonus_amount": CHECKOUT_BONUS_AMOUNT,
+        "checkout_bonus_min_subtotal": CHECKOUT_BONUS_MIN_SUBTOTAL,
+        "checkout_bonus_eligible": bool(checkout_bonus_eligible),
+        "combo_bonus_applied": combo_bonus_applied,
+        "combo_bonus_amount": COMBO_BONUS_AMOUNT,
+        "combo_bonus_eligible": bool(combo_bonus_eligible),
+        "combo_bonus_message": combo_bonus_message,
         "total": int(round(final_total)),
-        "savings": int(round(total_savings + prepaid_bonus_applied)),
+        "savings": int(round(total_savings + prepaid_bonus_applied + checkout_bonus_applied + combo_bonus_applied)),
         "item_count": total_items,
         "prepaid_savings_hint": int(round(cod_premium)),
         "stock_warnings": stock_warnings,
@@ -1675,25 +1845,48 @@ async def add_retention_note(
 # ==================== BEFORE/AFTER IMAGE MANAGEMENT ====================
 
 class BeforeAfterImage(BaseModel):
-    product_slug: str
+    # Legacy fields — product_slug optional so admin can upload GLOBAL homepage
+    # before/after images that aren't tied to a specific SKU.
+    product_slug: Optional[str] = None
     customer_name: str = ""
-    before_image: str
-    after_image: str
+    before_image: str = ""      # legacy: separate before URL
+    after_image: str = ""       # legacy: separate after URL
+    image: str = ""             # NEW: single stitched B/A image (user's format)
     duration: str = ""
     description: str = ""
+    is_global: bool = False     # NEW: True = show on homepage carousel
+    sort_order: int = 0
 
 
 @router.get("/admin/before-after")
 async def get_before_after(x_admin_token: str = Header(None, alias="X-Admin-Token")):
     verify_auth(x_admin_token=x_admin_token)
-    images = await db.before_after_images.find({}, {"_id": 0}).to_list(100)
+    images = await db.before_after_images.find({}, {"_id": 0}).sort("sort_order", 1).to_list(200)
+    return images
+
+
+@router.get("/before-after")
+async def get_public_before_after(response: Response, product_slug: Optional[str] = None, only_global: bool = False):
+    """Public: Get before/after images. If product_slug provided, returns
+    images for that product PLUS globals. If only_global=true, only globals.
+    Otherwise returns everything (used by the homepage strip)."""
+    query: Dict[str, Any] = {}
+    if only_global:
+        query["is_global"] = True
+    elif product_slug:
+        query["$or"] = [{"product_slug": product_slug}, {"is_global": True}]
+    response.headers["Cache-Control"] = "public, max-age=60, stale-while-revalidate=120"
+    images = await db.before_after_images.find(query, {"_id": 0}).sort("sort_order", 1).to_list(200)
     return images
 
 
 @router.get("/before-after/{product_slug}")
-async def get_product_before_after(product_slug: str):
-    """Public: Get before/after images for a product"""
-    images = await db.before_after_images.find({"product_slug": product_slug}, {"_id": 0}).to_list(20)
+async def get_product_before_after(product_slug: str, response: Response):
+    """Public: Get before/after images for a product (includes globals)."""
+    response.headers["Cache-Control"] = "public, max-age=60, stale-while-revalidate=120"
+    images = await db.before_after_images.find(
+        {"$or": [{"product_slug": product_slug}, {"is_global": True}]}, {"_id": 0}
+    ).sort("sort_order", 1).to_list(50)
     return images
 
 
@@ -1701,10 +1894,37 @@ async def get_product_before_after(product_slug: str):
 async def add_before_after(data: BeforeAfterImage, x_admin_token: str = Header(None, alias="X-Admin-Token")):
     verify_auth(x_admin_token=x_admin_token)
     doc = data.dict()
+    # Validate that we have at least one usable image URL.
+    if not (doc.get("image") or doc.get("before_image") or doc.get("after_image")):
+        raise HTTPException(400, "Provide 'image' (single stitched B/A) or before_image + after_image")
     doc["created_at"] = datetime.now(timezone.utc).isoformat()
     doc["ba_id"] = f"ba_{secrets.token_hex(4)}"
     await db.before_after_images.insert_one(doc)
     return {"success": True, "ba_id": doc["ba_id"]}
+
+
+class BeforeAfterUpdate(BaseModel):
+    customer_name: Optional[str] = None
+    before_image: Optional[str] = None
+    after_image: Optional[str] = None
+    image: Optional[str] = None
+    duration: Optional[str] = None
+    description: Optional[str] = None
+    is_global: Optional[bool] = None
+    sort_order: Optional[int] = None
+    product_slug: Optional[str] = None
+
+
+@router.put("/admin/before-after/{ba_id}")
+async def update_before_after(ba_id: str, data: BeforeAfterUpdate, x_admin_token: str = Header(None, alias="X-Admin-Token")):
+    verify_auth(x_admin_token=x_admin_token)
+    patch = {k: v for k, v in data.dict().items() if v is not None}
+    if not patch:
+        return {"success": True}
+    r = await db.before_after_images.update_one({"ba_id": ba_id}, {"$set": patch})
+    if r.matched_count == 0:
+        raise HTTPException(404, "Not found")
+    return {"success": True}
 
 
 @router.delete("/admin/before-after/{ba_id}")
