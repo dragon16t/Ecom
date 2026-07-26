@@ -12,13 +12,23 @@ import React, { useEffect, useState } from 'react';
  * so it's hashed + edge-cached by the build). 1080×1920, 136 KB.
  */
 const SESSION_KEY = 'cg_splash_seen_v4';
-const IMG_SRC = process.env.PUBLIC_URL ? `${process.env.PUBLIC_URL}/splash-celesta-glow.png` : '/splash-celesta-glow.png';
+const DEFAULT_IMG = process.env.PUBLIC_URL ? `${process.env.PUBLIC_URL}/splash-celesta-glow.png` : '/splash-celesta-glow.png';
 
 export default function SplashScreen({ onDone }) {
+  const [imgSrc, setImgSrc] = useState(DEFAULT_IMG);
   const [visible, setVisible] = useState(() => {
     try { return !sessionStorage.getItem(SESSION_KEY); } catch (_) { return true; }
   });
   const [fadingOut, setFadingOut] = useState(false);
+
+  // Fetch admin-set splash image (falls back silently to bundled PNG)
+  useEffect(() => {
+    if (!visible) return;
+    fetch(`${process.env.REACT_APP_BACKEND_URL}/api/site-settings`)
+      .then(r => r.json())
+      .then(s => { if (s?.splash_image) setImgSrc(s.splash_image); })
+      .catch(() => {});
+  }, [visible]);
 
   const finish = React.useCallback(() => {
     if (!visible || fadingOut) return;
@@ -87,7 +97,8 @@ export default function SplashScreen({ onDone }) {
       }}
     >
       <img
-        src={IMG_SRC}
+        src={imgSrc}
+        onError={(e) => { if (e.currentTarget.src !== DEFAULT_IMG) e.currentTarget.src = DEFAULT_IMG; }}
         alt="Celesta Glow — The Most Trusted Skincare Ecommerce App of Kerala. Glow With Confidence."
         // Crisp on every density; never bigger than viewport, never smaller than 320 px wide.
         style={{

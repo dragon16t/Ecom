@@ -259,7 +259,7 @@ function AdminDashboard() {
             <Percent size={20} /> Offers, COD &amp; Sale
           </Link>
           <Link to="/admin/media-tools" className="flex items-center gap-3 px-4 py-3 text-purple-600 hover:bg-purple-50 rounded-xl" data-testid="nav-media-tools">
-            <Shield size={20} /> Alt-Text &amp; SEO Keywords
+            <Shield size={20} /> Media, SEO &amp; Splash
           </Link>
           <Link to="/admin/reels" className="flex items-center gap-3 px-4 py-3 text-rose-600 hover:bg-rose-50 rounded-xl" data-testid="nav-reels">
             <Sparkles size={20} /> Influencer Reels

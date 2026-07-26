@@ -1873,6 +1873,7 @@ async def validate_cart(data: CartValidateRequest):
 # ==================== ADMIN SITE SETTINGS ====================
 
 class SiteSettingsUpdate(BaseModel):
+    splash_image: Optional[str] = None
     hero_banner_image: Optional[str] = None
     hero_title: Optional[str] = None
     hero_subtitle: Optional[str] = None

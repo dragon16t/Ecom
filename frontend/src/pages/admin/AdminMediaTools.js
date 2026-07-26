@@ -4,7 +4,7 @@ import axios from 'axios';
 import {
   ChevronLeft, Loader2, Check, Upload, X, Search, Tag as TagIcon,
   ShieldCheck, Sparkles, Image as ImageIcon, Users as UsersIcon, Trash2,
-  Layout as LayoutIcon, Plus,
+  Layout as LayoutIcon, Plus, Smartphone,
 } from 'lucide-react';
 import { useAdminAuth } from '../../utils/adminAuth';
 
@@ -81,8 +81,8 @@ export default function AdminMediaTools() {
             <ChevronLeft size={18} />
           </Link>
           <div>
-            <h1 className="text-lg sm:text-xl font-black text-stone-900">Media &amp; SEO Tools</h1>
-            <p className="text-xs text-stone-500">Test reports · Alt text · Keyword injector</p>
+            <h1 className="text-lg sm:text-xl font-black text-stone-900">Media, SEO &amp; Branding</h1>
+            <p className="text-xs text-stone-500">Certificates · Before/After · Top Banner · Splash · Niche &amp; Combo</p>
           </div>
         </div>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 flex gap-1">
@@ -98,6 +98,9 @@ export default function AdminMediaTools() {
           <TabButton active={tab === 'top-banner'} onClick={() => setTab('top-banner')} testId="tab-top-banner">
             <LayoutIcon size={14} /> Top Banner
           </TabButton>
+          <TabButton active={tab === 'splash'} onClick={() => setTab('splash')} testId="tab-splash">
+            <Smartphone size={14} /> Splash Screen
+          </TabButton>
           <TabButton active={tab === 'before-after'} onClick={() => setTab('before-after')} testId="tab-before-after">
             <UsersIcon size={14} /> Before / After
           </TabButton>
@@ -108,8 +111,8 @@ export default function AdminMediaTools() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 grid grid-cols-1 lg:grid-cols-12 gap-5">
-        {/* Left: product list — hidden on before-after + niche-mode tabs (full-width editor) */}
-        {tab !== 'before-after' && tab !== 'niche-mode' && (
+        {/* Left: product list — hidden on top-banner + splash + before-after + niche-mode tabs */}
+        {tab !== 'top-banner' && tab !== 'splash' && tab !== 'before-after' && tab !== 'niche-mode' && (
         <div className="lg:col-span-4 bg-white rounded-2xl ring-1 ring-stone-200 overflow-hidden">
           <div className="p-3 border-b border-stone-100">
             <div className="relative">
@@ -157,12 +160,15 @@ export default function AdminMediaTools() {
         )}
 
         {/* Right: editor pane */}
-        <div className={tab === 'top-banner' || tab === 'before-after' || tab === 'niche-mode' ? 'lg:col-span-12' : 'lg:col-span-8'}>
+        <div className={tab === 'top-banner' || tab === 'splash' || tab === 'before-after' || tab === 'niche-mode' ? 'lg:col-span-12' : 'lg:col-span-8'}>
           {tab === 'broadcast' && (
             <GlobalKeywordBroadcast auth={auth} />
           )}
           {tab === 'top-banner' && (
             <TopBannerManager auth={auth} />
+          )}
+          {tab === 'splash' && (
+            <SplashScreenManager auth={auth} />
           )}
           {tab === 'before-after' && (
             <BeforeAfterManager auth={auth} products={products} />
@@ -170,16 +176,16 @@ export default function AdminMediaTools() {
           {tab === 'niche-mode' && (
             <NicheModeManager auth={auth} />
           )}
-          {tab !== 'broadcast' && tab !== 'top-banner' && tab !== 'before-after' && tab !== 'niche-mode' && !selected && tab === 'reports' && (
+          {tab !== 'broadcast' && tab !== 'top-banner' && tab !== 'splash' && tab !== 'before-after' && tab !== 'niche-mode' && !selected && tab === 'reports' && (
             <ExistingCertificatesGrid auth={auth} onPick={(slug) => setSelectedSlug(slug)} />
           )}
-          {tab !== 'broadcast' && tab !== 'top-banner' && tab !== 'before-after' && tab !== 'niche-mode' && !selected && tab !== 'reports' && (
+          {tab !== 'broadcast' && tab !== 'top-banner' && tab !== 'splash' && tab !== 'before-after' && tab !== 'niche-mode' && !selected && tab !== 'reports' && (
             <div className="bg-white rounded-2xl ring-1 ring-stone-200 p-10 text-center">
               <ImageIcon size={28} className="mx-auto text-stone-300 mb-3" />
               <p className="text-sm text-stone-500">Select a product on the left to edit its {tab === 'reports' ? 'certificate / lab report' : 'SEO metadata'}.</p>
             </div>
           )}
-          {tab !== 'broadcast' && tab !== 'top-banner' && tab !== 'before-after' && tab !== 'niche-mode' && selected && tab === 'reports' && (
+          {tab !== 'broadcast' && tab !== 'top-banner' && tab !== 'splash' && tab !== 'before-after' && tab !== 'niche-mode' && selected && tab === 'reports' && (
             <>
               <TestReportEditor product={selected} onSave={saveProduct} auth={auth} />
               <div className="mt-5">
@@ -187,7 +193,7 @@ export default function AdminMediaTools() {
               </div>
             </>
           )}
-          {tab !== 'broadcast' && tab !== 'top-banner' && tab !== 'before-after' && tab !== 'niche-mode' && selected && tab === 'seo' && (
+          {tab !== 'broadcast' && tab !== 'top-banner' && tab !== 'splash' && tab !== 'before-after' && tab !== 'niche-mode' && selected && tab === 'seo' && (
             <SeoEditor product={selected} onSave={saveProduct} />
           )}
         </div>
@@ -794,6 +800,125 @@ function BeforeAfterManager({ auth, products }) {
     </div>
   );
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Tab G — Splash Screen Manager (upload the loading screen image)
+// ─────────────────────────────────────────────────────────────────────────
+
+function SplashScreenManager({ auth }) {
+  const [image, setImage] = useState('');
+  const [initialLoaded, setInitialLoaded] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    axios.get(`${API}/api/site-settings`).then(r => {
+      setImage(r.data?.splash_image || '');
+      setInitialLoaded(true);
+    }).catch(() => setInitialLoaded(true));
+  }, []);
+
+  const upload = async (file) => {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('folder', 'splash');
+      const r = await axios.post(`${API}/api/admin/upload-image`, fd, auth);
+      setImage(r.data.url || r.data.secure_url || '');
+    } catch (e) {
+      alert('Upload failed: ' + (e.response?.data?.detail || e.message));
+    } finally { setUploading(false); }
+  };
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      await axios.put(`${API}/api/admin/site-settings`, { splash_image: image || '' }, auth);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (e) {
+      alert('Save failed: ' + (e.response?.data?.detail || e.message));
+    } finally { setBusy(false); }
+  };
+
+  if (!initialLoaded) return <div className="p-10 text-center"><Loader2 className="mx-auto animate-spin text-emerald-500" /></div>;
+
+  return (
+    <div className="bg-white rounded-2xl ring-1 ring-stone-200 p-5 sm:p-6" data-testid="splash-screen-manager">
+      <div className="flex items-center gap-2 mb-3">
+        <Smartphone size={16} className="text-emerald-600" />
+        <h2 className="text-base font-black text-stone-900">Splash Screen Image</h2>
+      </div>
+      <p className="text-xs text-stone-500 mb-5">
+        The full-screen image every visitor sees on their <b>first page load</b> of a browser session.
+        Portrait 1080×1920 works best. Leave empty to use the bundled Celesta Glow default.
+      </p>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
+        <label className="block">
+          <span className="text-xs font-bold text-stone-700 uppercase tracking-wide">Upload image</span>
+          <div className="mt-1.5 flex flex-col items-center justify-center gap-1 py-4 px-4 border-2 border-dashed border-stone-300 rounded-xl cursor-pointer hover:border-emerald-500 hover:bg-emerald-50/30 transition-colors min-h-[180px]">
+            {uploading ? (
+              <>
+                <Loader2 size={16} className="animate-spin text-emerald-600" />
+                <span className="text-xs">Uploading…</span>
+              </>
+            ) : image ? (
+              <img src={image} alt="Current splash" className="max-h-40 object-contain" />
+            ) : (
+              <>
+                <Upload size={16} />
+                <span className="text-xs">Choose splash image</span>
+              </>
+            )}
+            <input type="file" accept="image/*" onChange={(e) => upload(e.target.files?.[0])} className="hidden" data-testid="splash-upload-input" />
+          </div>
+          {image && (
+            <button
+              onClick={() => setImage('')}
+              className="mt-1 text-[10px] text-red-600 flex items-center gap-1 hover:underline"
+              data-testid="splash-clear"
+            >
+              <X size={10} /> Remove (reverts to default)
+            </button>
+          )}
+        </label>
+
+        {/* Live phone-frame preview */}
+        <div>
+          <span className="text-xs font-bold text-stone-700 uppercase tracking-wide">Live preview</span>
+          <div className="mt-1.5 mx-auto max-w-[220px] aspect-[9/19] rounded-[28px] ring-8 ring-stone-900/90 bg-white shadow-2xl overflow-hidden flex items-center justify-center relative" data-testid="splash-preview-frame">
+            <img
+              src={image || (process.env.PUBLIC_URL ? `${process.env.PUBLIC_URL}/splash-celesta-glow.png` : '/splash-celesta-glow.png')}
+              alt="Splash preview"
+              className="w-full h-full object-contain"
+            />
+            <div className="absolute top-1 left-1/2 -translate-x-1/2 w-12 h-1 bg-stone-900 rounded-full" />
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-6 flex items-center gap-3">
+        <button
+          onClick={save}
+          disabled={busy || uploading}
+          className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm px-5 py-2.5 rounded-full disabled:opacity-50"
+          data-testid="splash-save"
+        >
+          {busy ? <Loader2 size={14} className="animate-spin" /> : (saved ? <Check size={14} /> : <Smartphone size={14} />)}
+          {saved ? 'Saved!' : (busy ? 'Saving…' : 'Save Splash Screen')}
+        </button>
+        <p className="text-[11px] text-stone-500">
+          Changes appear on the next fresh browser session (clears session cache).
+        </p>
+      </div>
+    </div>
+  );
+}
+
 
 // ─────────────────────────────────────────────────────────────────────────
 // Existing Certificates grid — shows all products already carrying a lab
