@@ -315,6 +315,18 @@ function OrderSuccessPage() {
                 <span className="text-gray-900 font-medium">{order.combo_id}</span>
               </div>
             )}
+            {order.free_gift && (
+              <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2" data-testid="order-free-gift">
+                {order.free_gift.image && (
+                  <img src={order.free_gift.image} alt={order.free_gift.name} className="w-10 h-10 rounded-lg object-cover ring-1 ring-emerald-200 bg-white" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] font-black tracking-[0.2em] text-emerald-700 uppercase">🎁 Included FREE</p>
+                  <p className="text-sm font-black text-stone-900 leading-tight truncate">{order.free_gift.name}</p>
+                </div>
+                <span className="text-xs font-black text-emerald-700 bg-emerald-100 px-2 py-1 rounded-full">FREE</span>
+              </div>
+            )}
           </div>
         ) : order.combo_id ? (
           <div className="mb-3 border-b border-gray-100 pb-3 flex justify-between text-sm">

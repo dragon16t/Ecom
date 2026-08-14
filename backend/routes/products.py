@@ -1445,6 +1445,7 @@ class CartValidateRequest(BaseModel):
     # bonus are ALL stripped so the user sees the "regular" price. Server never
     # trusts this blindly for money — it's just a signal from the client.
     promo_active: bool = True
+    session_id: Optional[str] = None  # stable per session — seeds the free-gift picker
 
 
 @router.post("/cart/validate")
@@ -1761,23 +1762,51 @@ async def validate_cart(data: CartValidateRequest):
         prepaid_bonus_applied = PREPAID_BONUS_AMOUNT
         final_total = max(0, final_total - PREPAID_BONUS_AMOUNT)
 
-    # ---- Checkout Flash Bonus ₹50 OFF ----
-    # Auto-applied on the checkout page (server-authoritative) when ALL of:
-    #   • Flash offer timer still running (promo_active=True)
-    #   • Payment method = prepaid
-    #   • Pre-shipping subtotal > ₹1000
-    # Replaces the discarded discount popup — a suppressed cart-side promotion.
-    CHECKOUT_BONUS_AMOUNT = 50
+    # ---- Checkout Free Gift (replaces the ₹50 flash bonus, Feb-2026) ----
+    # When prepaid + subtotal above threshold, we lock in a RANDOM free product
+    # from a whitelist. The actual pick is deterministic per session (so the
+    # same cart shows the same gift, no flicker) but different sessions get
+    # different gifts — that's the "surprise" the marketing team wants.
+    checkout_bonus_applied = 0            # kept for backwards compat in old clients
+    CHECKOUT_BONUS_AMOUNT = 0
     CHECKOUT_BONUS_MIN_SUBTOTAL = 1000
-    checkout_bonus_applied = 0
+    free_gift = None
+    free_gift_pool = ["sunscreen", "under-eye-cream", "cleanser"]
+    # Allow admin override via admin_settings
+    fg_cfg = await db.admin_settings.find_one({"type": "free_gift"}, {"_id": 0}) or {}
+    if isinstance(fg_cfg.get("pool"), list) and fg_cfg["pool"]:
+        free_gift_pool = [str(s).strip() for s in fg_cfg["pool"] if s]
+    fg_min_subtotal = int(fg_cfg.get("min_subtotal") or CHECKOUT_BONUS_MIN_SUBTOTAL)
     checkout_bonus_eligible = (
         data.promo_active
         and data.payment_method == "prepaid"
-        and subtotal > CHECKOUT_BONUS_MIN_SUBTOTAL
+        and subtotal > fg_min_subtotal
     )
-    if checkout_bonus_eligible and final_total > CHECKOUT_BONUS_AMOUNT:
-        checkout_bonus_applied = CHECKOUT_BONUS_AMOUNT
-        final_total = max(0, final_total - CHECKOUT_BONUS_AMOUNT)
+    if checkout_bonus_eligible and free_gift_pool:
+        import hashlib
+        # Deterministic seed = session_id (if provided) OR the sorted set of
+        # slugs+quantities. This locks the gift for the session so the user
+        # sees the same one on cart, checkout and order pages.
+        seed_src = (data.session_id or "") + "|" + "|".join(
+            f"{(getattr(it, 'product_slug', None) or getattr(it, 'combo_id', None))}:{getattr(it, 'quantity', 0)}"
+            for it in (data.items or [])
+        )
+        idx = int(hashlib.md5(seed_src.encode("utf-8")).hexdigest(), 16) % len(free_gift_pool)
+        gift_slug = free_gift_pool[idx]
+        gp = await db.products.find_one(
+            {"slug": gift_slug},
+            {"_id": 0, "slug": 1, "name": 1, "short_name": 1, "image": 1,
+             "mrp": 1, "prepaid_price": 1, "images": 1, "size": 1},
+        )
+        if gp:
+            free_gift = {
+                "slug": gp.get("slug"),
+                "name": gp.get("short_name") or gp.get("name"),
+                "full_name": gp.get("name"),
+                "image": gp.get("image") or ((gp.get("images") or [None])[0]),
+                "mrp": gp.get("mrp") or gp.get("prepaid_price") or 0,
+                "size": gp.get("size") or "",
+            }
 
     # ---- Cart Combo Bonus (admin-configurable, tiered) OFF ----
     # Defaults: 2 anti-aging items = ₹99, 3 = ₹150, 4+ = ₹200. Fully
@@ -1855,6 +1884,10 @@ async def validate_cart(data: CartValidateRequest):
         "checkout_bonus_amount": CHECKOUT_BONUS_AMOUNT,
         "checkout_bonus_min_subtotal": CHECKOUT_BONUS_MIN_SUBTOTAL,
         "checkout_bonus_eligible": bool(checkout_bonus_eligible),
+        "free_gift": free_gift,
+        "free_gift_eligible": bool(checkout_bonus_eligible),
+        "free_gift_pool": free_gift_pool,
+        "free_gift_min_subtotal": fg_min_subtotal,
         "combo_bonus_applied": combo_bonus_applied,
         "combo_bonus_tiers": combo_tiers,
         "combo_bonus_next_tier": combo_bonus_next_tier,

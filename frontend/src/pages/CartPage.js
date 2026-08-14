@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
-import { ShoppingCart, Trash2, Minus, Plus, ChevronRight, Shield, Truck, Tag, ArrowLeft, Sparkles, Zap, Award, Check, Clock, Star, Lock, Package, BadgeCheck } from 'lucide-react';
+import { ShoppingCart, Trash2, Minus, Plus, ChevronRight, Shield, Truck, Tag, ArrowLeft, Sparkles, Zap, Award, Check, Clock, Star, Lock, Package, BadgeCheck, Gift } from 'lucide-react';
 import { getCart, saveCart } from './Homepage';
 import { useTracking } from '../providers/TrackingProvider';
 import ReviewsCarousel from '../components/ReviewsCarousel';
@@ -74,7 +74,7 @@ function CartPage() {
     const couponCodeToUse = couponOverride !== undefined ? couponOverride : (appliedCouponRef.current?.code || null);
     const giftCardToUse = giftCardOverride !== undefined ? giftCardOverride : (appliedGiftCardRef.current?.code || null);
     try {
-      const res = await axios.post(`${API}/api/cart/validate`, { items: cart.items, coupon_code: couponCodeToUse, gift_card_code: giftCardToUse, payment_method: 'prepaid' });
+      const res = await axios.post(`${API}/api/cart/validate`, { items: cart.items, coupon_code: couponCodeToUse, gift_card_code: giftCardToUse, payment_method: 'prepaid', session_id: (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('sessionId')) || null });
       setCartData(res.data);
       // PERF: persist the validated summary so the next mount (navigate away
       // and back, or refresh) paints in one frame instead of waiting on the
@@ -439,6 +439,35 @@ function CartPage() {
                   </div>
                   <button onClick={() => { const c = getCart(); c.items = [{ combo_id: kit.combo_id, quantity: 1 }]; saveCart(c); validateCart(); }}
                     className="bg-gradient-to-r from-amber-500 to-orange-500 text-white px-4 py-2 rounded-xl font-bold text-xs shadow-sm">Switch to Kit</button>
+                </div>
+              </div>
+            )}
+
+            {/* Free Gift teaser — server has already picked the actual product
+                based on session_id. We reveal the name + image here so shoppers
+                see exactly what they're getting for free (prepaid only). */}
+            {cartData.free_gift && (
+              <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border border-emerald-200 rounded-2xl p-4 flex items-center gap-3" data-testid="cart-free-gift-banner">
+                {cartData.free_gift.image && (
+                  <img src={cartData.free_gift.image} alt={cartData.free_gift.name} className="w-14 h-14 rounded-xl object-cover ring-1 ring-emerald-200 bg-white shrink-0" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] font-black tracking-[0.22em] text-emerald-700 uppercase mb-0.5">🎁 Free with your order</p>
+                  <p className="text-sm font-black text-stone-900 leading-tight truncate">{cartData.free_gift.name}</p>
+                  <p className="text-[11px] text-emerald-800 leading-snug">
+                    Worth <b>₹{cartData.free_gift.mrp}</b> — free when paid prepaid at checkout
+                  </p>
+                </div>
+              </div>
+            )}
+            {!cartData.free_gift && (cartData.subtotal || 0) > 800 && (cartData.subtotal || 0) <= (cartData.free_gift_min_subtotal || 1000) && (
+              <div className="bg-white border border-dashed border-emerald-300 rounded-2xl p-4 flex items-center gap-3" data-testid="cart-free-gift-nudge">
+                <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                  <Gift size={18} strokeWidth={2.5} />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-black text-emerald-900">Add ₹{Math.max(1, (cartData.free_gift_min_subtotal || 1000) + 1 - (cartData.subtotal || 0))} more</p>
+                  <p className="text-[11px] text-emerald-700 mt-0.5">and pay prepaid to unlock a <b>surprise free product</b> at checkout.</p>
                 </div>
               </div>
             )}

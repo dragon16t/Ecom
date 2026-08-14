@@ -6,6 +6,7 @@ import { getCart, saveCart, addToCart } from './Homepage';
 import { useTracking } from '../providers/TrackingProvider';
 import CheckoutMap from '../components/CheckoutMap';
 import CheckoutSurpriseModal from '../components/CheckoutSurpriseModal';
+import { getSessionId } from '../utils/userTracking';
 
 const STORED_LOCATION_KEY = 'cg_delivery_location';
 
@@ -229,7 +230,7 @@ function CheckoutPage() {
     if (!cartData) {
       const cart = getCart();
       if (!cart.items.length) { navigate('/cart'); return; }
-      axios.post(`${API}/api/cart/validate`, { items: cart.items, payment_method: paymentMethod, coupon_code: coupon?.code, gift_card_code: giftCard?.code || null, prepaid_bonus: prepaidBonus, promo_active: promoActive })
+      axios.post(`${API}/api/cart/validate`, { items: cart.items, payment_method: paymentMethod, coupon_code: coupon?.code, gift_card_code: giftCard?.code || null, prepaid_bonus: prepaidBonus, promo_active: promoActive, session_id: getSessionId() })
         .then(res => setCartData(res.data)).catch(() => navigate('/cart'));
     }
   }, []);
@@ -266,7 +267,7 @@ function CheckoutPage() {
     const cart = getCart();
     if (!cart.items.length) return;
     const t = setTimeout(() => {
-      axios.post(`${API}/api/cart/validate`, { items: cart.items, payment_method: paymentMethod, coupon_code: coupon?.code, gift_card_code: giftCard?.code || null, prepaid_bonus: prepaidBonus, promo_active: promoActive })
+      axios.post(`${API}/api/cart/validate`, { items: cart.items, payment_method: paymentMethod, coupon_code: coupon?.code, gift_card_code: giftCard?.code || null, prepaid_bonus: prepaidBonus, promo_active: promoActive, session_id: getSessionId() })
         .then(res => setCartData(res.data)).catch(() => {});
     }, 250);
     return () => clearTimeout(t);
@@ -327,6 +328,8 @@ function CheckoutPage() {
       prepaid_bonus: prepaidBonus,
       // Flash offer window still open when the user hit Place Order
       promo_active: promoActive,
+      // Session id (feeds the deterministic free-gift picker)
+      session_id: getSessionId(),
       // Meta CAPI plumbing — cookies + UA. Server dedups the browser Pixel
       // Purchase event with the server-side one by event_id = order_id.
       fbp: getCookie('_fbp') || null,
@@ -437,16 +440,16 @@ function CheckoutPage() {
         </div>
       </div>
 
-      {/* Surprise reveal — one-shot per checkout session. Only fires when the
-          customer is eligible for the extra ₹50 (prepaid + subtotal > threshold
-          + flash timer running). We nudge them to prepaid inside the modal. */}
-      {promoActive && (cartData?.checkout_bonus_amount || 50) > 0 && (
+      {/* Surprise reveal — one-shot per checkout session. When eligible we now
+          reveal a FREE product (sunscreen / under-eye / cleanser) instead of
+          the old ₹50 flash discount. Server locks the pick via session_id. */}
+      {promoActive && cartData?.free_gift && (
         <CheckoutSurpriseModal
-          amount={cartData?.checkout_bonus_amount || 50}
-          minSubtotal={cartData?.checkout_bonus_min_subtotal || 1000}
+          amount={0}
+          gift={cartData.free_gift}
+          minSubtotal={cartData?.free_gift_min_subtotal || 1000}
           timerLabel="10-minute flash offer"
           onClaim={() => {
-            // Nudge onto prepaid so the discount actually applies server-side
             if (paymentMethod !== 'prepaid') setPaymentMethod('prepaid');
           }}
         />
@@ -826,12 +829,12 @@ function CheckoutPage() {
                     <span>-₹{cartData.prepaid_bonus_applied}</span>
                   </div>
                 )}
-                {cartData.checkout_bonus_applied > 0 && (
-                  <div className="flex justify-between text-amber-700 font-semibold" data-testid="checkout-flash-bonus-row">
+                {cartData.free_gift && (
+                  <div className="flex justify-between text-emerald-700 font-semibold" data-testid="checkout-free-gift-row">
                     <span className="flex items-center gap-1.5">
-                      <Clock size={13} strokeWidth={2.6} /> Flash ₹50 OFF
+                      <Gift size={13} strokeWidth={2.6} /> FREE {cartData.free_gift.name}
                     </span>
-                    <span>-₹{cartData.checkout_bonus_applied}</span>
+                    <span>-₹{cartData.free_gift.mrp || 0}</span>
                   </div>
                 )}
                 {cartData.combo_bonus_applied > 0 && (
@@ -845,26 +848,40 @@ function CheckoutPage() {
                 <div className="border-t border-gray-100 pt-2 flex justify-between font-bold text-gray-900 text-lg"><span>Total</span><span>₹{cartData.total?.toLocaleString()}</span></div>
               </div>
 
-              {/* Inline ₹50 flash-discount nudge — replaces the old discount pop-up.
-                  Shows when cart >= ₹1000 + prepaid + timer running BUT the bonus
-                  hasn't actually applied (edge case: coupon already zero'd total). */}
-              {promoActive && paymentMethod === 'prepaid' && (cartData.subtotal || 0) > 1000 && cartData.checkout_bonus_applied > 0 && (
-                <div className="mt-3 bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50 border border-amber-200 rounded-xl px-3.5 py-2.5 flex items-center gap-2.5" data-testid="checkout-flash-bonus-msg">
-                  <div className="w-8 h-8 rounded-full bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm">
-                    <Gift size={16} />
-                  </div>
-                  <div className="text-[12px] leading-snug text-amber-900">
-                    <span className="font-black">Extra ₹50 OFF applied</span> — cart is above ₹1000 and the flash timer is running. Congrats!
+              {/* Free gift reveal — replaces the old ₹50 flash discount. Shows
+                  the actual free product name + image once the user is on prepaid.
+                  Server picks deterministically from session_id so this is stable. */}
+              {promoActive && paymentMethod === 'prepaid' && cartData.free_gift && (
+                <div className="mt-3 bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border border-emerald-200 rounded-xl px-3.5 py-3 flex items-center gap-3" data-testid="checkout-free-gift-reveal">
+                  {cartData.free_gift.image && (
+                    <img src={cartData.free_gift.image} alt={cartData.free_gift.name} className="w-14 h-14 rounded-xl object-cover ring-1 ring-emerald-200 bg-white shrink-0" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10px] font-black tracking-[0.22em] text-emerald-700 uppercase mb-0.5">🎁 Your free gift</p>
+                    <p className="text-sm font-black text-stone-900 leading-tight truncate">{cartData.free_gift.name}</p>
+                    <p className="text-[11px] text-stone-600 leading-snug">
+                      Worth <b>₹{cartData.free_gift.mrp}</b> — added FREE with your order
+                    </p>
                   </div>
                 </div>
               )}
-              {promoActive && paymentMethod === 'prepaid' && (cartData.subtotal || 0) <= 1000 && (cartData.subtotal || 0) > 800 && (
-                <div className="mt-3 bg-white border border-dashed border-amber-300 rounded-xl px-3.5 py-2.5 flex items-center gap-2.5" data-testid="checkout-flash-bonus-nudge">
-                  <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+              {promoActive && paymentMethod !== 'prepaid' && cartData.free_gift_eligible && (
+                <div className="mt-3 bg-white border border-dashed border-emerald-300 rounded-xl px-3.5 py-2.5 flex items-center gap-2.5" data-testid="checkout-free-gift-cod-nudge">
+                  <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
                     <Gift size={16} />
                   </div>
-                  <div className="text-[12px] leading-snug text-amber-900">
-                    Add <b>₹{Math.max(1, 1001 - (cartData.subtotal || 0))}</b> more &amp; keep paying prepaid to unlock an <b>extra ₹50 OFF</b> before the timer runs out.
+                  <div className="text-[12px] leading-snug text-emerald-900">
+                    Switch to <b>Prepaid</b> to unlock a <b>surprise free product</b> worth up to ₹999.
+                  </div>
+                </div>
+              )}
+              {promoActive && paymentMethod === 'prepaid' && !cartData.free_gift && (cartData.subtotal || 0) > 800 && (cartData.subtotal || 0) <= (cartData.free_gift_min_subtotal || 1000) && (
+                <div className="mt-3 bg-white border border-dashed border-emerald-300 rounded-xl px-3.5 py-2.5 flex items-center gap-2.5" data-testid="checkout-free-gift-nudge">
+                  <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                    <Gift size={16} />
+                  </div>
+                  <div className="text-[12px] leading-snug text-emerald-900">
+                    Add <b>₹{Math.max(1, (cartData.free_gift_min_subtotal || 1000) + 1 - (cartData.subtotal || 0))}</b> more to unlock a <b>surprise free product</b>.
                   </div>
                 </div>
               )}

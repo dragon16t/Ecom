@@ -135,6 +135,7 @@ class OrderCreate(BaseModel):
     eta_minutes: Optional[int] = None
     prepaid_bonus: bool = False  # ₹100 off when user opts-in on checkout (prepaid only)
     promo_active: bool = True  # Flash-offer 3-min timer; False = timer expired, strip perks
+    session_id: Optional[str] = None  # stable per session — seeds the free-gift picker
     # Meta CAPI plumbing — browser sends fbp/fbc cookies + client user-agent so
     # the server-side Purchase event can dedup with the browser Pixel via event_id.
     fbp: Optional[str] = None
@@ -450,6 +451,7 @@ async def create_order(order_input: OrderCreate, request: Request):
         payment_method=(order_input.payment_method or "prepaid"),
         prepaid_bonus=bool(order_input.prepaid_bonus),
         promo_active=bool(order_input.promo_active),
+        session_id=getattr(order_input, "session_id", None) or (request.headers.get("x-session-id") or None),
     ))
 
     # MOQ enforcement (cart/validate only flags; we hard-block at checkout)
@@ -534,6 +536,13 @@ async def create_order(order_input: OrderCreate, request: Request):
             "amount": doc.get('final_amount', doc.get('cod_amount', 599))
         })
     
+    # Attach the free gift (Feb-2026) so it appears on order-success, /orders,
+    # admin panels and the WhatsApp confirmation. cart_calc already picked the
+    # gift deterministically from session_id, so client + server agree.
+    fg = cart_calc.get("free_gift")
+    if fg and isinstance(fg, dict) and fg.get("slug"):
+        doc['free_gift'] = fg
+
     await db.orders.insert_one(doc)
 
     # Redeem gift card AFTER order is inserted (idempotent on order_id)

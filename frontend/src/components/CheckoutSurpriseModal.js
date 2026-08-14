@@ -15,10 +15,11 @@ import { Gift, Clock, X, Sparkles, Check } from 'lucide-react';
  */
 export default function CheckoutSurpriseModal({
   amount = 50,
+  gift = null,          // { slug, name, image, mrp } — when set, reveals a free product instead
   minSubtotal = 1000,
   timerLabel = '10-minute flash offer',
   onClaim,
-  storageKey = 'cg_checkout_surprise_v1',
+  storageKey = 'cg_checkout_surprise_v2',
 }) {
   const [show, setShow] = useState(false);
   const [revealed, setRevealed] = useState(false);
@@ -119,14 +120,18 @@ export default function CheckoutSurpriseModal({
                   />
                 ))}
                 <div
-                  className="w-24 h-24 sm:w-28 sm:h-28 rounded-3xl bg-white ring-4 ring-amber-200/70 flex items-center justify-center mb-2"
+                  className="w-24 h-24 sm:w-28 sm:h-28 rounded-3xl bg-white ring-4 ring-amber-200/70 flex items-center justify-center mb-2 overflow-hidden"
                   style={{ animation: 'glow 2s ease-in-out infinite' }}
                 >
-                  <div className="text-center leading-none">
-                    <p className="text-[10px] font-black tracking-[0.2em] text-amber-700 uppercase mb-1">FLAT</p>
-                    <p className="text-3xl sm:text-4xl font-black bg-gradient-to-br from-amber-600 to-rose-600 bg-clip-text text-transparent">₹{amount}</p>
-                    <p className="text-[10px] font-black tracking-[0.24em] text-orange-700 uppercase mt-0.5">OFF</p>
-                  </div>
+                  {gift && gift.image ? (
+                    <img src={gift.image} alt={gift.name} className="w-full h-full object-contain p-1" />
+                  ) : (
+                    <div className="text-center leading-none">
+                      <p className="text-[10px] font-black tracking-[0.2em] text-amber-700 uppercase mb-1">FLAT</p>
+                      <p className="text-3xl sm:text-4xl font-black bg-gradient-to-br from-amber-600 to-rose-600 bg-clip-text text-transparent">₹{amount}</p>
+                      <p className="text-[10px] font-black tracking-[0.24em] text-orange-700 uppercase mt-0.5">OFF</p>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -135,7 +140,11 @@ export default function CheckoutSurpriseModal({
           {/* Headline */}
           <h2 className="text-center font-heading text-lg sm:text-xl font-black text-stone-900 leading-tight">
             {revealed ? (
-              <>You just unlocked <span className="italic text-orange-700">₹{amount} OFF</span></>
+              gift ? (
+                <>You unlocked a <span className="italic text-emerald-700">FREE {gift.name}</span></>
+              ) : (
+                <>You just unlocked <span className="italic text-orange-700">₹{amount} OFF</span></>
+              )
             ) : (
               <>Tap the gift to reveal your surprise</>
             )}
@@ -144,7 +153,11 @@ export default function CheckoutSurpriseModal({
           {/* Sub */}
           <p className="text-center text-[12px] sm:text-[13px] text-stone-600 mt-1.5 leading-snug px-1">
             {revealed ? (
-              <>Applied automatically at checkout when your cart is above <b>₹{minSubtotal}</b> and paid <b>prepaid</b>. No code needed.</>
+              gift ? (
+                <>Worth <b>₹{gift.mrp}</b> — added FREE to your order when paid <b>prepaid</b>. No code needed.</>
+              ) : (
+                <>Applied automatically at checkout when your cart is above <b>₹{minSubtotal}</b> and paid <b>prepaid</b>.</>
+              )
             ) : (
               <>A one-time reward for making it this far — good only during the <b>{timerLabel}</b>.</>
             )}
