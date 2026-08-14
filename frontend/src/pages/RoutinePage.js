@@ -3,8 +3,9 @@ import BackButton from '../components/BackButton';
 import SEOHead, { breadcrumbJsonLd } from '../components/SEOHead';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
-import { Sparkles, Sunrise, Moon, Droplet, Shield, Wand2, ArrowRight, Loader2, Check, Camera, X, ShoppingCart, Plus, BadgeCheck } from 'lucide-react';
+import { Sparkles, Sunrise, Moon, Droplet, Shield, Wand2, ArrowRight, Loader2, Check, Camera, X, ShoppingCart, Plus, BadgeCheck, Download } from 'lucide-react';
 import { addToCart } from './Homepage';
+import { downloadRoutinePdf } from '../utils/routinePdf';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -105,7 +106,10 @@ export default function RoutinePage() {
   const fileRightRef = useRef(null);
 
   useEffect(() => {
-    axios.get(`${API}/api/products?limit=500`).then(r => setProducts(r.data || [])).catch(() => {});
+    axios.get(`${API}/api/products?limit=500`).then(r => {
+      const items = Array.isArray(r.data) ? r.data : (r.data?.items || r.data?.products || []);
+      setProducts(items);
+    }).catch(() => {});
   }, []);
 
   const toggleConcern = (c) => {
@@ -480,17 +484,35 @@ export default function RoutinePage() {
             </div>
 
             {/* "Add all" CTA */}
-            <button
-              onClick={() => {
-                const all = [...routine.am, ...routine.pm].map(s => s.product).filter(Boolean);
-                const seen = new Set();
-                all.forEach(p => { if (!seen.has(p.slug)) { addToCart(p.slug); seen.add(p.slug); } });
-              }}
-              data-testid="routine-add-all-btn"
-              className="w-full mb-4 flex items-center justify-center gap-2 bg-emerald-400 hover:bg-emerald-300 text-emerald-950 font-black py-3 rounded-2xl text-xs sm:text-sm tracking-wide shadow-lg shadow-emerald-500/30 transition-all active:scale-[0.99]"
-            >
-              <ShoppingCart size={15} /> Add entire routine to cart
-            </button>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
+              <button
+                onClick={() => {
+                  const all = [...routine.am, ...routine.pm].map(s => s.product).filter(Boolean);
+                  const seen = new Set();
+                  all.forEach(p => { if (!seen.has(p.slug)) { addToCart(p.slug); seen.add(p.slug); } });
+                }}
+                data-testid="routine-add-all-btn"
+                className="flex items-center justify-center gap-2 bg-emerald-400 hover:bg-emerald-300 text-emerald-950 font-black py-3 rounded-2xl text-xs sm:text-sm tracking-wide shadow-lg shadow-emerald-500/30 transition-all active:scale-[0.99]"
+              >
+                <ShoppingCart size={15} /> Add entire routine to cart
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    await downloadRoutinePdf({
+                      routine,
+                      profile: { skin_type: skinType, age, concerns: selectedConcerns },
+                    });
+                  } catch (err) {
+                    alert('Could not generate PDF: ' + (err?.message || 'unknown error'));
+                  }
+                }}
+                data-testid="routine-download-pdf-btn"
+                className="flex items-center justify-center gap-2 bg-white/10 hover:bg-white/15 ring-1 ring-white/20 text-white font-black py-3 rounded-2xl text-xs sm:text-sm tracking-wide transition-all active:scale-[0.99]"
+              >
+                <Download size={15} /> Download PDF report
+              </button>
+            </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
               {[{ key: 'am', title: 'Morning Ritual', icon: Sunrise, accent: 'from-amber-300 to-emerald-300', steps: routine.am }, { key: 'pm', title: 'Night Ritual', icon: Moon, accent: 'from-violet-400 to-cyan-300', steps: routine.pm }].map(({ key, title, icon: TitleIcon, accent, steps }) => (
