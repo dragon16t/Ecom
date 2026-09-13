@@ -101,7 +101,28 @@ export default function SplashScreen({ onDone }) {
     };
   }, [visible, finish, onDone]);
 
+  // Auto-dismiss immediately when there's no admin-set splash — no blank
+  // white screen. If admin has uploaded a splash, we keep the standard
+  // 2.4s display. If /api/site-settings fails, we also skip the splash.
+  useEffect(() => {
+    if (!imgResolved || !visible) return;
+    if (!imgSrc) {
+      // Nothing to show — skip the splash entirely (no fade, no blank white).
+      try { sessionStorage.setItem(SESSION_KEY, '1'); } catch (_) { /* noop */ }
+      setVisible(false);
+      onDone?.();
+    }
+  }, [imgResolved, imgSrc, visible, onDone]);
+
   if (!visible) return null;
+  // Feb-2026: don't render anything until the admin-splash fetch resolves.
+  // If we rendered the div immediately we'd flash a white screen for ~200ms
+  // even when the API returns fast. Waiting for resolution guarantees the
+  // splash only appears when there's an actual admin-uploaded image.
+  if (!imgResolved) return null;
+  // If admin has NO splash configured, skip the splash screen entirely
+  // (the useEffect above already dismissed it).
+  if (!imgSrc) return null;
 
   return (
     <div

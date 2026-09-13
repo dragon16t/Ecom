@@ -144,7 +144,9 @@ export default function CheckoutSurpriseModal({
   storageKey = 'cg_checkout_surprise_v2',
 }) {
   const [show, setShow] = useState(false);
-  const [revealed, setRevealed] = useState(false);
+  // Reveal is instant now (no scratch interaction). Kept as state to preserve
+  // the confetti / glow animation trigger that fires on the first paint.
+  const [revealed] = useState(true);
 
   useEffect(() => {
     let seen = false;
@@ -157,17 +159,8 @@ export default function CheckoutSurpriseModal({
     return () => clearTimeout(t);
   }, [storageKey]);
 
-  useEffect(() => {
-    if (!show) return;
-    // Safety-net: if the user hasn't scratched after 12s, auto-reveal so we
-    // never trap the checkout behind an interaction that never completes.
-    const t = setTimeout(() => setRevealed(true), 12000);
-    return () => clearTimeout(t);
-  }, [show]);
-
   const close = () => {
     setShow(false);
-    setRevealed(false);
   };
 
   const claim = () => {
@@ -214,81 +207,63 @@ export default function CheckoutSurpriseModal({
             <Sparkles size={12} /> A little surprise for you
           </p>
 
-          {/* Gift / Reveal — scratch canvas overlay hides the prize until user
-              swipes across the gift card. Falls back to a tap-to-open button
-              on browsers where <canvas> isn't fully supported. */}
+          {/* Gift / Reveal — shows the prize directly (no interaction needed) */}
           <div className="flex flex-col items-center justify-center mb-4">
-            {!revealed ? (
-              <ScratchCard onReveal={() => setRevealed(true)} gift={gift} amount={amount} />
-            ) : (
-              <div className="relative w-full flex flex-col items-center">
-                {/* Confetti dots */}
-                {['#f59e0b','#ef4444','#10b981','#8b5cf6','#f43f5e','#0ea5e9','#eab308'].map((c, i) => (
-                  <span
-                    key={i}
-                    className="absolute w-2 h-2 rounded-full"
-                    style={{
-                      top: 0,
-                      left: `${10 + i * 12}%`,
-                      background: c,
-                      animation: `confetti ${900 + i * 120}ms ${i * 60}ms ease-in forwards`,
-                    }}
-                  />
-                ))}
-                <div
-                  className="w-28 h-28 sm:w-32 sm:h-32 rounded-3xl bg-white ring-4 ring-amber-200/70 flex items-center justify-center mb-2 overflow-hidden"
-                  style={{ animation: 'glow 2s ease-in-out infinite' }}
-                >
-                  {gift && gift.image ? (
-                    <img src={gift.image} alt={gift.name} className="w-full h-full object-contain p-1" data-testid="checkout-surprise-gift-image" />
-                  ) : (
-                    <div className="text-center leading-none">
-                      <p className="text-[10px] font-black tracking-[0.2em] text-amber-700 uppercase mb-1">FLAT</p>
-                      <p className="text-3xl sm:text-4xl font-black bg-gradient-to-br from-amber-600 to-rose-600 bg-clip-text text-transparent">₹{amount}</p>
-                      <p className="text-[10px] font-black tracking-[0.24em] text-orange-700 uppercase mt-0.5">OFF</p>
-                    </div>
-                  )}
-                </div>
-                {/* MRP callout — always show for a free product so the value
-                    of the giveaway is unmistakable. */}
-                {gift && gift.mrp && (
-                  <div className="mt-1 flex items-center gap-2" data-testid="checkout-surprise-gift-mrp">
-                    <span className="text-[10px] font-bold tracking-[0.24em] text-stone-500 uppercase">Worth</span>
-                    <span className="text-lg font-black text-emerald-700">₹{gift.mrp}</span>
-                    <span className="text-[11px] line-through text-stone-400">MRP ₹{gift.mrp}</span>
+            <div className="relative w-full flex flex-col items-center">
+              {/* Confetti dots */}
+              {['#f59e0b','#ef4444','#10b981','#8b5cf6','#f43f5e','#0ea5e9','#eab308'].map((c, i) => (
+                <span
+                  key={i}
+                  className="absolute w-2 h-2 rounded-full"
+                  style={{
+                    top: 0,
+                    left: `${10 + i * 12}%`,
+                    background: c,
+                    animation: `confetti ${900 + i * 120}ms ${i * 60}ms ease-in forwards`,
+                  }}
+                />
+              ))}
+              <div
+                className="w-28 h-28 sm:w-32 sm:h-32 rounded-3xl bg-white ring-4 ring-amber-200/70 flex items-center justify-center mb-2 overflow-hidden"
+                style={{ animation: 'glow 2s ease-in-out infinite' }}
+              >
+                {gift && gift.image ? (
+                  <img src={gift.image} alt={gift.name} className="w-full h-full object-contain p-1" data-testid="checkout-surprise-gift-image" />
+                ) : (
+                  <div className="text-center leading-none">
+                    <p className="text-[10px] font-black tracking-[0.2em] text-amber-700 uppercase mb-1">FLAT</p>
+                    <p className="text-3xl sm:text-4xl font-black bg-gradient-to-br from-amber-600 to-rose-600 bg-clip-text text-transparent">₹{amount}</p>
+                    <p className="text-[10px] font-black tracking-[0.24em] text-orange-700 uppercase mt-0.5">OFF</p>
                   </div>
                 )}
               </div>
-            )}
+              {/* MRP callout — always show for a free product so the value
+                  of the giveaway is unmistakable. */}
+              {gift && gift.mrp && (
+                <div className="mt-1 flex items-center gap-2" data-testid="checkout-surprise-gift-mrp">
+                  <span className="text-[10px] font-bold tracking-[0.24em] text-stone-500 uppercase">Worth</span>
+                  <span className="text-lg font-black text-emerald-700">₹{gift.mrp}</span>
+                  <span className="text-[11px] line-through text-stone-400">MRP ₹{gift.mrp}</span>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Headline */}
           <h2 className="text-center font-heading text-lg sm:text-xl font-black text-stone-900 leading-tight">
-            {revealed ? (
-              gift ? (
-                <>You unlocked a <span className="italic text-emerald-700">FREE {gift.name}</span></>
-              ) : (
-                <>You just unlocked <span className="italic text-orange-700">₹{amount} OFF</span></>
-              )
+            {gift ? (
+              <>You unlocked a <span className="italic text-emerald-700">FREE {gift.name}</span></>
             ) : (
-              gift ? (
-                <>Scratch the card to reveal your free gift</>
-              ) : (
-                <>Scratch the card to reveal your surprise</>
-              )
+              <>You just unlocked <span className="italic text-orange-700">₹{amount} OFF</span></>
             )}
           </h2>
 
           {/* Sub */}
           <p className="text-center text-[12px] sm:text-[13px] text-stone-600 mt-1.5 leading-snug px-1">
-            {revealed ? (
-              gift ? (
-                <>Worth <b>₹{gift.mrp}</b> — added FREE to your order when paid <b>prepaid</b>. No code needed.</>
-              ) : (
-                <>Applied automatically at checkout when your cart is above <b>₹{minSubtotal}</b> and paid <b>prepaid</b>.</>
-              )
+            {gift ? (
+              <>Worth <b>₹{gift.mrp}</b> — added FREE to your order when paid <b>prepaid</b>. No code needed.</>
             ) : (
-              <>A one-time reward for making it this far — good only during the <b>{timerLabel}</b>.</>
+              <>Applied automatically at checkout when your cart is above <b>₹{minSubtotal}</b> and paid <b>prepaid</b>.</>
             )}
           </p>
 
@@ -296,19 +271,12 @@ export default function CheckoutSurpriseModal({
           <div className="mt-5 space-y-2">
             <button
               onClick={claim}
-              disabled={!revealed}
               data-testid="checkout-surprise-claim"
-              className={`w-full inline-flex items-center justify-center gap-2 rounded-full font-black text-sm py-3 shadow-lg transition-all ${
-                revealed
-                  ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 hover:from-amber-400 hover:via-orange-400 hover:to-rose-400 text-white active:scale-[0.98]'
-                  : 'bg-stone-200 text-stone-400 cursor-not-allowed'
-              }`}
+              className="w-full inline-flex items-center justify-center gap-2 rounded-full font-black text-sm py-3 shadow-lg transition-all bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 hover:from-amber-400 hover:via-orange-400 hover:to-rose-400 text-white active:scale-[0.98]"
             >
-              {revealed ? (
-                gift
-                  ? (<><Check size={16} strokeWidth={2.8} /> Claim my FREE gift</>)
-                  : (<><Check size={16} strokeWidth={2.8} /> Claim my ₹{amount} OFF</>)
-              ) : (<><Gift size={16} /> Scratch the card first</>)}
+              {gift
+                ? (<><Check size={16} strokeWidth={2.8} /> Claim my FREE gift</>)
+                : (<><Check size={16} strokeWidth={2.8} /> Claim my ₹{amount} OFF</>)}
             </button>
             <p className="text-center text-[11px] text-stone-500 flex items-center justify-center gap-1.5">
               <Clock size={11} /> Locked to this checkout session
