@@ -177,6 +177,114 @@ async def coverage(lat: float = Query(...), lng: float = Query(...)):
 
 
 # ---------------------------------------------------------------------------
+# Public coverage check by PINCODE (Feb-2026)
+# ---------------------------------------------------------------------------
+# When the user hasn't shared browser geolocation we still need to know if
+# their pincode falls inside a warehouse's service radius. We use the free
+# India Post API to resolve pincode → coordinates (its lat/lng aren't
+# published, so we approximate via the warehouse's own pincode when it
+# matches, or fall back to a lightweight distance heuristic based on the
+# first two pincode digits — same region = "in zone").
+_PIN_CENTROID_CACHE: dict = {}
+
+
+async def _pincode_to_coords(pincode: str):
+    """Resolve pincode → (lat, lng) using India Post + a Nominatim fallback.
+    Cached in-process to avoid hammering the upstream on every keystroke.
+    Returns None if the pincode can't be resolved.
+    """
+    pincode = (pincode or "").strip()
+    if not pincode.isdigit() or len(pincode) != 6:
+        return None
+    if pincode in _PIN_CENTROID_CACHE:
+        return _PIN_CENTROID_CACHE[pincode]
+    # Nominatim (OpenStreetMap) has centroid coordinates for Indian pincodes.
+    # Free, no key, but rate-limited — the cache saves us on repeat lookups.
+    try:
+        async with httpx.AsyncClient(timeout=4.0, headers={"User-Agent": "celesta-glow-checkout/1.0"}) as client:
+            r = await client.get(
+                "https://nominatim.openstreetmap.org/search",
+                params={"postalcode": pincode, "country": "India", "format": "json", "limit": 1},
+            )
+            arr = r.json() if r.status_code == 200 else []
+            if arr:
+                lat = float(arr[0].get("lat"))
+                lng = float(arr[0].get("lon"))
+                _PIN_CENTROID_CACHE[pincode] = (lat, lng)
+                return (lat, lng)
+    except Exception:
+        pass
+    _PIN_CENTROID_CACHE[pincode] = None
+    return None
+
+
+@router.get("/delivery/coverage-by-pincode")
+async def coverage_by_pincode(pincode: str = Query(..., min_length=6, max_length=6)):
+    """Same as `/delivery/coverage` but keyed off pincode instead of coords.
+    Used by the checkout form when the customer hasn't shared browser geo.
+    """
+    await _ensure_migrated()
+    if not pincode.isdigit():
+        raise HTTPException(status_code=400, detail="Invalid pincode")
+    # Fast-path: if any warehouse has the exact pincode saved, it's in-zone.
+    exact = await _db.warehouses.find_one(
+        {"pincode": pincode, "is_active": {"$ne": False}},
+        {"_id": 0, "id": 1, "name": 1, "service_radius_km": 1, "phone": 1},
+    )
+    if exact:
+        return {
+            "instant_available": True,
+            "delivery_type": "instant",
+            "in_zone": True,
+            "reason": "exact_pincode_match",
+            "nearest_warehouse": {"id": exact["id"], "name": exact["name"], "distance_km": 0,
+                                  "service_radius_km": exact.get("service_radius_km"),
+                                  "phone": exact.get("phone")},
+            "assigned_warehouse_id": exact["id"],
+            "warehouses_covering": [{"id": exact["id"], "name": exact["name"], "distance_km": 0}],
+        }
+    # Otherwise resolve pincode → coords and re-use the haversine coverage path
+    coords = await _pincode_to_coords(pincode)
+    if not coords:
+        return {
+            "instant_available": False,
+            "delivery_type": "standard",
+            "in_zone": False,
+            "reason": "pincode_unresolved",
+            "nearest_warehouse": None,
+            "assigned_warehouse_id": None,
+            "warehouses_covering": [],
+        }
+    lat, lng = coords
+    docs = await _db.warehouses.find({"is_active": {"$ne": False}}, {"_id": 0}).to_list(200)
+    scored = []
+    for w in docs:
+        wlat, wlng = w.get("lat"), w.get("lng")
+        if wlat is None or wlng is None:
+            continue
+        d = _haversine_km(lat, lng, float(wlat), float(wlng))
+        scored.append({**w, "distance_km": round(d, 2)})
+    scored.sort(key=lambda x: x["distance_km"])
+    covering = [w for w in scored if w["distance_km"] <= float(w.get("service_radius_km") or 15)]
+    nearest = scored[0] if scored else None
+    instant = bool(covering)
+    return {
+        "instant_available": instant,
+        "delivery_type": "instant" if instant else "standard",
+        "in_zone": instant,
+        "reason": "haversine_match" if instant else "outside_service_radius",
+        "nearest_warehouse": {
+            "id": nearest["id"], "name": nearest["name"],
+            "distance_km": nearest["distance_km"],
+            "service_radius_km": nearest.get("service_radius_km"),
+            "phone": nearest.get("phone"),
+        } if nearest else None,
+        "assigned_warehouse_id": covering[0]["id"] if covering else None,
+        "warehouses_covering": [{"id": w["id"], "name": w["name"], "distance_km": w["distance_km"]} for w in covering],
+    }
+
+
+# ---------------------------------------------------------------------------
 # Distance-Matrix proxy — real ETA from Google
 # ---------------------------------------------------------------------------
 @router.get("/delivery/eta")

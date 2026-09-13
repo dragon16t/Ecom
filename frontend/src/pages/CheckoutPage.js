@@ -121,14 +121,19 @@ function CheckoutPage() {
   //       • Third-party niches (skincare / cosmetics) → Prepaid only
   //       • EXCEPT when the customer's saved pincode is within warehouse coverage
   //         (instant delivery available) → COD unlocked for ANY item.
+  //   The pincode-based zone check (Feb-2026) fills the gap where the user
+  //   didn't give browser geolocation — we resolve pincode → coords server-side
+  //   and OR the result into `pincodeInZone` above.
   const codAvailable = React.useMemo(() => {
     if (!codRestrictionEnabled) return true; // policy off → legacy behaviour
     const items = cartData?.items || [];
     if (items.length === 0) return true;
     const niches = new Set(items.map((it) => String(it.niche || '').toLowerCase()));
     const allAntiAging = niches.size > 0 && [...niches].every((n) => n === 'anti-aging');
-    return allAntiAging; // instant-delivery bonus is OR'd inside the payment JSX
-  }, [cartData, codRestrictionEnabled]);
+    if (allAntiAging) return true;
+    // Not all house-brand → allow COD only if we know the delivery pincode is in-zone
+    return pincodeInZone === true;
+  }, [cartData, codRestrictionEnabled, pincodeInZone]);
 
   const [formData, setFormData] = useState({ name: '', phone: '', email: '', house_number: '', area: '', city: '', pincode: '', state: '' });
   const [submitting, setSubmitting] = useState(false);
@@ -235,17 +240,35 @@ function CheckoutPage() {
     }
   }, []);
 
+  // Pincode-based instant-delivery zone check (Feb-2026). Runs whenever
+  // the user has typed a 6-digit pincode; sets `pincodeInZone` which the
+  // COD payment gate below OR's with the map-based coverage. Fixes the
+  // reported bug: prepaid-only mode wasn't kicking in on non-Celesta-Glow
+  // brand items because the customer never gave browser geolocation.
+  const [pincodeInZone, setPincodeInZone] = useState(null); // null=unknown, true=in-zone, false=out-of-zone
+
   const handlePincodeChange = async (pincode) => {
     setFormData(prev => ({ ...prev, pincode }));
     if (pincode.length === 6 && /^\d{6}$/.test(pincode)) {
+      // Fire both look-ups in parallel — state/city + warehouse zone.
       try {
-        const res = await axios.get(`${API}/api/pincode/${pincode}`);
-        setFormData(prev => ({
-          ...prev,
-          state: res.data.state || prev.state,
-          city: res.data.city || res.data.district || prev.city
-        }));
+        const [stateRes, zoneRes] = await Promise.allSettled([
+          axios.get(`${API}/api/pincode/${pincode}`),
+          axios.get(`${API}/api/delivery/coverage-by-pincode`, { params: { pincode } }),
+        ]);
+        if (stateRes.status === 'fulfilled') {
+          setFormData(prev => ({
+            ...prev,
+            state: stateRes.value.data.state || prev.state,
+            city: stateRes.value.data.city || stateRes.value.data.district || prev.city,
+          }));
+        }
+        if (zoneRes.status === 'fulfilled') {
+          setPincodeInZone(!!zoneRes.value.data?.in_zone);
+        }
       } catch {}
+    } else {
+      setPincodeInZone(null);
     }
   };
 

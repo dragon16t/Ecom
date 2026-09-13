@@ -148,6 +148,7 @@ export default function AdminCategoriesHub() {
   const headers = { 'X-Admin-Token': adminToken };
 
   const [draft, setDraft] = useState(HUB_DEFAULTS);
+  const [houseOnly, setHouseOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -159,6 +160,7 @@ export default function AdminCategoriesHub() {
     try {
       const r = await axios.get(`${API}/api/site-settings`);
       const existing = r.data?.categories_hub || {};
+      setHouseOnly(!!r.data?.house_categories_only);
       // Deep merge with defaults so admins see every field
       setDraft({
         hero: { ...HUB_DEFAULTS.hero, ...(existing.hero || {}) },
@@ -186,7 +188,7 @@ export default function AdminCategoriesHub() {
     setSaving(true);
     setSaved(false);
     try {
-      await axios.put(`${API}/api/admin/site-settings`, { categories_hub: draft }, { headers });
+      await axios.put(`${API}/api/admin/site-settings`, { categories_hub: draft, house_categories_only: houseOnly }, { headers });
       setSaved(true);
       // Invalidate cached site-settings so /categories picks up changes immediately
       try { if (window.localStorage) window.localStorage.removeItem('apiCache:/api/site-settings'); } catch { /* noop */ }
@@ -254,6 +256,26 @@ export default function AdminCategoriesHub() {
       </header>
 
       <div className="max-w-6xl mx-auto px-4 sm:px-8 mt-6 space-y-6">
+
+        {/* House-only categories toggle (Feb-2026) */}
+        <SectionCard
+          eyebrow="MODE"
+          title="Show only Celesta Glow products?"
+          action={
+            <Toggle
+              enabled={houseOnly}
+              onChange={setHouseOnly}
+              label={houseOnly ? 'House-only' : 'Multi-brand'}
+              testId="hub-house-only-toggle"
+            />
+          }
+        >
+          <p className="text-sm text-stone-600">
+            When ON, <b>/categories</b> hides the three multi-brand niche cards / ribbon and
+            shows ONLY Celesta Glow-branded products grouped by their category
+            (Serums, Sunscreens, Toners, etc.). Turn OFF to restore the full multi-brand hub.
+          </p>
+        </SectionCard>
 
         {/* HERO */}
         <SectionCard

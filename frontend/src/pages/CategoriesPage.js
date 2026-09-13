@@ -496,6 +496,26 @@ export default function CategoriesPage() {
 
   const allEmpty = !filteredAA.length && !filteredConcerns.length && !filteredCosmetics.length;
 
+  // Feb-2026: house-only categories mode.
+  // Admin toggle. When ON we hide the three multi-brand niche cards / ribbon
+  // and show ONE tightly-scoped hub of Celesta-Glow-branded products grouped
+  // by their `category` (Serums, Sunscreens, Toners, etc.). Keeps the hero,
+  // search, trust strip untouched so the page still feels premium.
+  const houseOnly = !!siteSettings?.house_categories_only;
+  const houseGroups = useMemo(() => {
+    if (!houseOnly) return null;
+    const own = products.filter((p) => (p.brand || '').toLowerCase().includes('celesta') && (p.is_active !== false));
+    const bucket = new Map();
+    own.forEach((p) => {
+      const key = (p.category || p.product_type || 'Other').toString();
+      if (!bucket.has(key)) bucket.set(key, []);
+      bucket.get(key).push(p);
+    });
+    return [...bucket.entries()]
+      .map(([name, items]) => ({ name, items }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [houseOnly, products]);
+
   return (
     <div className="bg-stone-50/50 pb-12" data-testid="categories-page">
       <div className="max-w-7xl mx-auto px-3 sm:px-6 pt-3 sm:pt-4"><BackButton /></div>
@@ -508,7 +528,43 @@ export default function CategoriesPage() {
         <TrustStrip accent={hub.hero.accent} accentBg="#dcfce7" />
       </div>
 
-      {/* MAIN BODY */}
+      {/* HOUSE-ONLY MODE — Celesta Glow SKUs only, grouped by category */}
+      {houseOnly && houseGroups && (
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 mt-8 sm:mt-12 space-y-10" data-testid="house-categories">
+          {houseGroups.filter(g => !query.trim() || g.items.some(filterFn) || g.name.toLowerCase().includes(query.toLowerCase())).map((g) => {
+            const items = g.items.filter(filterFn);
+            if (!items.length) return null;
+            return (
+              <div key={g.name} className="bg-white rounded-3xl ring-1 ring-stone-200 p-5 sm:p-9 shadow-sm">
+                <HubSection
+                  accent={hub.hero.accent}
+                  eyebrow="Celesta Glow"
+                  title={g.name}
+                  viewAllTo="/"
+                  testId={`house-row-${g.name.toLowerCase().replace(/\s+/g, '-')}`}
+                >
+                  <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-8 gap-x-2 sm:gap-x-4 gap-y-6 sm:gap-y-8">
+                    {items.map((p) => (
+                      <CircleTile
+                        key={p.slug}
+                        to={`/product/${p.slug}`}
+                        image={p.images?.[0]}
+                        label={p.short_name || p.name}
+                        accent={hub.hero.accent}
+                        icon="🧴"
+                        testId={`house-tile-${p.slug}`}
+                      />
+                    ))}
+                  </div>
+                </HubSection>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* MAIN BODY (multi-brand hub — hidden when house-only is on) */}
+      {!houseOnly && (
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 mt-8 sm:mt-12 space-y-10 sm:space-y-14">
 
         {/* THREE BIG EDITORIAL NICHE CARDS */}
@@ -650,6 +706,7 @@ export default function CategoriesPage() {
           </>
         )}
       </div>
+      )}
     </div>
   );
 }

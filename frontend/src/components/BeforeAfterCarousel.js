@@ -80,7 +80,7 @@ export default function BeforeAfterCarousel({
           {/* Slides */}
           {items.map((it, idx) => (
             <div
-              key={it.ba_id || idx}
+              key={`${it.ba_id || 'ba'}-${idx}`}
               className={`transition-opacity duration-700 ${idx === active ? 'opacity-100' : 'opacity-0 pointer-events-none absolute inset-0'}`}
               data-testid={`ba-slide-${idx}`}
             >

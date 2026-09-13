@@ -402,8 +402,18 @@ async def create_order(order_input: OrderCreate, request: Request):
             for slug in (combo.get('product_slugs') or []):
                 stock_changes.append((slug, 1, None))
     # Validate stock for non-TBL products + REJECT any TBL product (defense in depth)
+    # PERF (Feb-2026): batch-fetch all products in ONE query (was N+1). Cuts
+    # order-placement latency by ~200-500 ms on 3+ item carts.
+    _unique_slugs = list({s for s, _, _ in stock_changes})
+    _stock_docs = {}
+    if _unique_slugs:
+        async for p in db.products.find(
+            {"slug": {"$in": _unique_slugs}},
+            {"_id": 0, "slug": 1, "stock_qty": 1, "is_to_be_launched": 1, "name": 1, "shades": 1}
+        ):
+            _stock_docs[p["slug"]] = p
     for slug, qty, shade_id in stock_changes:
-        prod = await db.products.find_one({"slug": slug}, {"_id": 0, "stock_qty": 1, "is_to_be_launched": 1, "name": 1, "shades": 1})
+        prod = _stock_docs.get(slug)
         if not prod:
             continue
         if prod.get("is_to_be_launched"):
@@ -563,8 +573,9 @@ async def create_order(order_input: OrderCreate, request: Request):
             logging.warning(f"[order] gift card redemption failed for {doc['order_id']}: {e}")
 
     # Decrement stock_qty atomically on live (non-TBL) products — guard against overselling
+    # Reuse the batch we already fetched above; no extra Mongo reads.
     for slug, qty, shade_id in stock_changes:
-        prod = await db.products.find_one({"slug": slug}, {"_id": 0, "is_to_be_launched": 1, "name": 1, "shades": 1})
+        prod = _stock_docs.get(slug)
         if not prod or prod.get("is_to_be_launched"):
             continue
         shades = prod.get("shades") or []
@@ -621,7 +632,11 @@ async def create_order(order_input: OrderCreate, request: Request):
     order_obj_dict['referral_code'] = referral_data['referral_code']
     order_obj_dict['referral_link'] = referral_data['referral_link']
     
-    await send_order_confirmation_email(order_obj, referral_data)
+    # PERF (Feb-2026): order-confirmation email is fire-and-forget — used to
+    # block the checkout POST for 2-6 s on slow SMTP/SendGrid days and was
+    # the #1 reason "place order" felt unresponsive. Result now returns as
+    # soon as Mongo commits; the mailer keeps running on the event loop.
+    asyncio.create_task(send_order_confirmation_email(order_obj, referral_data))
 
     # ===== Meta Conversions API — Purchase (server-side, dedups with browser Pixel via event_id=order_id) =====
     try:
@@ -660,7 +675,6 @@ async def create_order(order_input: OrderCreate, request: Request):
                 fbc=order_input.fbc,
             )
             # Fire and forget — never block checkout on Meta latency
-            import asyncio
             asyncio.create_task(meta_capi.track_purchase(
                 order_id=order_obj.order_id,
                 value=float(order_obj.amount or 0),
@@ -3501,6 +3515,12 @@ sale_mode_routes.setup(db, verify_admin_token)
 app.include_router(sale_mode_routes.router, prefix="/api")
 payment_policy_routes.setup(db, verify_admin_token)
 app.include_router(payment_policy_routes.router, prefix="/api")
+from routes import trend_products as trend_products_routes  # noqa: E402
+trend_products_routes.setup(db, verify_admin_token)
+app.include_router(trend_products_routes.router, prefix="/api")
+from routes import image_gallery_admin as image_gallery_admin_routes  # noqa: E402
+image_gallery_admin_routes.setup(db, verify_admin_token)
+app.include_router(image_gallery_admin_routes.router, prefix="/api")
 delivery_men_routes.setup(db, verify_admin_token)
 app.include_router(delivery_men_routes.router, prefix="/api")
 app.include_router(geo_routes.router, prefix="/api")

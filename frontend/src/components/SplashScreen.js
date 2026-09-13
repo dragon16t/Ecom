@@ -11,11 +11,17 @@ import React, { useEffect, useState } from 'react';
  * lives at `/splash-celesta-glow.png` (served from React's `public/` folder,
  * so it's hashed + edge-cached by the build). 1080×1920, 136 KB.
  */
-const SESSION_KEY = 'cg_splash_seen_v4';
+const SESSION_KEY = 'cg_splash_seen_v5';
 const DEFAULT_IMG = process.env.PUBLIC_URL ? `${process.env.PUBLIC_URL}/splash-celesta-glow.png` : '/splash-celesta-glow.png';
 
 export default function SplashScreen({ onDone }) {
-  const [imgSrc, setImgSrc] = useState(DEFAULT_IMG);
+  // Start with NO image so we don't flash the bundled default before the
+  // admin-set splash arrives from /api/site-settings. Only when the fetch
+  // completes do we render an <img> (admin's URL if set, bundled PNG as
+  // fallback). This fixes the "old splash keeps showing" bug reported by
+  // the merchant after they uploaded a new splash.
+  const [imgSrc, setImgSrc] = useState(null);
+  const [imgResolved, setImgResolved] = useState(false);
   const [visible, setVisible] = useState(() => {
     try { return !sessionStorage.getItem(SESSION_KEY); } catch (_) { return true; }
   });
@@ -24,10 +30,27 @@ export default function SplashScreen({ onDone }) {
   // Fetch admin-set splash image (falls back silently to bundled PNG)
   useEffect(() => {
     if (!visible) return;
+    let cancelled = false;
     fetch(`${process.env.REACT_APP_BACKEND_URL}/api/site-settings`)
       .then(r => r.json())
-      .then(s => { if (s?.splash_image) setImgSrc(s.splash_image); })
-      .catch(() => {});
+      .then(s => {
+        if (cancelled) return;
+        setImgSrc((s && s.splash_image) ? s.splash_image : DEFAULT_IMG);
+        setImgResolved(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setImgSrc(DEFAULT_IMG);
+        setImgResolved(true);
+      });
+    // Safety: if fetch hangs >1.2s, fall back to bundled default so users
+    // never stare at a blank white screen.
+    const t = setTimeout(() => {
+      if (cancelled) return;
+      setImgSrc((prev) => prev || DEFAULT_IMG);
+      setImgResolved(true);
+    }, 1200);
+    return () => { cancelled = true; clearTimeout(t); };
   }, [visible]);
 
   const finish = React.useCallback(() => {
@@ -97,7 +120,7 @@ export default function SplashScreen({ onDone }) {
       }}
     >
       <img
-        src={imgSrc}
+        src={imgSrc || DEFAULT_IMG}
         onError={(e) => { if (e.currentTarget.src !== DEFAULT_IMG) e.currentTarget.src = DEFAULT_IMG; }}
         alt="Celesta Glow — The Most Trusted Skincare Ecommerce App of Kerala. Glow With Confidence."
         // Crisp on every density; never bigger than viewport, never smaller than 320 px wide.
@@ -107,7 +130,8 @@ export default function SplashScreen({ onDone }) {
           width: 'auto',
           height: 'auto',
           objectFit: 'contain',
-          // Hint to the browser to prioritise this image
+          opacity: imgResolved ? 1 : 0,
+          transition: 'opacity 220ms ease-in',
         }}
         decoding="async"
         fetchPriority="high"

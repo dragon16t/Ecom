@@ -1954,6 +1954,11 @@ class SiteSettingsUpdate(BaseModel):
     #   editors_picks: { enabled, eyebrow, title, slugs: [...product_slug...] }
     # }
     categories_hub: Optional[Dict] = None
+    # Feb-2026: toggle for "brand-only categories" mode. When ON, /categories
+    # shows ONLY Celesta Glow-branded products grouped by product_type
+    # (serums, sunscreen, etc.) — no third-party brand links. When OFF (default),
+    # the existing multi-brand hub UI stays untouched.
+    house_categories_only: Optional[bool] = None
 
 
 @router.get("/site-settings")

@@ -1,5 +1,127 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Gift, Clock, X, Sparkles, Check } from 'lucide-react';
+
+/**
+ * ScratchCard — <canvas> overlay that erases as the user drags a finger /
+ * mouse across it. Once the erased area exceeds `revealThreshold` (default
+ * 45 %), we fire `onReveal` so the parent can swap in the prize UI. Falls
+ * back to a plain "Tap to reveal" button if canvas isn't supported.
+ */
+function ScratchCard({ onReveal, gift, amount, revealThreshold = 0.45 }) {
+  const canvasRef = useRef(null);
+  const [ready, setReady] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const revealedRef = useRef(false);
+
+  useEffect(() => {
+    const cvs = canvasRef.current;
+    if (!cvs) return;
+    const ctx = cvs.getContext('2d');
+    if (!ctx) { setReady(false); return; }
+    // Paint the scratch layer with a warm gradient and a "SCRATCH HERE" label
+    const grad = ctx.createLinearGradient(0, 0, cvs.width, cvs.height);
+    grad.addColorStop(0, '#f59e0b');
+    grad.addColorStop(0.5, '#f97316');
+    grad.addColorStop(1, '#e11d48');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, cvs.width, cvs.height);
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.font = 'bold 14px system-ui,-apple-system,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('SCRATCH HERE', cvs.width / 2, cvs.height / 2 - 8);
+    ctx.font = 'bold 10px system-ui,-apple-system,sans-serif';
+    ctx.fillText('drag to reveal', cvs.width / 2, cvs.height / 2 + 10);
+    setReady(true);
+  }, []);
+
+  const scratchAt = (x, y) => {
+    const cvs = canvasRef.current;
+    if (!cvs) return;
+    const ctx = cvs.getContext('2d');
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath();
+    ctx.arc(x, y, 22, 0, Math.PI * 2);
+    ctx.fill();
+  };
+
+  const checkProgress = () => {
+    if (revealedRef.current) return;
+    const cvs = canvasRef.current;
+    if (!cvs) return;
+    const ctx = cvs.getContext('2d');
+    const { data } = ctx.getImageData(0, 0, cvs.width, cvs.height);
+    let cleared = 0;
+    // Sample every 4th pixel to keep this cheap enough for mousemove
+    for (let i = 3; i < data.length; i += 16) {
+      if (data[i] === 0) cleared += 1;
+    }
+    const total = data.length / 16;
+    const pct = cleared / total;
+    setProgress(pct);
+    if (pct >= revealThreshold) {
+      revealedRef.current = true;
+      onReveal && onReveal();
+    }
+  };
+
+  const onPointer = (e) => {
+    const cvs = canvasRef.current;
+    if (!cvs) return;
+    const rect = cvs.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    const x = (clientX - rect.left) * (cvs.width / rect.width);
+    const y = (clientY - rect.top) * (cvs.height / rect.height);
+    scratchAt(x, y);
+    checkProgress();
+  };
+
+  const [dragging, setDragging] = useState(false);
+
+  return (
+    <div
+      className="relative w-40 h-40 sm:w-44 sm:h-44 rounded-3xl overflow-hidden ring-4 ring-white/70 shadow-[0_20px_50px_-10px_rgba(245,158,11,0.55)]"
+      style={{ background: '#fff' }}
+      data-testid="checkout-surprise-scratch-card"
+    >
+      {/* The prize preview underneath the scratch layer */}
+      <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-amber-50 via-orange-50 to-rose-50">
+        {gift && gift.image ? (
+          <img src={gift.image} alt={gift.name || 'Free gift'} className="w-20 h-20 object-contain mb-1" />
+        ) : (
+          <Gift size={44} className="text-amber-600 mb-1" strokeWidth={2.2} />
+        )}
+        <p className="text-[10px] font-black tracking-[0.2em] text-orange-700 uppercase">
+          {gift ? 'FREE' : `₹${amount} OFF`}
+        </p>
+        {gift && gift.mrp && (
+          <p className="text-[10px] font-bold text-emerald-700">Worth ₹{gift.mrp}</p>
+        )}
+      </div>
+
+      {ready && (
+        <canvas
+          ref={canvasRef}
+          width={220}
+          height={220}
+          className="absolute inset-0 w-full h-full touch-none cursor-grab active:cursor-grabbing"
+          onMouseDown={(e) => { setDragging(true); onPointer(e); }}
+          onMouseMove={(e) => { if (dragging) onPointer(e); }}
+          onMouseUp={() => setDragging(false)}
+          onMouseLeave={() => setDragging(false)}
+          onTouchStart={(e) => { setDragging(true); onPointer(e); }}
+          onTouchMove={(e) => { if (dragging) { e.preventDefault(); onPointer(e); } }}
+          onTouchEnd={() => setDragging(false)}
+        />
+      )}
+      {/* Progress hint */}
+      <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 text-[10px] font-black text-white/90 tracking-widest pointer-events-none">
+        {Math.min(100, Math.round(progress * 100))}%
+      </div>
+    </div>
+  );
+}
 
 /**
  * CheckoutSurpriseModal — one-shot flash gift reveal that greets the customer
@@ -37,8 +159,9 @@ export default function CheckoutSurpriseModal({
 
   useEffect(() => {
     if (!show) return;
-    // Auto-reveal after 900ms so the box "opens" on its own — user can also tap
-    const t = setTimeout(() => setRevealed(true), 900);
+    // Safety-net: if the user hasn't scratched after 12s, auto-reveal so we
+    // never trap the checkout behind an interaction that never completes.
+    const t = setTimeout(() => setRevealed(true), 12000);
     return () => clearTimeout(t);
   }, [show]);
 
@@ -91,19 +214,12 @@ export default function CheckoutSurpriseModal({
             <Sparkles size={12} /> A little surprise for you
           </p>
 
-          {/* Gift / Reveal */}
+          {/* Gift / Reveal — scratch canvas overlay hides the prize until user
+              swipes across the gift card. Falls back to a tap-to-open button
+              on browsers where <canvas> isn't fully supported. */}
           <div className="flex flex-col items-center justify-center mb-4">
             {!revealed ? (
-              <button
-                type="button"
-                onClick={() => setRevealed(true)}
-                data-testid="checkout-surprise-open"
-                className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-3xl bg-gradient-to-br from-amber-500 via-orange-500 to-rose-500 shadow-[0_20px_50px_-10px_rgba(245,158,11,0.55)] flex items-center justify-center ring-4 ring-white/70"
-                style={{ animation: 'wiggle 900ms ease-in-out infinite' }}
-              >
-                <Gift size={40} className="text-white drop-shadow" strokeWidth={2.4} />
-                <span className="absolute -top-2 -right-2 bg-white text-[10px] font-black text-orange-600 px-2 py-0.5 rounded-full shadow ring-1 ring-amber-200">TAP</span>
-              </button>
+              <ScratchCard onReveal={() => setRevealed(true)} gift={gift} amount={amount} />
             ) : (
               <div className="relative w-full flex flex-col items-center">
                 {/* Confetti dots */}
@@ -120,11 +236,11 @@ export default function CheckoutSurpriseModal({
                   />
                 ))}
                 <div
-                  className="w-24 h-24 sm:w-28 sm:h-28 rounded-3xl bg-white ring-4 ring-amber-200/70 flex items-center justify-center mb-2 overflow-hidden"
+                  className="w-28 h-28 sm:w-32 sm:h-32 rounded-3xl bg-white ring-4 ring-amber-200/70 flex items-center justify-center mb-2 overflow-hidden"
                   style={{ animation: 'glow 2s ease-in-out infinite' }}
                 >
                   {gift && gift.image ? (
-                    <img src={gift.image} alt={gift.name} className="w-full h-full object-contain p-1" />
+                    <img src={gift.image} alt={gift.name} className="w-full h-full object-contain p-1" data-testid="checkout-surprise-gift-image" />
                   ) : (
                     <div className="text-center leading-none">
                       <p className="text-[10px] font-black tracking-[0.2em] text-amber-700 uppercase mb-1">FLAT</p>
@@ -133,6 +249,15 @@ export default function CheckoutSurpriseModal({
                     </div>
                   )}
                 </div>
+                {/* MRP callout — always show for a free product so the value
+                    of the giveaway is unmistakable. */}
+                {gift && gift.mrp && (
+                  <div className="mt-1 flex items-center gap-2" data-testid="checkout-surprise-gift-mrp">
+                    <span className="text-[10px] font-bold tracking-[0.24em] text-stone-500 uppercase">Worth</span>
+                    <span className="text-lg font-black text-emerald-700">₹{gift.mrp}</span>
+                    <span className="text-[11px] line-through text-stone-400">MRP ₹{gift.mrp}</span>
+                  </div>
+                )}
               </div>
             )}
           </div>

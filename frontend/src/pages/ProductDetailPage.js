@@ -505,6 +505,61 @@ function ProductDetailPage() {
               )}
             </div>
 
+            {/* -------------------------------------------------------------
+                PDP secondary image gallery (Feb-2026)
+                Horizontal-scroll snap gallery below Add-to-Cart/Buy-Now.
+                Renders `product.image_gallery` (per-image alt tags fed
+                into Google via <img alt>) when present, else falls back
+                to `product.images`. Alt text is what carries SEO here.
+                --------------------------------------------------------- */}
+            {(() => {
+              const gallery = Array.isArray(product.image_gallery) && product.image_gallery.length > 0
+                ? product.image_gallery
+                : (product.images || []).map((url, i) => ({
+                    url,
+                    alt: `${product.name} — view ${i + 1}`,
+                  }));
+              const shown = gallery.slice(0, 12);
+              if (shown.length < 2) return null;
+              return (
+                <div className="mt-6 -mx-4 sm:mx-0" data-testid="pdp-scroll-gallery">
+                  <div className="flex items-center justify-between px-4 sm:px-0 mb-2">
+                    <p className="text-xs font-bold text-gray-400 uppercase tracking-[0.15em]">More Views</p>
+                    <p className="text-[10px] text-stone-400">swipe →</p>
+                  </div>
+                  <div
+                    className="flex gap-3 overflow-x-auto snap-x snap-mandatory px-4 sm:px-0 pb-2"
+                    style={{ scrollbarWidth: 'none' }}
+                  >
+                    {shown.map((g, i) => (
+                      <a
+                        key={i}
+                        href={g.url}
+                        onClick={(e) => e.preventDefault()}
+                        className="snap-start flex-shrink-0 rounded-2xl overflow-hidden bg-white ring-1 ring-stone-200 shadow-sm w-[62%] sm:w-56"
+                      >
+                        <div className="aspect-square bg-stone-50">
+                          <img
+                            src={g.url}
+                            alt={g.alt || `${product.name} — view ${i + 1}`}
+                            title={g.alt || product.name}
+                            loading="lazy"
+                            decoding="async"
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                        {g.alt && (
+                          <p className="text-[10px] font-semibold text-stone-500 truncate px-3 py-1.5">
+                            {g.alt}
+                          </p>
+                        )}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Volume discount panel removed — single-unit pricing only (better margins). */}
             <div className="mt-6">
               <p className="text-xs font-bold text-gray-400 uppercase tracking-[0.15em] mb-3">Key Active Ingredients</p>

@@ -1,0 +1,39 @@
+{
+  "summary": "Jan-2026 major update batch tested end-to-end: health, coverage-by-pincode (in-zone + graceful unresolved + bad-pin), admin trend-products (auth, list, persist, patch), admin image-gallery (search, GET, PUT round-trip with alt keywords), house_categories_only site-setting round-trip, and COD order placement latency + referral fields. 14/15 backend tests pass, 1 skipped (EMERGENT_LLM_KEY over budget — Gemini path can't be exercised in this env). All 5 frontend acceptance points verified live.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/admin/trend-products/generate", "issue": "EMERGENT_LLM_KEY is over budget (Current cost: 25.46, Max: 25.44) — LiteLLM returns RateLimitError → endpoint returns 502. Wiring is correct (route, auth, generator, model=gemini-2.5-flash all resolve), but the LLM path itself is unreachable until the key budget is topped up. Test skips gracefully."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Homepage / global", "issues": ["Console flooded with 'Encountered two children with the same key ba_<hash>' React warnings — hundreds per page load. Coming from a list rendered with non-unique `ba_...` keys (looks like a beauty-analytics / body-attributes tracker). Non-blocking but pollutes DevTools and is a latent duplication risk."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_jan2026_major_update.py",
+    "/app/test_reports/pytest/iter25_results.xml"
+  ],
+  "action_items": [
+    "Top up EMERGENT_LLM_KEY budget so the Gemini-powered trend-product generator can actually be exercised. Route/service wiring is correct — retest generate → persist → patch after top-up.",
+    "Track down the source of duplicate React keys (ba_f31b5bcb, ba_c8682ccf, ba_ecec06d3, ba_aa005e19, ba_b7be2f3f, ...) — likely a `.map` over an array where two items share the same id. Grep for `key={.*ba_` or a tracker rendering pixel elements."
+  ],
+  "critical_code_review_comments": [
+    "trend_products.py POST /admin/trend-products/generate wraps all non-HTTPException failures in a 502 with `f'Generator error: {exc}'`. This includes rate-limit and budget errors — fine for opaque failures, but the emergent-ingress swallows the JSON body and shows a generic HTML 502 page to browsers, so admins won't see the real reason (budget exceeded). Consider surfacing rate-limit / budget errors as 429 with `{'reason':'llm_budget_exceeded'}` so the admin UI can render actionable copy.",
+    "OrderCreate.amount is server-recomputed via cart/validate (good — prevents tampering), but the mismatch error message returns raw ₹ values (`server: ₹1014.0, sent: ₹850.0`). This is customer-facing on 400; consider truncating decimals and phrasing without server-side numbers to avoid confusion.",
+    "trend_product_generator.py `chat.send_message` has no timeout wrapper — a slow Gemini call can pin an event-loop worker for up to LiteLLM's internal timeout. The public ingress will 502 at ~55s regardless. Consider `asyncio.wait_for(..., timeout=45)` inside the generator so we return a clean 504 to the admin before ingress kills the connection."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_jan2026_major_update.py (new — 15 test cases)"
+  ],
+  "success_rate": {"backend": "93% (14 pass + 1 skip due to LLM budget / 15 total)", "frontend": "100% (5/5 acceptance points verified)"},
+  "test_credentials": "Admin X-Admin-Token = celestaglow2024",
+  "seed_data_creation": "Toggled house_categories_only ON→OFF around the /categories test (reset at end). Trend-product persist step used a stub product {slug: test-trend-<uuid>} which was left is_active=false (hidden). PUT to admin/image-gallery/<slug> appended a 'TEST alt keyword jan2026' entry and restored the original gallery in the same test.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "State at handoff: house_categories_only reset to FALSE. One test trend-product may exist in DB as slug='test-trend-<uuid>' with is_active=false and generated_by='trend_product_generator' — hidden from storefront but visible under /admin/trend-products Existing tab. EMERGENT_LLM_KEY is over budget as of 2026-09-13; wait for top-up before retrying trend-product generate. Order placement latency: measured 0.13s wall-clock for a 1-item COD order — the fire-and-forget email + Meta CAPI optimization is working (test asserts <5s, actual was 130ms). Frontend selectors that were verified: [data-testid='house-categories'], [data-testid='pdp-scroll-gallery']. Admin pages load fine and the admin session cookie survives across /admin/trend-products and /admin/image-gallery navigation.",
+  "rca of the issue": "The only failing backend test (generate_preview) is NOT a code bug — the trend-product generator is correctly wired (route registered, admin auth verified, LlmChat model gemini-2.5-flash instantiates, prompt is well-formed). The failure is a hard budget cap on the shared EMERGENT_LLM_KEY reported by LiteLLM: 'RateLimitError: OpenAIException - Budget has been exceeded! Key=d7g89mnkvhts73d89pq0 Current cost: 25.46, Max budget: 25.44'. Fix: top up the emergent LLM key budget; no code changes required."
+}

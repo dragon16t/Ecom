@@ -270,6 +270,12 @@ function AdminDashboard() {
           <Link to="/admin/ai-studio" className="flex items-center gap-3 px-4 py-3 text-gray-600 hover:bg-gray-50 rounded-xl" data-testid="nav-ai">
             <Sparkles size={20} /> AI Studio
           </Link>
+          <Link to="/admin/trend-products" className="flex items-center gap-3 px-4 py-3 text-fuchsia-600 hover:bg-fuchsia-50 rounded-xl" data-testid="nav-trend-products">
+            <Sparkles size={20} /> Trend Products
+          </Link>
+          <Link to="/admin/image-gallery" className="flex items-center gap-3 px-4 py-3 text-indigo-600 hover:bg-indigo-50 rounded-xl" data-testid="nav-image-gallery">
+            <Package size={20} /> Image Gallery
+          </Link>
           
           {/* Landing Pages - After AI Studio */}
           <Link to="/admin/landing-pages" className="flex items-center gap-3 px-4 py-3 text-purple-600 hover:bg-purple-50 rounded-xl" data-testid="nav-landing-pages">
