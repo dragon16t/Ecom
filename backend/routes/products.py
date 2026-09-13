@@ -1490,41 +1490,60 @@ async def validate_cart(data: CartValidateRequest):
             combos_by_id[c["combo_id"]] = c
 
     # ---- Feb-2026: "Other brands out of stock" master switch ----
-    # If admin has turned the toggle OFF (default) and the cart contains any
-    # product whose brand isn't Celesta Glow, we short-circuit here with a
-    # 409 + machine-readable reason. The checkout page surfaces a friendly
-    # modal and bounces the customer back to the homepage.
+    # If admin has turned the toggle OFF (default), we DROP any non-Celesta-Glow
+    # branded item from the cart silently. If AFTER dropping the cart still has
+    # at least one Celesta Glow item, checkout proceeds normally with just the
+    # house-brand items (with a `dropped_other_brand_items` notice so the UI
+    # can surface a small message). Only when the ENTIRE cart is non-house
+    # brand do we raise a 409 that bounces the shopper to the homepage.
     _brand_flag_doc = await db.site_settings.find_one(
         {"_id": "main"}, {"_id": 0, "other_brands_in_stock": 1}
     ) or {}
     _other_brands_in_stock = bool(_brand_flag_doc.get("other_brands_in_stock", False))
+    dropped_other_brand_items: list = []
     if not _other_brands_in_stock:
-        offending = []
-        for p in products_by_slug.values():
+        def _is_other_brand(p: dict) -> bool:
             brand = (p.get("brand") or "").strip().lower()
-            if brand and "celesta" not in brand:
-                offending.append({
+            return bool(brand) and "celesta" not in brand
+        # Drop the non-house products from the lookup so the downstream loop
+        # skips them (item.product_slug won't resolve).
+        keep_slugs: list = []
+        for slug, p in list(products_by_slug.items()):
+            if _is_other_brand(p):
+                dropped_other_brand_items.append({
                     "slug": p.get("slug"),
                     "name": p.get("name"),
                     "brand": p.get("brand"),
                 })
-        # Combos: block if ANY constituent product isn't Celesta Glow
-        for c in combos_by_id.values():
+                del products_by_slug[slug]
+            else:
+                keep_slugs.append(slug)
+        # Combos: drop any combo whose constituents include a non-house SKU
+        for combo_id, c in list(combos_by_id.items()):
+            has_other = False
             for s in (c.get("product_slugs") or []):
-                pdoc = products_by_slug.get(s) or await db.products.find_one(
-                    {"slug": s}, {"_id": 0, "slug": 1, "name": 1, "brand": 1}
-                )
-                if pdoc:
-                    brand = (pdoc.get("brand") or "").strip().lower()
-                    if brand and "celesta" not in brand:
-                        offending.append({
-                            "slug": pdoc.get("slug"),
-                            "name": pdoc.get("name"),
-                            "brand": pdoc.get("brand"),
-                            "via_combo": c.get("combo_id"),
-                        })
-                        break
-        if offending:
+                pdoc = products_by_slug.get(s)
+                if pdoc is None:
+                    # Not batched — fetch just this doc's brand
+                    pdoc = await db.products.find_one(
+                        {"slug": s}, {"_id": 0, "slug": 1, "name": 1, "brand": 1}
+                    )
+                if pdoc and _is_other_brand(pdoc):
+                    has_other = True
+                    dropped_other_brand_items.append({
+                        "slug": pdoc.get("slug"),
+                        "name": pdoc.get("name"),
+                        "brand": pdoc.get("brand"),
+                        "via_combo": combo_id,
+                    })
+                    break
+            if has_other:
+                del combos_by_id[combo_id]
+        # If the ENTIRE cart was non-house brand → block. Otherwise silently
+        # proceed with just the house-brand items.
+        original_products = len(data.items)
+        remaining = len(products_by_slug) + len(combos_by_id)
+        if original_products > 0 and remaining == 0 and dropped_other_brand_items:
             raise HTTPException(
                 status_code=409,
                 detail={
@@ -1534,7 +1553,7 @@ async def validate_cart(data: CartValidateRequest):
                         "Check out our anti-aging line for fresh formulas and today's best offers."
                     ),
                     "redirect_to": "/",
-                    "offending_items": offending,
+                    "offending_items": dropped_other_brand_items,
                 },
             )
 
@@ -1907,6 +1926,7 @@ async def validate_cart(data: CartValidateRequest):
 
     return {
         "items": validated_items,
+        "dropped_other_brand_items": dropped_other_brand_items,
         "mrp_total": int(round(mrp_total)),
         "subtotal": int(round(subtotal)),
         "discount": int(round(discount)),
