@@ -50,7 +50,7 @@ class LandingPageService:
                 page["id"] = str(page["_id"])
                 del page["_id"]
             return page
-        except:
+        except Exception:
             return None
     
     async def create_landing_page(self, data: LandingPageCreate) -> dict:
@@ -96,7 +96,7 @@ class LandingPageService:
                 result["id"] = str(result["_id"])
                 del result["_id"]
             return result
-        except:
+        except Exception:
             return None
     
     async def delete_landing_page(self, page_id: str) -> bool:
@@ -104,7 +104,7 @@ class LandingPageService:
         try:
             result = await self.collection.delete_one({"_id": ObjectId(page_id)})
             return result.deleted_count > 0
-        except:
+        except Exception:
             return False
     
     async def record_conversion(self, slug: str) -> bool:

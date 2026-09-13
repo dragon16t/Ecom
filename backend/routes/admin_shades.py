@@ -186,22 +186,15 @@ async def upload_shade_image(
         except Exception as e:
             logger.error(f"[shade-upload] Cloudinary failed: {e}")
 
-    # Local fallback
-    from pathlib import Path
-    uploads_root = Path("/app/backend/uploads/shades")
-    uploads_root.mkdir(parents=True, exist_ok=True)
-    ext = (file.filename or "").split(".")[-1].lower()
-    if ext not in ("jpg", "jpeg", "png", "webp"):
-        ext = "jpg"
-    fname = f"{uuid.uuid4().hex[:16]}.{ext}"
-    fpath = uploads_root / fname
-    contents = await file.read()
-    fpath.write_bytes(contents)
-
-    backend_url = os.environ.get("PUBLIC_APP_URL", "").rstrip("/")
-    public_path = f"/api/uploads/shades/{fname}"
-    full_url = (backend_url + public_path) if backend_url else public_path
-    return {"success": True, "url": full_url, "source": "local"}
+    # Local fallback — DEPRECATED: pod-local writes aren't reachable from the
+    # public URL in K8s deployments. If Cloudinary is misconfigured we fail
+    # loudly instead of silently writing to ephemeral storage. Admin should
+    # configure CLOUDINARY_CLOUD_NAME / API_KEY / API_SECRET.
+    raise HTTPException(
+        status_code=503,
+        detail="Image upload unavailable — Cloudinary is not configured. "
+               "Set CLOUDINARY_CLOUD_NAME / API_KEY / API_SECRET in admin settings.",
+    )
 
 
 @router.post("/bulk-lookup")

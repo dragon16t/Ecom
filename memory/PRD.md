@@ -22,7 +22,12 @@ Clone the "Celesta Glow" website with pixel-perfect React frontend + FastAPI/Mon
 - **Certificates** unchanged — served via `test_report_image` on `/api/products/{slug}`.
 
 ## Known production issue
-- Last production deploy **failed** (Google Cloud Build "manifest invalid" — infra hiccup, not code). Preview is healthy. Retry the deploy to push all Feb-2026 changes live.
+- ~~Last production deploy **failed**~~ **FIXED (Feb 13 2026)**: K8s readiness probe timing out because `services.taxonomy_canonical` was reclassifying 7 800+ products synchronously inside the `@app.on_event("startup")` block. `/health` was blocked for 8-10 min → pod killed before ready.
+  - **Fix**: `server.py` startup now splits into two phases:
+    1. Fast bootstrap (session hydration, admin pw cache, active-admin-hash, visitor indexes, Cloudinary env bootstrap, volume-discount migration) — completes in <1s.
+    2. `_run_heavy_startup_tasks()` fires via `asyncio.create_task()` — product seed, migrations, concerns seed, catalog auto-restore, canonical taxonomy reset + reclassify 7 800 products, post-restore master-brain — all run AFTER `Application startup complete`.
+  - Verified: `/api/health` responds in 6 ms after `supervisorctl restart backend`.
+- Also cleaned up: duplicate `/api/pincode/{pincode}` route (kept the async httpx version in `api_router`, removed the blocking `requests` duplicate), duplicate `"60"` dict key in `PIN_PREFIX_STATE`, and three bare `except:` in `services/landing_page_service.py`.
 
 ## Key API endpoints (Feb-2026)
 - `GET|PUT /api/top-banner` + `GET|PUT /api/admin/top-banner`

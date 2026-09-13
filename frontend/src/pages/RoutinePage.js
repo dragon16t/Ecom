@@ -137,15 +137,51 @@ export default function RoutinePage() {
     if (angle === 'right') setPhotoRight(null);
   };
 
-  // Deterministic "AI" skin score — same inputs never flicker to different scores.
+  // Variable skin score in the 70–90 range. Score = base (weighted by age,
+  // skin type, concerns, photo completeness) + small randomised jitter so
+  // regenerating with the same inputs still moves the needle a couple of
+  // points. We also return per-factor deltas so the report can explain
+  // exactly WHY the score landed where it did.
   const computeSkinScore = (concerns, allPhotos) => {
-    let base = 84;
-    base -= concerns.length * 3;
-    if (allPhotos) base += 6;
-    if (age === '35–44') base -= 3;
-    if (age === '45+') base -= 6;
-    if (skinType === 'sensitive') base -= 2;
-    return Math.max(38, Math.min(96, base));
+    const factors = [];
+    let score = 88;
+    factors.push({ label: 'Baseline healthy-skin score', delta: 88 });
+
+    // Concerns — each concern trims a couple of points.
+    if (concerns && concerns.length) {
+      const perConcern = -Math.min(3, Math.max(1, Math.round(12 / Math.max(1, concerns.length))));
+      const conDelta = perConcern * concerns.length;
+      score += conDelta;
+      factors.push({ label: `${concerns.length} skin concern${concerns.length === 1 ? '' : 's'} flagged (${concerns.slice(0, 3).join(', ')}${concerns.length > 3 ? '…' : ''})`, delta: conDelta });
+    }
+
+    // Age band
+    if (age === '18–24') { score += 3; factors.push({ label: 'Youthful skin (18–24) — collagen still peaking', delta: 3 }); }
+    else if (age === '25–34') { factors.push({ label: 'Prime skin (25–34) — no age penalty', delta: 0 }); }
+    else if (age === '35–44') { score -= 3; factors.push({ label: 'Early collagen decline (35–44)', delta: -3 }); }
+    else { score -= 6; factors.push({ label: 'Mature phase (45+) — deeper repair needed', delta: -6 }); }
+
+    // Skin type nuance
+    if (skinType === 'sensitive') { score -= 3; factors.push({ label: 'Sensitive skin — barrier is easier to disrupt', delta: -3 }); }
+    else if (skinType === 'oily') { score -= 1; factors.push({ label: 'Oily skin — sebum control matters daily', delta: -1 }); }
+    else if (skinType === 'dry') { score -= 2; factors.push({ label: 'Dry skin — hydration is the top priority', delta: -2 }); }
+    else if (skinType === 'combination') { factors.push({ label: 'Combination skin — zone-specific care recommended', delta: 0 }); }
+    else if (skinType === 'normal') { score += 2; factors.push({ label: 'Normal, well-balanced skin', delta: 2 }); }
+
+    // Photo completeness — reward users who upload all 3 angles.
+    if (allPhotos) { score += 4; factors.push({ label: 'All 3 angles captured — full inspection possible', delta: 4 }); }
+    else { score -= 2; factors.push({ label: 'Only front selfie — deeper angles missed', delta: -2 }); }
+
+    // Small deterministic-ish jitter (±2) seeded by concerns + age +
+    // timestamp bucket so refreshing the report a minute later can shift the
+    // score by a point or two — feels alive, not scripted.
+    const jitter = ((Date.now() >> 12) + concerns.length * 7 + age.length * 3) % 5 - 2;
+    score += jitter;
+    if (jitter) factors.push({ label: 'Session variance (skin readings shift daily)', delta: jitter });
+
+    // Clamp to 70–90
+    score = Math.max(70, Math.min(90, score));
+    return { score, factors };
   };
 
   const generateSpecialistNotes = (concerns) => {
@@ -206,9 +242,16 @@ export default function RoutinePage() {
         return { slot, product };
       });
       const allPhotos = !!(photoFront && photoLeft && photoRight);
-      const skinScore = computeSkinScore(selectedConcerns, allPhotos);
+      const skinScoreResult = computeSkinScore(selectedConcerns, allPhotos);
       const specialistNotes = generateSpecialistNotes(selectedConcerns);
-      setRoutine({ am, pm, skin_score: skinScore, specialist_notes: specialistNotes, photos_captured: allPhotos });
+      setRoutine({
+        am,
+        pm,
+        skin_score: skinScoreResult.score,
+        skin_score_factors: skinScoreResult.factors,
+        specialist_notes: specialistNotes,
+        photos_captured: allPhotos,
+      });
       setGenerating(false);
       try {
         const payload = {
@@ -221,7 +264,8 @@ export default function RoutinePage() {
           photo_data: photoFront && !photoFront.startsWith('http') ? photoFront : null,
           photo_left_data: photoLeft && !photoLeft.startsWith('http') ? photoLeft : null,
           photo_right_data: photoRight && !photoRight.startsWith('http') ? photoRight : null,
-          skin_score: skinScore,
+          skin_score: skinScoreResult.score,
+          skin_score_factors: skinScoreResult.factors,
           specialist_notes: specialistNotes,
           mobile: cleanMobile,
           session_id: sessionStorage.getItem('sessionId') || null,

@@ -699,6 +699,12 @@ async def get_all_products(
     # Sale-mode: overlay Flat 50% OFF price on eligible (anti-aging) products.
     await _apply_sale(products)
 
+    # Safety: strip any residual `_id` from raw MongoDB docs (projections
+    # should already exclude it, but the aggregate pipeline path relies on
+    # `$project` — this guarantees no ObjectId sneaks into JSON responses).
+    for _p in products:
+        _p.pop("_id", None)
+
     # Back-compat: if the caller didn't ask for pagination, return a plain array.
     if not paginating:
         return products

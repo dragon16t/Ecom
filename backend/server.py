@@ -5,6 +5,7 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
+import asyncio
 import logging
 import re
 from pathlib import Path
@@ -3486,101 +3487,6 @@ async def health_check():
     return {"ok": True, "ts": datetime.now(timezone.utc).isoformat()}
 
 
-# ---------- Pincode → state/city resolver ----------
-# Used by the checkout form to auto-fill state + city when the user types a
-# 6-digit pincode. Uses the free India Post API with a thin in-memory cache so
-# repeat lookups don't hammer the upstream.
-_pincode_cache: Dict[str, Dict[str, Any]] = {}
-
-@app.get("/api/pincode/{pincode}")
-async def lookup_pincode(pincode: str):
-    pincode = (pincode or "").strip()
-    if not pincode.isdigit() or len(pincode) != 6:
-        raise HTTPException(status_code=400, detail="Pincode must be 6 digits")
-    if pincode in _pincode_cache:
-        return _pincode_cache[pincode]
-    # First try our own MongoDB cache (admins may pre-seed delivery zones)
-    try:
-        doc = await db.pincode_directory.find_one({"pincode": pincode}, {"_id": 0})
-        if doc:
-            _pincode_cache[pincode] = doc
-            return doc
-    except Exception:
-        pass
-    # Fall back to India Post public API
-    try:
-        import requests
-        r = requests.get(f"https://api.postalpincode.in/pincode/{pincode}", timeout=4)
-        data = r.json()
-        if isinstance(data, list) and data and data[0].get("Status") == "Success":
-            offices = data[0].get("PostOffice") or []
-            if offices:
-                po = offices[0]
-                result = {
-                    "pincode": pincode,
-                    "state": po.get("State") or "",
-                    "city": po.get("District") or "",
-                    "district": po.get("District") or "",
-                    "country": po.get("Country") or "India",
-                    "offices_count": len(offices),
-                }
-                _pincode_cache[pincode] = result
-                # Persist so repeat lookups skip the external API even after a redeploy
-                try:
-                    await db.pincode_directory.update_one(
-                        {"pincode": pincode}, {"$set": result}, upsert=True
-                    )
-                except Exception:
-                    pass
-                return result
-    except Exception as exc:
-        logging.warning(f"[pincode] upstream lookup failed for {pincode}: {exc}")
-    # ---- Offline fallback: infer state from the pincode prefix ----
-    # India Post assigns the first 2 digits ("regions") deterministically.
-    # This guarantees the user always gets a state even if the upstream API is
-    # unreachable from inside the pod (firewall, outage, etc.).
-    PIN_PREFIX_STATE = {
-        "11": "Delhi",
-        "12": "Haryana", "13": "Haryana",
-        "14": "Punjab", "15": "Punjab", "16": "Punjab",
-        "17": "Himachal Pradesh",
-        "18": "Jammu & Kashmir", "19": "Jammu & Kashmir",
-        "20": "Uttar Pradesh", "21": "Uttar Pradesh", "22": "Uttar Pradesh",
-        "23": "Uttar Pradesh", "24": "Uttar Pradesh", "25": "Uttar Pradesh",
-        "26": "Uttar Pradesh", "27": "Uttar Pradesh", "28": "Uttar Pradesh",
-        "30": "Rajasthan", "31": "Rajasthan", "32": "Rajasthan",
-        "33": "Rajasthan", "34": "Rajasthan",
-        "36": "Gujarat", "37": "Gujarat", "38": "Gujarat", "39": "Gujarat",
-        "40": "Maharashtra", "41": "Maharashtra", "42": "Maharashtra",
-        "43": "Maharashtra", "44": "Maharashtra",
-        "45": "Madhya Pradesh", "46": "Madhya Pradesh", "47": "Madhya Pradesh",
-        "48": "Madhya Pradesh",
-        "49": "Chhattisgarh",
-        "50": "Andhra Pradesh / Telangana", "51": "Andhra Pradesh / Telangana",
-        "52": "Andhra Pradesh / Telangana", "53": "Andhra Pradesh / Telangana",
-        "56": "Karnataka", "57": "Karnataka", "58": "Karnataka", "59": "Karnataka",
-        "60": "Tamil Nadu", "61": "Tamil Nadu", "62": "Tamil Nadu", "63": "Tamil Nadu", "64": "Tamil Nadu",
-        "67": "Kerala", "68": "Kerala", "69": "Kerala",
-        "70": "West Bengal", "71": "West Bengal", "72": "West Bengal", "73": "West Bengal", "74": "West Bengal",
-        "75": "Odisha", "76": "Odisha", "77": "Odisha",
-        "78": "Assam",
-        "79": "Arunachal / Nagaland / Manipur / Mizoram / Tripura / Meghalaya",
-        "80": "Bihar", "81": "Bihar", "82": "Bihar", "83": "Jharkhand", "84": "Bihar", "85": "Bihar",
-        "90": "Army Postal Service", "91": "Army Postal Service",
-        "92": "Army Postal Service", "93": "Army Postal Service",
-        "94": "Army Postal Service", "95": "Army Postal Service",
-        "96": "Army Postal Service", "97": "Army Postal Service", "98": "Army Postal Service",
-        "60": "Tamil Nadu",
-    }
-    prefix = pincode[:2]
-    state = PIN_PREFIX_STATE.get(prefix)
-    if state:
-        result = {"pincode": pincode, "state": state, "city": "", "country": "India", "source": "prefix"}
-        _pincode_cache[pincode] = result
-        return result
-    raise HTTPException(status_code=404, detail="Pincode not recognised — please enter state/city manually")
-
-
 
 
 app.include_router(api_router)
@@ -3718,8 +3624,13 @@ logger = logging.getLogger(__name__)
 
 @app.on_event("startup")
 async def startup_seed():
-    """Seed product catalog + run migrations on startup"""
-    # Hydrate admin/employee sessions from Mongo so they survive pod restarts
+    """Fast startup — offload heavy work to a background task so the K8s
+    readiness probe (`/health`) responds in <1s. Anything that scans the full
+    27k-product catalog (canonical taxonomy reset, reclassify, master-brain,
+    catalog snapshot restore) MUST run in `_run_heavy_startup_tasks()` below.
+    """
+    # Fast: hydrate admin/employee sessions from Mongo so cookies survive pod
+    # restarts. These are single collection loads (<100ms).
     try:
         await admin_sessions.ensure_indexes()
         await employee_sessions.ensure_indexes()
@@ -3727,154 +3638,27 @@ async def startup_seed():
         await employee_sessions.hydrate()
     except Exception as e:
         logging.error(f"Failed to hydrate sessions: {e}")
-    try:
-        await product_routes.seed_products()
-        await product_routes.ensure_indexes()
-    except Exception as e:
-        logging.error(f"Failed to seed products: {e}")
-    try:
-        from migrations import run_all_migrations
-        await run_all_migrations(db)
-    except Exception as e:
-        logging.error(f"Failed to run migrations: {e}", exc_info=True)
-    try:
-        from concerns_seed import run_concerns_seed
-        await run_concerns_seed(db)
-    except Exception as e:
-        logging.error(f"Failed to seed concerns: {e}", exc_info=True)
-    # ---- Taxonomy auto-restore from Cloudinary snapshot (RUN FIRST) ----
-    # CRITICAL ORDERING (Feb-2026): restore runs BEFORE the canonical taxonomy
-    # reset so the version sentinel + admin-curated images come back FIRST.
-    # If we restore AFTER reset, the version comparison below sees the wrong
-    # sentinel and the canonical reset wipes images on every boot. With this
-    # ordering the restored `site_settings.taxonomy_canonical_version` is
-    # checked next and the reset block becomes a no-op when already applied.
-    try:
-        from services import catalog_backup as _cb
-        restore_res = await _cb.auto_restore_if_empty(db)
-        if restore_res.get("restored"):
-            logging.info(f"[catalog_backup] auto-restored taxonomy: {restore_res}")
-            # Note: we intentionally DO NOT re-run the anti-aging-serum repair
-            # here anymore. The flag-gated migration in `run_all_migrations`
-            # runs exactly once per DB and is inert forever after. Re-running
-            # it post-restore was silently wiping legitimate admin edits.
-    except Exception as e:
-        logging.warning(f"[catalog_backup] auto-restore skipped: {e}")
-    # Apply the CANONICAL taxonomy (Jan 2026 user spec): 13 skincare concerns
-    # (each with `subs` array), 16 skincare categories, 7 cosmetics categories.
-    # Runs ONCE per version on startup (sentinel: taxonomy_canonical_version).
-    # Also re-classifies every product and computes filter tags.
-    #
-    # CRITICAL: this MUST match the version string written by
-    # taxonomy_canonical.reset_canonical_taxonomy (line ~1644). When they
-    # diverge, the reset re-runs on every pod boot and `delete_many` wipes
-    # admin-uploaded image / icon URLs on concerns + categories. This was
-    # the P0 "site reverts to emojis" loophole reported by the user.
-    CANONICAL_VERSION = "2026-02-granular-subs-v5"
-    try:
-        settings = await db.site_settings.find_one(
-            {"_id": "main"},
-            {"_id": 0, "taxonomy_canonical_applied": 1, "taxonomy_canonical_version": 1}
-        )
-        applied_version = (settings or {}).get("taxonomy_canonical_version")
-        if applied_version != CANONICAL_VERSION:
-            from services.taxonomy_canonical import (
-                reset_canonical_taxonomy, reclassify_all_products, compute_product_tags
-            )
-            seeded = await reset_canonical_taxonomy(db)
-            logging.info(f"[taxonomy_canonical {CANONICAL_VERSION}] reset inserted {seeded}")
-            classified = await reclassify_all_products(db)
-            logging.info(f"[taxonomy_canonical] classified {classified.get('updated')} products")
-            tagged = await compute_product_tags(db)
-            logging.info(f"[taxonomy_canonical] tagged {tagged.get('updated')} products")
-        else:
-            logging.info(f"[taxonomy_canonical] {CANONICAL_VERSION} already applied — skipping reset")
-    except Exception as e:
-        logging.error(f"Failed to apply canonical taxonomy: {e}", exc_info=True)
-    # Live visitor tracking TTL index (5-min auto-expiry on `last_seen`)
-    try:
-        await _visitor_tracking.ensure_indexes()
-    except Exception as e:
-        logging.error(f"Failed to create visitor tracking indexes: {e}")
-    # Refresh admin password cache so DB-stored password works for verify_auth
+
+    # Fast: refresh admin password cache (single Mongo doc lookup)
     try:
         await product_routes._refresh_admin_pw_cache()
     except Exception as e:
         logging.error(f"Failed to refresh admin pw cache: {e}")
-    # ---- Post-restore master-brain reclassify ----
-    # Now that the snapshot + canonical taxonomy are both applied, run the
-    # reclassifier so master-brain owns taxonomy / brand / is_active fields
-    # deterministically. Image / icon / accent fields are NEVER touched by
-    # this pass — _safe_set() in taxonomy_canonical guarantees it.
-    try:
-        from services.taxonomy_canonical import reclassify_all_products as _rc
-        rerun = await _rc(db)
-        logging.info(f"[taxonomy_canonical] post-startup reclassify: updated={rerun.get('updated')}")
-    except Exception as e:
-        logging.warning(f"[taxonomy_canonical] post-startup reclassify skipped: {e}")
 
-    # ---- Daily midnight-IST backup scheduler ----
-    # Backup runs ONCE per day at 00:00 IST. If any changes happened during the
-    # day, incremental_snapshot() picks them up and uploads them; if nothing
-    # changed since the last snapshot, it skips the upload entirely. This is
-    # the single source of truth for automated backups — no per-write and no
-    # 15-min safety net (those were removed per admin request Feb-2026 to
-    # reduce Cloudinary bandwidth).
-    async def _daily_backup_loop():
-        import asyncio
-        from datetime import datetime as _dt, timedelta as _td, timezone as _tz
-        IST = _tz(_td(hours=5, minutes=30))
-        from services import catalog_backup as _cb_local
-        while True:
-            try:
-                now_ist = _dt.now(IST)
-                next_run = now_ist.replace(hour=0, minute=0, second=0, microsecond=0) + _td(days=1)
-                wait_seconds = max(60, (next_run - now_ist).total_seconds())
-                logging.info(f"[catalog_backup] next daily snapshot at {next_run.isoformat()} (in {int(wait_seconds//60)} min)")
-                await asyncio.sleep(wait_seconds)
-                try:
-                    # Prefer incremental if we already have a full anchor —
-                    # smaller upload, still fully restorable. Falls back to a
-                    # full snapshot only when no anchor exists yet.
-                    meta = await db.admin_settings.find_one({"type": "catalog_backup"}, {"_id": 0, "current_full_public_id": 1}) or {}
-                    if meta.get("current_full_public_id"):
-                        res = await _cb_local.incremental_snapshot(db)
-                        if res.get("skipped_no_changes") or res.get("skipped_dedupe"):
-                            logging.info("[catalog_backup] daily: no changes since last snapshot — nothing to upload")
-                        elif res.get("success"):
-                            logging.info(f"[catalog_backup] daily incremental uploaded: changed={res.get('changed')}")
-                        else:
-                            logging.warning(f"[catalog_backup] daily incremental skipped: {res.get('reason')}")
-                    else:
-                        res = await _cb_local.snapshot(db)
-                        logging.info(f"[catalog_backup] daily full snapshot OK: {res.get('counts')}")
-                except Exception as exc:
-                    logging.error(f"[catalog_backup] daily snapshot FAILED: {exc}")
-            except asyncio.CancelledError:
-                break
-            except Exception as exc:
-                logging.warning(f"[catalog_backup] scheduler error, retrying in 5 min: {exc}")
-                await asyncio.sleep(300)
-
-    try:
-        import asyncio as _asyncio
-        _asyncio.create_task(_daily_backup_loop())
-        logging.info("[catalog_backup] daily midnight-IST scheduler started (15-min safety-net disabled)")
-    except Exception as e:
-        logging.warning(f"[catalog_backup] could not start scheduler: {e}")
-    # Hydrate the central active-admin-hash cache used by EVERY admin verifier.
-    # After this, the env-seed password is ONLY accepted if no custom password
-    # has been saved yet — closing the security hole where the default password
-    # kept working forever after a password change.
+    # Fast: hydrate active-admin-hash cache used by every admin verifier
     try:
         from services.admin_auth import refresh_active_admin_hash
         await refresh_active_admin_hash(db)
     except Exception as e:
         logging.error(f"Failed to hydrate active admin hash: {e}")
-    # Bootstrap Cloudinary credentials from env at every startup.
-    # Self-healing: if the admin_settings doc already exists but has empty fields
-    # (e.g. an earlier deploy wrote it before env vars were set), we patch the
-    # missing fields from env so uploads never silently fall back to local disk.
+
+    # Fast: visitor-tracking TTL index
+    try:
+        await _visitor_tracking.ensure_indexes()
+    except Exception as e:
+        logging.error(f"Failed to create visitor tracking indexes: {e}")
+
+    # Fast: bootstrap Cloudinary credentials from env
     try:
         from services import cloudinary_service as _cs
         env_cloud  = (os.environ.get("CLOUDINARY_CLOUD_NAME") or "").strip()
@@ -3913,7 +3697,8 @@ async def startup_seed():
             )
     except Exception as e:
         logging.error(f"Failed to seed cloudinary creds: {e}")
-    # One-time migration: update legacy volume_discount tiers (5/10/15) → new (3/5/8)
+
+    # Fast: one-time migration to update legacy volume_discount tiers
     try:
         await db.site_settings.update_one(
             {"_id": "main", "$or": [
@@ -3932,6 +3717,122 @@ async def startup_seed():
         )
     except Exception as e:
         logging.error(f"Failed to migrate volume_discounts: {e}")
+
+    # Kick off ALL heavy work in the background so /health returns instantly
+    # and the K8s readiness probe passes. Anything below runs on the event
+    # loop but does NOT block the ASGI lifespan startup completion.
+    asyncio.create_task(_run_heavy_startup_tasks())
+
+    # Daily midnight-IST backup scheduler (also a background task)
+    try:
+        asyncio.create_task(_daily_backup_loop())
+        logging.info("[catalog_backup] daily midnight-IST scheduler started")
+    except Exception as e:
+        logging.warning(f"[catalog_backup] could not start scheduler: {e}")
+
+    logging.info("[startup] fast bootstrap complete — heavy tasks running in background")
+
+
+async def _run_heavy_startup_tasks():
+    """Heavy startup work (product seeding, migrations, catalog restore, 27k
+    product reclassification). Runs as a background task after the ASGI
+    lifespan startup so the K8s readiness probe on /health passes in seconds
+    instead of timing out after 10+ min.
+    """
+    try:
+        await product_routes.seed_products()
+        await product_routes.ensure_indexes()
+    except Exception as e:
+        logging.error(f"[bg-startup] Failed to seed products: {e}")
+    try:
+        from migrations import run_all_migrations
+        await run_all_migrations(db)
+    except Exception as e:
+        logging.error(f"[bg-startup] Failed to run migrations: {e}", exc_info=True)
+    try:
+        from concerns_seed import run_concerns_seed
+        await run_concerns_seed(db)
+    except Exception as e:
+        logging.error(f"[bg-startup] Failed to seed concerns: {e}", exc_info=True)
+
+    # ---- Taxonomy auto-restore from Cloudinary snapshot (RUN FIRST) ----
+    # CRITICAL ORDERING (Feb-2026): restore runs BEFORE the canonical taxonomy
+    # reset so the version sentinel + admin-curated images come back FIRST.
+    try:
+        from services import catalog_backup as _cb
+        restore_res = await _cb.auto_restore_if_empty(db)
+        if restore_res.get("restored"):
+            logging.info(f"[bg-startup][catalog_backup] auto-restored taxonomy: {restore_res}")
+    except Exception as e:
+        logging.warning(f"[bg-startup][catalog_backup] auto-restore skipped: {e}")
+
+    # Apply the CANONICAL taxonomy (Jan 2026 user spec).
+    CANONICAL_VERSION = "2026-02-granular-subs-v5"
+    try:
+        settings = await db.site_settings.find_one(
+            {"_id": "main"},
+            {"_id": 0, "taxonomy_canonical_applied": 1, "taxonomy_canonical_version": 1}
+        )
+        applied_version = (settings or {}).get("taxonomy_canonical_version")
+        if applied_version != CANONICAL_VERSION:
+            from services.taxonomy_canonical import (
+                reset_canonical_taxonomy, reclassify_all_products, compute_product_tags
+            )
+            seeded = await reset_canonical_taxonomy(db)
+            logging.info(f"[bg-startup][taxonomy_canonical {CANONICAL_VERSION}] reset inserted {seeded}")
+            classified = await reclassify_all_products(db)
+            logging.info(f"[bg-startup][taxonomy_canonical] classified {classified.get('updated')} products")
+            tagged = await compute_product_tags(db)
+            logging.info(f"[bg-startup][taxonomy_canonical] tagged {tagged.get('updated')} products")
+        else:
+            logging.info(f"[bg-startup][taxonomy_canonical] {CANONICAL_VERSION} already applied — skipping reset")
+    except Exception as e:
+        logging.error(f"[bg-startup] Failed to apply canonical taxonomy: {e}", exc_info=True)
+
+    # ---- Post-restore master-brain reclassify ----
+    try:
+        from services.taxonomy_canonical import reclassify_all_products as _rc
+        rerun = await _rc(db)
+        logging.info(f"[bg-startup][taxonomy_canonical] post-startup reclassify: updated={rerun.get('updated')}")
+    except Exception as e:
+        logging.warning(f"[bg-startup][taxonomy_canonical] post-startup reclassify skipped: {e}")
+
+    logging.info("[bg-startup] heavy startup tasks complete")
+
+
+async def _daily_backup_loop():
+    """Daily midnight-IST catalog backup scheduler."""
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+    IST = _tz(_td(hours=5, minutes=30))
+    from services import catalog_backup as _cb_local
+    while True:
+        try:
+            now_ist = _dt.now(IST)
+            next_run = now_ist.replace(hour=0, minute=0, second=0, microsecond=0) + _td(days=1)
+            wait_seconds = max(60, (next_run - now_ist).total_seconds())
+            logging.info(f"[catalog_backup] next daily snapshot at {next_run.isoformat()} (in {int(wait_seconds//60)} min)")
+            await asyncio.sleep(wait_seconds)
+            try:
+                meta = await db.admin_settings.find_one({"type": "catalog_backup"}, {"_id": 0, "current_full_public_id": 1}) or {}
+                if meta.get("current_full_public_id"):
+                    res = await _cb_local.incremental_snapshot(db)
+                    if res.get("skipped_no_changes") or res.get("skipped_dedupe"):
+                        logging.info("[catalog_backup] daily: no changes since last snapshot — nothing to upload")
+                    elif res.get("success"):
+                        logging.info(f"[catalog_backup] daily incremental uploaded: changed={res.get('changed')}")
+                    else:
+                        logging.warning(f"[catalog_backup] daily incremental skipped: {res.get('reason')}")
+                else:
+                    res = await _cb_local.snapshot(db)
+                    logging.info(f"[catalog_backup] daily full snapshot OK: {res.get('counts')}")
+            except Exception as exc:
+                logging.error(f"[catalog_backup] daily snapshot FAILED: {exc}")
+        except asyncio.CancelledError:
+            break
+        except Exception as exc:
+            logging.warning(f"[catalog_backup] scheduler error, retrying in 5 min: {exc}")
+            await asyncio.sleep(300)
+
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
