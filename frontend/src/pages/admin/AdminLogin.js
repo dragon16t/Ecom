@@ -11,6 +11,8 @@ function AdminLogin() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [showRecovery, setShowRecovery] = useState(false);
+  const [masterReset, setMasterReset] = useState('');
   const navigate = useNavigate();
 
   // Check if already logged in on mount
@@ -29,13 +31,19 @@ function AdminLogin() {
     setLoading(true);
 
     try {
-      const res = await axios.post(`${API}/admin/login`, { password });
+      const payload = { password };
+      if (showRecovery && masterReset) payload.master_reset = masterReset;
+      const res = await axios.post(`${API}/admin/login`, payload);
       if (res.data.success) {
         setAdminToken(res.data.token);
         navigate('/admin/dashboard', { replace: true });
       }
     } catch (err) {
-      setError('Invalid password. Please try again.');
+      setError(
+        showRecovery
+          ? 'Recovery failed. Confirm the env-seed value matches ADMIN_PASSWORD on your server.'
+          : 'Invalid password. Please try again.'
+      );
     } finally {
       setLoading(false);
     }
@@ -108,6 +116,45 @@ function AdminLogin() {
             >
               {loading ? 'Signing in...' : 'Sign In'}
             </button>
+
+            {/* Forgot / recovery flow — reveals a second field that lets the
+                merchant reset their custom password using the env-seed value.
+                Hidden by default so regular sign-ins stay clean. */}
+            {!showRecovery ? (
+              <button
+                type="button"
+                onClick={() => setShowRecovery(true)}
+                className="w-full text-xs text-gray-500 hover:text-gray-700 -mt-3"
+                data-testid="admin-forgot-password"
+              >
+                Forgot password?
+              </button>
+            ) : (
+              <div className="pt-2 border-t border-dashed border-gray-200 space-y-2">
+                <p className="text-[11px] text-gray-500 leading-snug">
+                  <b>Recovery mode.</b> Enter the <code>ADMIN_PASSWORD</code> env-seed
+                  value from your server config. This wipes the DB-stored custom
+                  password so you can sign in with the value in the first field.
+                </p>
+                <input
+                  type="password"
+                  value={masterReset}
+                  onChange={(e) => setMasterReset(e.target.value)}
+                  placeholder="ADMIN_PASSWORD env-seed value"
+                  className="w-full px-4 py-2.5 border border-amber-200 rounded-xl bg-amber-50/40 text-sm outline-none focus:ring-2 focus:ring-amber-400"
+                  style={{ fontSize: '16px' }}
+                  autoComplete="off"
+                  data-testid="admin-master-reset-input"
+                />
+                <button
+                  type="button"
+                  onClick={() => { setShowRecovery(false); setMasterReset(''); }}
+                  className="text-[11px] text-gray-500 hover:text-gray-700"
+                >
+                  Cancel recovery
+                </button>
+              </div>
+            )}
           </form>
 
           {/* Back to Site */}

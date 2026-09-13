@@ -35,6 +35,23 @@
         <link rel="dns-prefetch" href="https://customer-assets.emergentagent.com" />
         <link rel="dns-prefetch" href="https://res.cloudinary.com" />
 
+        <!-- Feb-2026: pre-warm the top-5 anti-aging products so the very
+             first paint on production shows real product tiles instead of
+             skeletons. Runs during HTML parse, before the JS bundle boots. -->
+        <script>
+          (function () {
+            try {
+              var origin = window.location.origin;
+              var url = origin + '/api/products?niche=anti-aging&page=1&limit=5';
+              // Kick off the fetch and stash the promise on window so the
+              // React homepage can await it instead of firing its own.
+              window.__cgTopProductsPromise = fetch(url, { credentials: 'omit' })
+                .then(function (r) { return r.ok ? r.json() : null; })
+                .catch(function () { return null; });
+            } catch (e) { /* best-effort */ }
+          })();
+        </script>
+
         <!-- Preload ONLY the first niche-switcher image with high priority — it
              is the LCP candidate on mobile. The other two cards are below the
              fold on a 375 px viewport; preloading all three at fetchpriority

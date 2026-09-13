@@ -254,6 +254,22 @@ function Homepage() {
       .catch(() => {});
 
     // ---- 2) Products second — only 20 (the full catalog lives at /shop?niche=anti-aging) ----
+    // Feb-2026: on the very first paint of a fresh visit, index.html has
+    // already fired a top-5 fetch during HTML parse. If that promise
+    // exists we hydrate from it immediately (200-500 ms saved on first
+    // visit; no-op on cached revisits since setProducts is idempotent).
+    if (window.__cgTopProductsPromise) {
+      window.__cgTopProductsPromise
+        .then((data) => {
+          if (sig.aborted || !data) return;
+          const items = Array.isArray(data) ? data : (data?.items || []);
+          if (items.length) {
+            setProducts((prev) => (prev && prev.length ? prev : items));
+            setLoading(false);
+          }
+        })
+        .catch(() => {});
+    }
     cachedGet(`${API}/api/products?niche=anti-aging&page=1&limit=20`, { signal: sig })
       .then((p) => {
         if (sig.aborted) return;

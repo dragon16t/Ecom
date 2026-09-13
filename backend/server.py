@@ -1591,6 +1591,9 @@ async def verify_admin_token_async(x_admin_token: str = Header(None), admin_sess
 
 class AdminLoginRequest(BaseModel):
     password: str
+    # Feb-2026 rescue path: if the merchant forgot their custom password,
+    # they can pass the env-seed value here to wipe the DB-stored password.
+    master_reset: Optional[str] = None
 
 
 # Generate a secure admin session token
@@ -1648,9 +1651,27 @@ async def admin_login(request: AdminLoginRequest, response: Response):
     Accepts ONLY the *active* admin password — i.e. the one stored in
     ``admin_settings`` if the admin has saved a custom one, otherwise the
     env-seed value. Once a custom password exists the env-seed is inert.
+
+    RESCUE PATH (Feb-2026): if the merchant forgot their custom password,
+    they can pass ``{"password":"...","master_reset":"<env-seed value>"}``.
+    When the ``master_reset`` value matches the ``ADMIN_PASSWORD`` env var,
+    we wipe the stored custom password (env-seed becomes active again) and
+    log the caller in immediately with the env-seed password.
     """
-    from services.admin_auth import is_admin_password
+    from services.admin_auth import (
+        is_admin_password, refresh_active_admin_hash,
+        _env_seed_password, _hash,
+    )
     valid = await is_admin_password(request.password, db)
+    if not valid and request.master_reset and request.master_reset == _env_seed_password():
+        # Rescue: env-seed value was provided as `master_reset`. Wipe the
+        # custom password so the env-seed is active again, then log in.
+        try:
+            await db.admin_settings.delete_one({"type": "password"})
+            await refresh_active_admin_hash(db)
+            valid = _hash(request.password) == _hash(_env_seed_password())
+        except Exception:
+            valid = False
     if valid:
         # Generate a session token
         session_token = generate_admin_session_token()
