@@ -271,7 +271,11 @@ export default function CheckoutSurpriseModal({
                 <>You just unlocked <span className="italic text-orange-700">₹{amount} OFF</span></>
               )
             ) : (
-              <>Tap the gift to reveal your surprise</>
+              gift ? (
+                <>Scratch the card to reveal your free gift</>
+              ) : (
+                <>Scratch the card to reveal your surprise</>
+              )
             )}
           </h2>
 
@@ -300,7 +304,11 @@ export default function CheckoutSurpriseModal({
                   : 'bg-stone-200 text-stone-400 cursor-not-allowed'
               }`}
             >
-              {revealed ? (<><Check size={16} strokeWidth={2.8} /> Claim my ₹{amount} OFF</>) : (<><Gift size={16} /> Tap the box first</>)}
+              {revealed ? (
+                gift
+                  ? (<><Check size={16} strokeWidth={2.8} /> Claim my FREE gift</>)
+                  : (<><Check size={16} strokeWidth={2.8} /> Claim my ₹{amount} OFF</>)
+              ) : (<><Gift size={16} /> Scratch the card first</>)}
             </button>
             <p className="text-center text-[11px] text-stone-500 flex items-center justify-center gap-1.5">
               <Clock size={11} /> Locked to this checkout session

@@ -11,8 +11,11 @@ import React, { useEffect, useState } from 'react';
  * lives at `/splash-celesta-glow.png` (served from React's `public/` folder,
  * so it's hashed + edge-cached by the build). 1080×1920, 136 KB.
  */
-const SESSION_KEY = 'cg_splash_seen_v5';
-const DEFAULT_IMG = process.env.PUBLIC_URL ? `${process.env.PUBLIC_URL}/splash-celesta-glow.png` : '/splash-celesta-glow.png';
+const SESSION_KEY = 'cg_splash_seen_v6';
+// Feb-2026: NO bundled default splash. If the admin hasn't uploaded one via
+// /admin/media-tools → Splash Screen, we simply render a blank white splash
+// and move on. This is the only way to guarantee the old (pre-upload)
+// image never flashes on the customer's first paint.
 
 export default function SplashScreen({ onDone }) {
   // Start with NO image so we don't flash the bundled default before the
@@ -27,29 +30,29 @@ export default function SplashScreen({ onDone }) {
   });
   const [fadingOut, setFadingOut] = useState(false);
 
-  // Fetch admin-set splash image (falls back silently to bundled PNG)
+  // Fetch admin-set splash image. If none is set OR fetch fails we render
+  // NOTHING (blank white splash). We never fall back to a bundled image —
+  // that would flash the old default before the admin's upload arrives.
   useEffect(() => {
     if (!visible) return;
     let cancelled = false;
-    fetch(`${process.env.REACT_APP_BACKEND_URL}/api/site-settings`)
+    fetch(`${process.env.REACT_APP_BACKEND_URL}/api/site-settings`, { cache: 'no-store' })
       .then(r => r.json())
       .then(s => {
         if (cancelled) return;
-        setImgSrc((s && s.splash_image) ? s.splash_image : DEFAULT_IMG);
+        setImgSrc((s && s.splash_image) ? s.splash_image : null);
         setImgResolved(true);
       })
       .catch(() => {
         if (cancelled) return;
-        setImgSrc(DEFAULT_IMG);
+        setImgSrc(null);
         setImgResolved(true);
       });
-    // Safety: if fetch hangs >1.2s, fall back to bundled default so users
-    // never stare at a blank white screen.
+    // Safety: don't hold the splash forever if the API is unreachable.
     const t = setTimeout(() => {
       if (cancelled) return;
-      setImgSrc((prev) => prev || DEFAULT_IMG);
       setImgResolved(true);
-    }, 1200);
+    }, 800);
     return () => { cancelled = true; clearTimeout(t); };
   }, [visible]);
 
@@ -119,23 +122,29 @@ export default function SplashScreen({ onDone }) {
         transition: 'opacity 380ms ease-in',
       }}
     >
-      <img
-        src={imgSrc || DEFAULT_IMG}
-        onError={(e) => { if (e.currentTarget.src !== DEFAULT_IMG) e.currentTarget.src = DEFAULT_IMG; }}
-        alt="Celesta Glow — The Most Trusted Skincare Ecommerce App of Kerala. Glow With Confidence."
-        // Crisp on every density; never bigger than viewport, never smaller than 320 px wide.
-        style={{
-          maxWidth: '100%',
-          maxHeight: '100%',
-          width: 'auto',
-          height: 'auto',
-          objectFit: 'contain',
-          opacity: imgResolved ? 1 : 0,
-          transition: 'opacity 220ms ease-in',
-        }}
-        decoding="async"
-        fetchPriority="high"
-      />
+      {/* Feb-2026 fix: never load the bundled default splash. The <img> only
+          mounts AFTER we've resolved the admin-set splash URL from
+          /api/site-settings. If the admin hasn't uploaded anything or the
+          fetch fails, we render an empty white splash (brand-safe, no old
+          image ever flashes). */}
+      {imgResolved && imgSrc && (
+        <img
+          src={imgSrc}
+          onError={(e) => { e.currentTarget.style.display = 'none'; }}
+          alt="Celesta Glow"
+          style={{
+            maxWidth: '100%',
+            maxHeight: '100%',
+            width: 'auto',
+            height: 'auto',
+            objectFit: 'contain',
+            opacity: 1,
+            transition: 'opacity 220ms ease-in',
+          }}
+          decoding="async"
+          fetchPriority="high"
+        />
+      )}
     </div>
   );
 }

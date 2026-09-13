@@ -21,6 +21,13 @@ Clone the "Celesta Glow" website with pixel-perfect React frontend + FastAPI/Mon
 - **DiscountPopup removed**, `/concern` + `/category` routes redirect to `/shop`.
 - **Certificates** unchanged — served via `test_report_image` on `/api/products/{slug}`.
 
+## Recently delivered (Feb-13-2026 batch — continued)
+- **Splash bundled default REMOVED** — deleted `/app/frontend/public/splash-celesta-glow.png`. `SplashScreen.js` now renders NOTHING (blank white) until `/api/site-settings` returns; only the admin-uploaded splash ever appears. Cache-bust: `cg_splash_seen_v6`.
+- **Other-brand master switch** — new `site_settings.other_brands_in_stock` field. Floating admin toggle (`AdminHomeToggle.js`) mounted in `PublicLayout` shows for admins only (reads `sessionStorage.adminToken` via `getAdminToken()`). When OFF, `POST /api/cart/validate` returns HTTP 409 `{reason: "other_brands_out_of_stock", message, redirect_to, offending_items}` for any cart containing a non-Celesta-Glow-branded product. Both `/cart` and `/checkout` render a full-screen friendly modal + CTA that bounces the customer to `/`.
+- **Fix — TDZ crash on /checkout** — moved `pincodeInZone` useState above `codAvailable` useMemo (was crashing entire checkout with `ReferenceError: Cannot access 'pincodeInZone' before initialization`).
+- **Checkout Surprise Modal — copy fix** — CTA now says "Claim my FREE gift" (was showing "Claim my ₹0 OFF" when gift was set). Sub-headline adapts to gift/discount context.
+- **Variable Routine Score — "Why this score" block** — Routine Generator now also renders the score-factor breakdown ON SCREEN (was PDF-only). Live at `data-testid=routine-score-factors` with +/- deltas per factor.
+
 ## Recently delivered (Feb-13-2026 batch)
 - **Splash Screen no-flash fix** — `SplashScreen.js` now waits for `/api/site-settings` before rendering the image (opacity fade-in). Old bundled default no longer flashes before the admin-set splash. Cache-bust: `cg_splash_seen_v5`.
 - **Order-placement latency** — email confirmation + Meta CAPI now fire-and-forget (`asyncio.create_task`). Batched N+1 product lookup in `create_order` stock validation + decrement. Measured latency: **130ms** (was 5-10s).

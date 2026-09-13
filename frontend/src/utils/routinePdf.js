@@ -114,6 +114,19 @@ function buildHtml({ routine, profile, brand }) {
       </div>
     </div>
 
+    ${Array.isArray(routine.skin_score_factors) && routine.skin_score_factors.length ? `
+    <div class="notes" style="margin-top:0;">
+      <h3>Why this score</h3>
+      <ul>
+        ${routine.skin_score_factors.map(f => {
+          const d = Number(f.delta) || 0;
+          const sign = d > 0 ? '+' : '';
+          const cls = d > 0 ? 'style="color:#047857;font-weight:700"' : d < 0 ? 'style="color:#b91c1c;font-weight:700"' : 'style="color:#6b7280"';
+          return `<li>${escapeHtml(f.label)} <span ${cls}>(${sign}${d})</span></li>`;
+        }).join('')}
+      </ul>
+    </div>` : ''}
+
     <div class="grid">
       <div class="card">
         <h3>☀️ Morning ritual</h3>

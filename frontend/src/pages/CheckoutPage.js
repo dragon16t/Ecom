@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import axios from 'axios';
-import { Shield, Truck, ArrowLeft, Check, MapPin, Clock, Star, Award, Gift, Lock, Users } from 'lucide-react';
+import { Shield, Truck, ArrowLeft, Check, MapPin, Clock, Star, Award, Gift, Lock, Users, Package } from 'lucide-react';
 import { getCart, saveCart, addToCart } from './Homepage';
 import { useTracking } from '../providers/TrackingProvider';
 import CheckoutMap from '../components/CheckoutMap';
@@ -124,6 +124,9 @@ function CheckoutPage() {
   //   The pincode-based zone check (Feb-2026) fills the gap where the user
   //   didn't give browser geolocation — we resolve pincode → coords server-side
   //   and OR the result into `pincodeInZone` above.
+  // NOTE: pincodeInZone useState is declared HERE (above the useMemo) so we
+  // don't hit a temporal-dead-zone crash when React evaluates the memo.
+  const [pincodeInZone, setPincodeInZone] = useState(null); // null=unknown, true=in-zone, false=out-of-zone
   const codAvailable = React.useMemo(() => {
     if (!codRestrictionEnabled) return true; // policy off → legacy behaviour
     const items = cartData?.items || [];
@@ -236,16 +239,31 @@ function CheckoutPage() {
       const cart = getCart();
       if (!cart.items.length) { navigate('/cart'); return; }
       axios.post(`${API}/api/cart/validate`, { items: cart.items, payment_method: paymentMethod, coupon_code: coupon?.code, gift_card_code: giftCard?.code || null, prepaid_bonus: prepaidBonus, promo_active: promoActive, session_id: getSessionId() })
-        .then(res => setCartData(res.data)).catch(() => navigate('/cart'));
+        .then(res => setCartData(res.data))
+        .catch((err) => {
+          // Feb-2026: "other brands out of stock" master-switch gate. The
+          // server returns 409 with a machine-readable reason so we can
+          // show a friendly modal and bounce the customer back home.
+          const d = err?.response?.data?.detail;
+          if (err?.response?.status === 409 && d?.reason === 'other_brands_out_of_stock') {
+            setOtherBrandsBlock(d);
+          } else {
+            navigate('/cart');
+          }
+        });
     }
   }, []);
 
+  // Other-brands out-of-stock block (server-driven — see 409 above)
+  const [otherBrandsBlock, setOtherBrandsBlock] = useState(null);
+
   // Pincode-based instant-delivery zone check (Feb-2026). Runs whenever
   // the user has typed a 6-digit pincode; sets `pincodeInZone` which the
-  // COD payment gate below OR's with the map-based coverage. Fixes the
+  // COD payment gate above OR's with the map-based coverage. Fixes the
   // reported bug: prepaid-only mode wasn't kicking in on non-Celesta-Glow
   // brand items because the customer never gave browser geolocation.
-  const [pincodeInZone, setPincodeInZone] = useState(null); // null=unknown, true=in-zone, false=out-of-zone
+  // (pincodeInZone useState is declared above the codAvailable useMemo to
+  // avoid a TDZ crash — do not move.)
 
   const handlePincodeChange = async (pincode) => {
     setFormData(prev => ({ ...prev, pincode }));
@@ -291,7 +309,13 @@ function CheckoutPage() {
     if (!cart.items.length) return;
     const t = setTimeout(() => {
       axios.post(`${API}/api/cart/validate`, { items: cart.items, payment_method: paymentMethod, coupon_code: coupon?.code, gift_card_code: giftCard?.code || null, prepaid_bonus: prepaidBonus, promo_active: promoActive, session_id: getSessionId() })
-        .then(res => setCartData(res.data)).catch(() => {});
+        .then(res => setCartData(res.data))
+        .catch((err) => {
+          const d = err?.response?.data?.detail;
+          if (err?.response?.status === 409 && d?.reason === 'other_brands_out_of_stock') {
+            setOtherBrandsBlock(d);
+          }
+        });
     }, 250);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -448,6 +472,36 @@ function CheckoutPage() {
       setSubmitting(false);
     }
   };
+
+  if (otherBrandsBlock) {
+    return (
+      <div className="min-h-screen bg-stone-50 flex items-center justify-center p-4" data-testid="checkout-other-brands-block">
+        <div className="max-w-md w-full bg-white rounded-3xl ring-1 ring-stone-200 shadow-xl p-6 sm:p-8 text-center">
+          <div className="w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center mx-auto mb-4">
+            <Package size={28} className="text-amber-600" />
+          </div>
+          <h1 className="text-xl sm:text-2xl font-black text-stone-900 mb-2">Out of stock</h1>
+          <p className="text-sm text-stone-600 leading-relaxed mb-5">
+            {otherBrandsBlock.message}
+          </p>
+          {Array.isArray(otherBrandsBlock.offending_items) && otherBrandsBlock.offending_items.length > 0 && (
+            <ul className="text-left text-xs text-stone-500 mb-5 bg-stone-50 rounded-xl p-3 space-y-1">
+              {otherBrandsBlock.offending_items.slice(0, 4).map((it, i) => (
+                <li key={i}>• {it.name} <span className="text-stone-400">({it.brand})</span></li>
+              ))}
+            </ul>
+          )}
+          <button
+            onClick={() => navigate(otherBrandsBlock.redirect_to || '/')}
+            className="w-full py-3.5 rounded-2xl bg-green-600 hover:bg-green-700 text-white font-black text-sm tracking-wider uppercase shadow-lg"
+            data-testid="checkout-other-brands-cta"
+          >
+            Explore new anti-aging launches
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (!cartData) return null;
 

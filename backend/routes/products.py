@@ -1489,6 +1489,55 @@ async def validate_cart(data: CartValidateRequest):
         ):
             combos_by_id[c["combo_id"]] = c
 
+    # ---- Feb-2026: "Other brands out of stock" master switch ----
+    # If admin has turned the toggle OFF (default) and the cart contains any
+    # product whose brand isn't Celesta Glow, we short-circuit here with a
+    # 409 + machine-readable reason. The checkout page surfaces a friendly
+    # modal and bounces the customer back to the homepage.
+    _brand_flag_doc = await db.site_settings.find_one(
+        {"_id": "main"}, {"_id": 0, "other_brands_in_stock": 1}
+    ) or {}
+    _other_brands_in_stock = bool(_brand_flag_doc.get("other_brands_in_stock", False))
+    if not _other_brands_in_stock:
+        offending = []
+        for p in products_by_slug.values():
+            brand = (p.get("brand") or "").strip().lower()
+            if brand and "celesta" not in brand:
+                offending.append({
+                    "slug": p.get("slug"),
+                    "name": p.get("name"),
+                    "brand": p.get("brand"),
+                })
+        # Combos: block if ANY constituent product isn't Celesta Glow
+        for c in combos_by_id.values():
+            for s in (c.get("product_slugs") or []):
+                pdoc = products_by_slug.get(s) or await db.products.find_one(
+                    {"slug": s}, {"_id": 0, "slug": 1, "name": 1, "brand": 1}
+                )
+                if pdoc:
+                    brand = (pdoc.get("brand") or "").strip().lower()
+                    if brand and "celesta" not in brand:
+                        offending.append({
+                            "slug": pdoc.get("slug"),
+                            "name": pdoc.get("name"),
+                            "brand": pdoc.get("brand"),
+                            "via_combo": c.get("combo_id"),
+                        })
+                        break
+        if offending:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "reason": "other_brands_out_of_stock",
+                    "message": (
+                        "Oh no — those products are currently out of stock. "
+                        "Check out our anti-aging line for fresh formulas and today's best offers."
+                    ),
+                    "redirect_to": "/",
+                    "offending_items": offending,
+                },
+            )
+
     # Batch-load niches for any products referenced by combos but not directly
     # in the cart — needed so we can compute a combo-level niche (used by the
     # checkout page to decide COD availability for anti-aging-only carts).
@@ -1959,6 +2008,13 @@ class SiteSettingsUpdate(BaseModel):
     # (serums, sunscreen, etc.) — no third-party brand links. When OFF (default),
     # the existing multi-brand hub UI stays untouched.
     house_categories_only: Optional[bool] = None
+    # Feb-2026: master switch for "other brand" products (any product whose
+    # `brand` isn't Celesta Glow). When False (default) these SKUs are still
+    # visible on the site but the cart-validate + create-order endpoints
+    # reject them with a friendly `other_brands_out_of_stock` error so the
+    # customer is bounced back to the homepage. When True, they can be
+    # purchased normally.
+    other_brands_in_stock: Optional[bool] = None
 
 
 @router.get("/site-settings")

@@ -20,6 +20,7 @@ function CartPage() {
   })();
   const [cartData, setCartData] = useState(_seedCart);
   const [loading, setLoading] = useState(!_seedCart);
+  const [otherBrandsBlock, setOtherBrandsBlock] = useState(null);
   const [couponCode, setCouponCode] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState(null);
   const [couponError, setCouponError] = useState('');
@@ -182,7 +183,17 @@ function CartPage() {
         setUpsellProducts(upsell.slice(0, 8));
         setCombos((comboRes || []).filter(c => !cartCombos.includes(c.combo_id)));
       }
-    } catch (err) { console.error(err); }
+    } catch (err) {
+      // Feb-2026: server-side "other brands out of stock" gate returns 409.
+      // Surface the friendly message + bounce back home so the customer
+      // doesn't get stuck.
+      const d = err?.response?.data?.detail;
+      if (err?.response?.status === 409 && d?.reason === 'other_brands_out_of_stock') {
+        setOtherBrandsBlock(d);
+      } else {
+        console.error(err);
+      }
+    }
     setLoading(false);
     initialLoadRef.current = false;
   }, []);
@@ -342,6 +353,27 @@ function CartPage() {
               </div>
             </div>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (otherBrandsBlock) {
+    return (
+      <div className="min-h-screen bg-stone-50 flex items-center justify-center p-4" data-testid="cart-other-brands-block">
+        <div className="max-w-md w-full bg-white rounded-3xl ring-1 ring-stone-200 shadow-xl p-6 sm:p-8 text-center">
+          <div className="w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center mx-auto mb-4">
+            <ShoppingCart size={28} className="text-amber-600" />
+          </div>
+          <h1 className="text-xl sm:text-2xl font-black text-gray-900 mb-2">Out of stock</h1>
+          <p className="text-sm text-gray-600 leading-relaxed mb-5">{otherBrandsBlock.message}</p>
+          <Link
+            to={otherBrandsBlock.redirect_to || '/'}
+            className="block w-full py-3.5 rounded-2xl bg-green-600 hover:bg-green-700 text-white font-black text-sm tracking-wider uppercase shadow-lg"
+            data-testid="cart-other-brands-cta"
+          >
+            Explore new anti-aging launches
+          </Link>
         </div>
       </div>
     );

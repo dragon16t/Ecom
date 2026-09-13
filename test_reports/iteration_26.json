@@ -1,0 +1,37 @@
+{
+  "summary": "Tested splash removal + other_brands_in_stock toggle + cart/checkout guard. Backend fully passes (8/8). Splash asset properly deleted (no image bytes served). Cart block modal works. TWO CRITICAL FRONTEND BUGS FOUND: (1) AdminHomeToggle never renders on / because home route uses Homepage.js which does NOT import AdminHomeToggle (only SkincareHome.js does). (2) CheckoutPage.js throws ReferenceError 'Cannot access pincodeInZone before initialization' — codAvailable useMemo at line 127 references pincodeInZone state which is only declared at line 262. This crashes the entire /checkout page for every visitor and blocks the checkout-other-brands-block modal from rendering.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "CheckoutPage", "issue": "ReferenceError: Cannot access 'pincodeInZone' before initialization. useMemo at line 127-136 references pincodeInZone but useState declared at line 262 — TDZ crash breaks entire /checkout page. Blocks checkout-other-brands-block from ever rendering.", "selector": "[data-testid='checkout-other-brands-block']", "priority": "CRITICAL"},
+      {"component": "Homepage (/pages/Homepage.js)", "issue": "AdminHomeToggle is only mounted in SkincareHome.js, but the / route resolves to Homepage.js (see AppRouter.js line 337). Admin toggle never appears on homepage even with cg_admin_token set in localStorage. Verified: after setting cg_admin_token then reloading /, [data-testid=admin-home-toggle] is not in DOM.", "selector": "[data-testid='admin-home-toggle']", "priority": "HIGH"}
+    ],
+    "integration_issues": [
+      {"flow": "Checkout other-brands guard", "issue": "Cannot verify block modal renders on /checkout — page crashes before render due to pincodeInZone TDZ.", "affected_selectors": ["[data-testid='checkout-other-brands-block']", "[data-testid='checkout-other-brands-cta']"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_other_brands_guard_jan2026.py"],
+  "action_items": [
+    "FIX CheckoutPage.js: Move the `pincodeInZone`/`setPincodeInZone` useState declaration (currently ~line 262) ABOVE the `codAvailable` useMemo (currently ~line 127), or move the useMemo below the state declarations. This is a hoisting/ordering bug (temporal dead zone) that crashes /checkout for ALL users.",
+    "FIX Homepage.js: Import and render <AdminHomeToggle /> in /app/frontend/src/pages/Homepage.js (which serves the / route). Currently only SkincareHome.js has it, but SkincareHome is on a different path. Alternative: move AdminHomeToggle into PublicLayout so it appears on every public page.",
+    "Neither of the above are testable-agent scope fixes because they involve component-level import/logic decisions best owned by main agent."
+  ],
+  "critical_code_review_comments": [
+    "CheckoutPage.js has 1011 lines — exceeds 700-line file-size guideline; refactor into smaller modules.",
+    "Ordering bug in CheckoutPage.js is a classic TDZ / linter would catch with 'no-use-before-define'. Consider enabling that ESLint rule.",
+    "AdminHomeToggle uses localStorage 'cg_admin_token' while the rest of admin uses sessionStorage 'adminToken' (utils/adminAuth.js). Even after fixing the Homepage import, an admin who logs in via /admin will NOT see the toggle unless they also write to localStorage.cg_admin_token. Recommend unifying admin auth storage — use getAdminToken() helper in AdminHomeToggle instead of a custom localStorage key."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_other_brands_guard_jan2026.py"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "33%"},
+  "seed_data_creation": "Inserted MongoDB product slug='zz-test-brand-guard' brand='CompetitorBrand' during backend + frontend tests; DELETED at end of testing. Final other_brands_in_stock left at false (merchant default).",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend guard endpoint returns correct 409 with detail.reason=other_brands_out_of_stock, detail.redirect_to='/', detail.offending_items. CartPage block modal works perfectly (verified with screenshot at /tmp/cart_block.png). Two frontend fixes needed before re-verification: (a) Homepage.js must mount <AdminHomeToggle />, (b) CheckoutPage.js must move pincodeInZone useState above the codAvailable useMemo. Admin storage key mismatch (localStorage.cg_admin_token vs sessionStorage.adminToken) is also worth aligning. Site setting toggle currently OFF as the merchant wants.",
+  "rca of the issue": "CheckoutPage crash: the new other_brands_block feature edits added state at line 262 (setOtherBrandsBlock etc.) but the pre-existing codAvailable useMemo (lines 127-136) references pincodeInZone which was later moved down below the useMemo boundary — a temporal dead zone occurs because `let/const` bindings from useState are not hoisted like `var`. Fix: move the pincodeInZone useState + its useEffects above the codAvailable useMemo. Homepage bug: main agent only added AdminHomeToggle to SkincareHome but / route uses Homepage — file-level miss in AppRouter."
+}

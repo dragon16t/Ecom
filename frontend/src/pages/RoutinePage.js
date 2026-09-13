@@ -510,6 +510,27 @@ export default function RoutinePage() {
                 </div>
               </div>
 
+              {Array.isArray(routine.skin_score_factors) && routine.skin_score_factors.length > 0 && (
+                <div className="mt-4 rounded-2xl bg-white/[0.06] ring-1 ring-white/10 p-3 sm:p-4" data-testid="routine-score-factors">
+                  <p className="text-[10px] font-black tracking-[0.28em] uppercase text-cyan-300/90 mb-2">
+                    Why this score
+                  </p>
+                  <ul className="space-y-1.5">
+                    {routine.skin_score_factors.map((f, i) => {
+                      const d = Number(f.delta) || 0;
+                      const sign = d > 0 ? '+' : '';
+                      const cls = d > 0 ? 'text-emerald-300 font-bold' : d < 0 ? 'text-rose-300 font-bold' : 'text-white/50';
+                      return (
+                        <li key={i} className="text-[12px] sm:text-[13px] text-white/80 leading-snug flex items-start gap-2">
+                          <span className="flex-1">{f.label}</span>
+                          <span className={`${cls} tabular-nums flex-shrink-0`}>{sign}{d}</span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
+
               {Array.isArray(routine.specialist_notes) && routine.specialist_notes.length > 0 && (
                 <div className="mt-4 rounded-2xl bg-white/[0.06] ring-1 ring-white/10 p-3 sm:p-4" data-testid="routine-specialist-notes">
                   <p className="text-[10px] font-black tracking-[0.28em] uppercase text-emerald-300/90 mb-2 inline-flex items-center gap-1.5">
