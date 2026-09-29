@@ -11,10 +11,19 @@ import { Search, Upload, Trash2, Save, Loader2, Images, GripVertical } from 'luc
  */
 const API = process.env.REACT_APP_BACKEND_URL;
 const TOKEN_KEY = 'cg_admin_token';
-const authHeaders = () => ({ 'X-Admin-Token': localStorage.getItem(TOKEN_KEY) || '' });
+const authHeaders = () => ({ 'X-Admin-Token': localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem('adminToken') || '' });
+
+// Fixed niche list — mirrors the site's three active niches.
+const NICHES = [
+  { key: '', label: 'All niches' },
+  { key: 'anti-aging', label: 'Anti-Aging' },
+  { key: 'skincare', label: 'Skincare' },
+  { key: 'cosmetics', label: 'Cosmetics' },
+];
 
 export default function AdminImageGallery() {
   const [q, setQ] = useState('');
+  const [niche, setNiche] = useState('');
   const [results, setResults] = useState([]);
   const [selectedSlug, setSelectedSlug] = useState('');
   const [product, setProduct] = useState(null);
@@ -22,22 +31,35 @@ export default function AdminImageGallery() {
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [dragIndex, setDragIndex] = useState(null);
+  const [loadingList, setLoadingList] = useState(false);
 
   const canSave = useMemo(() => selectedSlug && Array.isArray(gallery), [selectedSlug, gallery]);
 
-  const doSearch = async (term) => {
-    setQ(term);
-    if (!term.trim()) { setResults([]); return; }
+  // Load an initial list (top 30) on mount and whenever the niche changes.
+  // Also re-runs when the search term is cleared so the merchant always sees
+  // *some* products even without typing.
+  const doSearch = React.useCallback(async (term, nicheFilter) => {
+    setLoadingList(true);
     try {
       const r = await axios.get(`${API}/api/admin/image-gallery/products`, {
-        params: { q: term, limit: 20 },
+        params: { q: term || '', niche: nicheFilter || undefined, limit: 30 },
         headers: authHeaders(),
       });
       setResults(r.data?.items || []);
     } catch (e) {
       console.error(e);
+      setResults([]);
+    } finally {
+      setLoadingList(false);
     }
-  };
+  }, []);
+
+  useEffect(() => { doSearch(q, niche); }, [niche, doSearch]);   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    // Debounce free-text search so we don't hammer the API on every keystroke.
+    const t = setTimeout(() => doSearch(q, niche), 220);
+    return () => clearTimeout(t);
+  }, [q, doSearch]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadProduct = async (slug) => {
     setSelectedSlug(slug);
@@ -117,21 +139,45 @@ export default function AdminImageGallery() {
         </p>
       </header>
 
+      {/* Niche selector — filters the product list to the site's 3 niches */}
+      <div className="flex gap-2 mb-3 overflow-x-auto pb-1" data-testid="ig-niche-filter">
+        {NICHES.map((n) => (
+          <button
+            key={n.key || 'all'}
+            onClick={() => setNiche(n.key)}
+            className={`px-3 py-1.5 rounded-full text-xs font-black whitespace-nowrap ${niche === n.key ? 'bg-indigo-600 text-white' : 'bg-white text-stone-600 border border-stone-200'}`}
+            data-testid={`ig-niche-${n.key || 'all'}`}
+          >
+            {n.label}
+          </button>
+        ))}
+      </div>
+
       {/* Search */}
       <div className="relative mb-4">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={18} />
         <input
           type="text"
           value={q}
-          onChange={(e) => doSearch(e.target.value)}
+          onChange={(e) => setQ(e.target.value)}
           placeholder="Search by name, slug or brand…"
           className="w-full pl-10 pr-4 py-3 border border-stone-200 rounded-xl text-sm bg-white"
           data-testid="ig-search"
         />
       </div>
 
-      {results.length > 0 && !selectedSlug && (
-        <div className="bg-white rounded-2xl border border-stone-200 divide-y max-h-[380px] overflow-y-auto mb-6">
+      {!selectedSlug && (
+        <div className="bg-white rounded-2xl border border-stone-200 divide-y max-h-[420px] overflow-y-auto mb-6">
+          {loadingList && (
+            <div className="p-4 text-center text-xs text-stone-500 flex items-center justify-center gap-2">
+              <Loader2 size={12} className="animate-spin" /> Loading products…
+            </div>
+          )}
+          {!loadingList && results.length === 0 && (
+            <div className="p-6 text-center text-sm text-stone-400">
+              No products match {q ? `“${q}”` : 'this niche'}.
+            </div>
+          )}
           {results.map((p) => (
             <button
               key={p.slug}
@@ -142,7 +188,9 @@ export default function AdminImageGallery() {
               {p.primary_image && <img src={p.primary_image} alt="" className="w-12 h-12 rounded-lg object-cover" />}
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-black text-stone-900 truncate">{p.name}</p>
-                <p className="text-xs text-stone-500 truncate">{p.slug} · {p.brand || 'unbranded'}</p>
+                <p className="text-xs text-stone-500 truncate">
+                  {p.slug} · {p.brand || 'unbranded'} · <span className="uppercase tracking-wider text-indigo-500">{p.niche || (p.active_niches || [])[0] || '—'}</span>
+                </p>
               </div>
               <span className="text-xs font-bold text-indigo-600">{p.gallery_count || p.flat_count} imgs</span>
             </button>

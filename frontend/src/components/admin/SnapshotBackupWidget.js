@@ -17,6 +17,7 @@ export default function SnapshotBackupWidget({ token }) {
   const [busy, setBusy] = useState(false);
   const [justSucceeded, setJustSucceeded] = useState(false);
   const [error, setError] = useState('');
+  const [progress, setProgress] = useState(null); // {done,total,current,elapsed}
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -62,7 +63,7 @@ export default function SnapshotBackupWidget({ token }) {
       'TIP: if you want a rollback point first, click "Backup Now" before pressing Restore — that way you can re-restore to the current state if anything looks off.\n\n' +
       'Continue?'
     )) return;
-    setBusy(true); setError(''); setJustSucceeded(false);
+    setBusy(true); setError(''); setJustSucceeded(false); setProgress(null);
     try {
       // ASYNC PATTERN (Feb-2026 P0): the sync restore endpoint takes ~3 min
       // and dies at the Cloudflare 60s proxy timeout. The async wrapper
@@ -70,7 +71,7 @@ export default function SnapshotBackupWidget({ token }) {
       const queue = await axios.post(`${API}/api/admin/catalog/backup/restore-async?force=true`, {}, auth);
       const jobId = queue.data?.job_id;
       if (!jobId) throw new Error('Restore could not be queued (no job_id returned)');
-      setError('Restore running… this can take 2–3 minutes. Do not close this tab.');
+      setProgress({ done: 0, total: 0, current: 'starting', elapsed: 0 });
 
       let lastJob = null;
       const startedAt = Date.now();
@@ -86,7 +87,15 @@ export default function SnapshotBackupWidget({ token }) {
           );
           lastJob = statusRes.data;
           if (lastJob.status === 'done' || lastJob.status === 'error') break;
-          setError(`Restore running… (phase: ${lastJob.phase || 'working'}, ${Math.round((Date.now() - startedAt) / 1000)}s elapsed)`);
+          // Packet-wise progress — server reports {done, total, current} where
+          // "current" is the name of the collection being restored right now.
+          const prog = lastJob.progress || {};
+          setProgress({
+            done: prog.done || 0,
+            total: prog.total || 0,
+            current: prog.current || lastJob.phase || 'working',
+            elapsed: Math.round((Date.now() - startedAt) / 1000),
+          });
         } catch (pollErr) {
           // 404 means the job expired or never registered — break out.
           if (pollErr?.response?.status === 404) {
@@ -152,6 +161,27 @@ export default function SnapshotBackupWidget({ token }) {
           </p>
         )}
         {error && <p className="text-[10px] mt-0.5 text-red-700 font-bold">⚠ {error}</p>}
+        {progress && busy && (
+          <div className="mt-2 w-full" data-testid="restore-progress">
+            <div className="flex items-center justify-between text-[10px] font-black">
+              <span>
+                Restoring packet {Math.min((progress.done || 0) + 1, progress.total || 1)}/{progress.total || '?'}
+                {progress.current ? ` — ${progress.current}` : ''}
+              </span>
+              <span className="opacity-70">{progress.elapsed || 0}s</span>
+            </div>
+            <div className="mt-1 h-2 w-full rounded-full bg-white/60 ring-1 ring-stone-200 overflow-hidden">
+              <div
+                className="h-full bg-emerald-500 transition-all duration-300"
+                style={{
+                  width: progress.total > 0
+                    ? `${Math.min(100, Math.round((progress.done / progress.total) * 100))}%`
+                    : '8%',
+                }}
+              />
+            </div>
+          </div>
+        )}
         {!status?.cloudinary_configured && (
           <p className="text-[10px] mt-0.5 text-red-700 font-bold">⚠ Cloudinary not configured — backups disabled. Add credentials in Admin → Settings.</p>
         )}
@@ -176,8 +206,8 @@ export default function SnapshotBackupWidget({ token }) {
       </button>
       <button
         onClick={restoreNow}
-        disabled={busy || !status?.remote_snapshot_available}
-        title={!status?.remote_snapshot_available ? 'No backup available yet — click Backup now first' : 'Restore data from the last backup'}
+        disabled={busy}
+        title={busy ? 'Restore in progress…' : 'Restore data from the last backup'}
         className="text-xs font-black px-3.5 py-2 rounded-lg bg-white ring-1 ring-stone-300 hover:bg-stone-50 disabled:opacity-50 text-stone-900 inline-flex items-center gap-1.5"
         data-testid="restore-now-button"
       >

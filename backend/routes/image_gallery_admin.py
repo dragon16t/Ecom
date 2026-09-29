@@ -45,7 +45,8 @@ class GalleryPayload(BaseModel):
 @router.get("/products")
 async def search_products(
     q: str = Query("", description="Search term (name/slug/brand)"),
-    limit: int = Query(20, ge=1, le=100),
+    niche: Optional[str] = Query(None, description="Filter by niche (anti-aging/skincare/cosmetics)"),
+    limit: int = Query(30, ge=1, le=100),
     x_admin_token: str = Header(None, alias="X-Admin-Token"),
 ):
     if _verify_admin:
@@ -53,17 +54,23 @@ async def search_products(
     q = (q or "").strip()
     filt: Dict[str, Any] = {}
     if q:
-        filt = {
+        filt["$or"] = [
+            {"name": {"$regex": q, "$options": "i"}},
+            {"slug": {"$regex": q, "$options": "i"}},
+            {"brand": {"$regex": q, "$options": "i"}},
+        ]
+    if niche:
+        # Match either the legacy top-level `niche` field or `active_niches[]`
+        filt["$and"] = filt.get("$and", []) + [{
             "$or": [
-                {"name": {"$regex": q, "$options": "i"}},
-                {"slug": {"$regex": q, "$options": "i"}},
-                {"brand": {"$regex": q, "$options": "i"}},
+                {"niche": {"$regex": f"^{niche}$", "$options": "i"}},
+                {"active_niches": {"$regex": f"^{niche}$", "$options": "i"}},
             ]
-        }
+        }]
     items: List[Dict[str, Any]] = []
     cursor = _db.products.find(
         filt,
-        {"_id": 0, "slug": 1, "name": 1, "brand": 1, "images": 1, "image_gallery": 1, "is_active": 1},
+        {"_id": 0, "slug": 1, "name": 1, "brand": 1, "images": 1, "image_gallery": 1, "is_active": 1, "niche": 1, "active_niches": 1},
     ).limit(limit)
     async for p in cursor:
         gal = p.get("image_gallery") or []
@@ -71,6 +78,8 @@ async def search_products(
             "slug": p.get("slug"),
             "name": p.get("name"),
             "brand": p.get("brand"),
+            "niche": p.get("niche"),
+            "active_niches": p.get("active_niches") or [],
             "primary_image": (p.get("images") or [None])[0],
             "gallery_count": len(gal) if isinstance(gal, list) else 0,
             "flat_count": len(p.get("images") or []),

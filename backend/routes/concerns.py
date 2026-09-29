@@ -860,13 +860,17 @@ async def catalog_backup_restore_async(
         "completed_at": None,
         "result": None,
         "error": None,
+        "progress": {"done": 0, "total": 0, "current": None},
     }
 
     async def _run():
         job = _restore_jobs[job_id]
+        def _on_progress(done, total, current):
+            job["progress"] = {"done": done, "total": total, "current": current}
+            job["phase"] = f"restoring_{current}"
         try:
             job["phase"] = "fetching_snapshot"
-            res = await _catalog_backup.auto_restore_if_empty(db, force=force)
+            res = await _catalog_backup.auto_restore_if_empty(db, force=force, progress_cb=_on_progress)
             job["phase"] = "fresh_baseline_snapshot"
             try:
                 fresh = await _catalog_backup.snapshot(db)

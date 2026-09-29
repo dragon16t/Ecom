@@ -616,7 +616,7 @@ async def _fetch_latest_snapshot(db) -> Optional[Dict[str, Any]]:
     return None
 
 
-async def auto_restore_if_empty(db, force: bool = False) -> Dict[str, Any]:
+async def auto_restore_if_empty(db, force: bool = False, progress_cb=None) -> Dict[str, Any]:
     """Run at backend startup. If the snapshot collections look freshly-wiped
     (≥80% of them have ≤5 docs OR the products collection itself is empty),
     pull the latest Cloudinary snapshot and bulk-upsert. Idempotent — never
@@ -628,6 +628,11 @@ async def auto_restore_if_empty(db, force: bool = False) -> Dict[str, Any]:
     locally but not in the snapshot are KEPT. The incremental chain is also
     applied, so the DB ends up at the latest known captured state, not just
     the last full-snapshot state.
+
+    ``progress_cb`` (Feb-2026): optional callable ``(done_pkt, total_pkt,
+    current_col)`` invoked before each collection is restored. Lets the
+    async admin endpoint stream packet-wise progress to the UI so long
+    restores show real progress instead of a spinner.
     """
     counts: Dict[str, int] = {}
     near_empty = 0
@@ -779,7 +784,13 @@ async def auto_restore_if_empty(db, force: bool = False) -> Dict[str, Any]:
             return len(v) > 0
         return True
 
-    for col in SNAPSHOT_COLLECTIONS:
+    for _idx, col in enumerate(SNAPSHOT_COLLECTIONS):
+        # Packet-wise progress ping so the admin UI can render a live bar.
+        if progress_cb is not None:
+            try:
+                progress_cb(_idx, len(SNAPSHOT_COLLECTIONS), col)
+            except Exception:
+                pass
         docs = (snapshot_data.get("collections") or {}).get(col) or []
         if not docs:
             restored_counts[col] = 0
